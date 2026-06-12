@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es-419"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary": "#ffffff",
+                    "surface-tint": "#515f78",
+                    "surface-container-highest": "#e5e2e1",
+                    "inverse-primary": "#b9c7e4",
+                    "surface-container-high": "#ebe7e7",
+                    "surface-bright": "#fcf9f8",
+                    "tertiary-container": "#261900",
+                    "background": "#fcf9f8",
+                    "inverse-surface": "#313030",
+                    "on-primary-container": "#76849f",
+                    "secondary-container": "#e1e3e4",
+                    "outline": "#75777e",
+                    "primary-fixed-dim": "#b9c7e4",
+                    "surface": "#fcf9f8",
+                    "surface-dim": "#dcd9d9",
+                    "primary-container": "#0d1c32",
+                    "error": "#ba1a1a",
+                    "tertiary": "#000000",
+                    "on-secondary": "#ffffff",
+                    "surface-container": "#f0edec",
+                    "tertiary-fixed-dim": "#e9c176",
+                    "outline-variant": "#c5c6cd",
+                    "on-tertiary-container": "#a17f3b",
+                    "on-secondary-fixed": "#191c1d",
+                    "on-primary-fixed-variant": "#39475f",
+                    "on-background": "#1c1b1b",
+                    "secondary-fixed-dim": "#c5c7c8",
+                    "tertiary-fixed": "#ffdea5",
+                    "secondary": "#5c5f60",
+                    "on-tertiary": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "primary-fixed": "#d6e3ff",
+                    "on-tertiary-fixed": "#261900",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#0d1c32",
+                    "inverse-on-surface": "#f3f0ef",
+                    "secondary-fixed": "#e1e3e4",
+                    "on-surface": "#1c1b1b",
+                    "on-secondary-fixed-variant": "#454748",
+                    "error-container": "#ffdad6",
+                    "surface-container-low": "#f6f3f2",
+                    "on-error": "#ffffff",
+                    "surface-variant": "#e5e2e1",
+                    "primary": "#000000",
+                    "on-tertiary-fixed-variant": "#5d4201",
+                    "on-surface-variant": "#44474d",
+                    "on-secondary-container": "#626566"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "display": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, .headline { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-effect { background: rgba(252, 249, 248, 0.7); backdrop-filter: blur(20px); }
+        ::-webkit-scrollbar { width: 0px; height: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c5c6cd; border-radius: 10px; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface overflow-hidden">
+<!-- Navigation Drawer (Admin Central) -->
+<aside class="h-screen w-72 left-0 top-0 fixed bg-white border-r border-outline-variant/20 flex flex-col py-8 z-50">
+<div class="px-6 mb-10 flex items-center gap-4">
+<div class="w-12 h-12 rounded-full overflow-hidden bg-primary-container flex items-center justify-center">
+<img alt="Admin Avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a restaurant administrator in a high-end gastronomic setting. The person exudes quiet confidence and authority, wearing a sharp dark navy suit that matches the brand colors. The lighting is soft and cinematic, highlighting the sophisticated and modern atmosphere of a luxury digital maître d' environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwPPrPV55GO_c7wvP7U1cg-mgGBq133Fa1dsMbOGGmDI60sSjgmY-jIJujLgp4T86ojkDglmTD-LIhGBwRsSqYZHLYVavEuzaqFG_CIBe-ZG7yqJnvOdGiBROdOH0xw4R6QTW1iAKiSYfYKXj9R1VBZpVeiFpUQK-yFr_nOg5RZUxsTNe7Sx52bKon8X45kzph27I7NPl8hiuXBvM0qaRcFnJA_ifTcKJBk-rMGCyzIO8B5Mv2PYCg-Am6sk2P9Pm9DxoyGc83V_s"/>
+</div>
+<div>
+<h2 class="text-on-surface font-headline font-black text-lg tracking-tight">Admin Central</h2>
+<p class="text-on-surface-variant text-xs font-medium">Digital Maître D’</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="bg-[#0d1c32] text-white rounded-r-full mr-4 my-1 py-3 px-6 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined">view_kanban</span>
+<span class="font-medium text-sm">Tablero Kanban</span>
+</div>
+<div class="text-on-surface-variant hover:bg-surface-container transition-all py-3 px-6 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined">monitoring</span>
+<span class="font-medium text-sm">Ventas KPI</span>
+</div>
+<div class="text-on-surface-variant hover:bg-surface-container transition-all py-3 px-6 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined">notifications</span>
+<span class="font-medium text-sm">Notificaciones</span>
+</div>
+<div class="text-on-surface-variant hover:bg-surface-container transition-all py-3 px-6 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-medium text-sm">Inventario</span>
+</div>
+<div class="text-on-surface-variant hover:bg-surface-container transition-all py-3 px-6 flex items-center gap-3 cursor-pointer">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-medium text-sm">Configuración</span>
+</div>
+</nav>
+<div class="px-6 mt-auto">
+<div class="p-4 bg-surface-container rounded-xl">
+<p class="text-xs font-bold text-primary mb-2">MODO PREMIUM</p>
+<div class="h-1 w-full bg-outline-variant/30 rounded-full overflow-hidden">
+<div class="h-full w-2/3 bg-tertiary-fixed-dim"></div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-72 min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface/70 backdrop-blur-md flex items-center justify-between px-8 py-6 z-40">
+<div class="flex flex-col">
+<h1 class="font-headline font-extrabold text-2xl text-primary-container tracking-tight">Hola, Admin</h1>
+<p class="text-on-surface-variant text-sm">Bienvenido a tu centro de comando gastronómico.</p>
+</div>
+<div class="flex items-center gap-6">
+<button class="relative p-2 rounded-full hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-primary-container">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="h-8 w-px bg-outline-variant/30"></div>
+<div class="flex items-center gap-3">
+<span class="text-sm font-semibold text-on-surface">Gastronomic Excellence</span>
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-white font-bold">GE</div>
+</div>
+</div>
+</header>
+<!-- Canvas Content -->
+<section class="p-8 space-y-10 overflow-y-auto max-h-[calc(100vh-90px)]">
+<!-- KPI Section (Asymmetric Layout) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="p-6 bg-surface-container-lowest rounded-2xl shadow-[0_4px_20px_rgba(13,28,50,0.04)] flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300">
+<div>
+<p class="text-on-surface-variant text-xs font-semibold uppercase tracking-widest mb-1">Ventas Hoy</p>
+<h3 class="text-3xl font-headline font-black text-primary">$ 45.200</h3>
+</div>
+<div class="w-12 h-12 rounded-full bg-primary-container/5 flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined">payments</span>
+</div>
+</div>
+<div class="p-6 bg-surface-container-lowest rounded-2xl shadow-[0_4px_20px_rgba(13,28,50,0.04)] flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300">
+<div>
+<p class="text-on-surface-variant text-xs font-semibold uppercase tracking-widest mb-1">Pedidos Activos</p>
+<h3 class="text-3xl font-headline font-black text-primary">12</h3>
+</div>
+<div class="w-12 h-12 rounded-full bg-primary-container/5 flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined">restaurant</span>
+</div>
+</div>
+<div class="p-6 bg-surface-container-lowest rounded-2xl shadow-[0_4px_20px_rgba(13,28,50,0.04)] flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300 border-l-4 border-tertiary-fixed-dim">
+<div>
+<p class="text-on-surface-variant text-xs font-semibold uppercase tracking-widest mb-1">Promedio Entrega</p>
+<h3 class="text-3xl font-headline font-black text-primary">28 min</h3>
+</div>
+<div class="w-12 h-12 rounded-full bg-tertiary-fixed-dim/10 flex items-center justify-center text-on-tertiary-fixed-variant">
+<span class="material-symbols-outlined">timer</span>
+</div>
+</div>
+</div>
+<!-- Kanban Section -->
+<div class="space-y-4">
+<div class="flex items-center justify-between px-2">
+<h2 class="font-headline font-bold text-xl text-primary-container">Gestión de Pedidos en Vivo</h2>
+<div class="flex gap-2">
+<button class="px-4 py-2 rounded-full bg-surface-container text-xs font-bold text-on-surface-variant hover:bg-surface-container-high transition-colors">Historial</button>
+<button class="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold shadow-lg shadow-primary-container/20 transition-all active:scale-95">Nuevo Pedido</button>
+</div>
+</div>
+<div class="flex gap-6 overflow-x-auto pb-6 scroll-smooth">
+<!-- Columna: Recibidos -->
+<div class="flex-none w-80 bg-surface-container-low/50 rounded-3xl p-4 flex flex-col gap-4">
+<div class="flex items-center justify-between px-2 py-1">
+<span class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="text-sm font-bold uppercase tracking-tighter text-on-surface-variant">Recibidos</span>
+</span>
+<span class="bg-surface-container-highest px-2 py-0.5 rounded text-[10px] font-black">04</span>
+</div>
+<!-- Card Pedido -->
+<div class="bg-surface-container-lowest p-5 rounded-2xl shadow-[0_8px_30px_rgba(13,28,50,0.06)] border border-outline-variant/10 space-y-4 cursor-grab active:cursor-grabbing transition-shadow hover:shadow-xl">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline font-extrabold text-on-surface">#1204</h4>
+<p class="text-xs text-on-surface-variant">4 items • Takeaway</p>
+</div>
+<span class="text-sm font-bold text-primary-container">$ 4.500</span>
+</div>
+<div class="flex items-center gap-2 text-[10px] font-bold text-error bg-error-container/20 w-fit px-2 py-1 rounded-full">
+<span class="material-symbols-outlined text-xs">history</span>
+                                hace 2 min
+                            </div>
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full border-2 border-white bg-surface-container">
+<img alt="Item" class="w-full h-full object-cover rounded-full" data-alt="A vibrant and colorful gourmet salad bowl featuring fresh greens, sliced radishes, and toasted seeds. The photography is high-contrast and editorial, shot from a top-down perspective with bright natural lighting that emphasizes the freshness and texture of the ingredients." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCxF92zw48ak3tv1pgIUl3_xNdSEvywLV2w6Z1QgfiQgBwd_rckWDrN-FtE9krk3b3rpyip74PSKrXjZGIh-y0dMLBa4TBTWBVMmVzZcBOVH2QY736vUTgCrfDVrth23DfWSb8NswKDSL1rUozVqFLPvugRRYKIMTv3gNW6Q55QLcfTy7ZrgNCEq0aXP9XVpZPxPPB17Z05P-4_dUpw6UisO0rvUaKpvIS30_n_-6Flu-CViosVW6FLUrfLH7ivkEwzXpdXkCSpDsQ"/>
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-white bg-surface-container flex items-center justify-center text-[10px] font-bold">+3</div>
+</div>
+</div>
+<div class="bg-surface-container-lowest/60 p-5 rounded-2xl border border-dashed border-outline-variant/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-outline-variant">add_circle</span>
+</div>
+</div>
+<!-- Columna: En Preparación -->
+<div class="flex-none w-80 bg-surface-container-low/50 rounded-3xl p-4 flex flex-col gap-4">
+<div class="flex items-center justify-between px-2 py-1">
+<span class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-tertiary-fixed-dim"></span>
+<span class="text-sm font-bold uppercase tracking-tighter text-on-surface-variant">En Preparación</span>
+</span>
+<span class="bg-surface-container-highest px-2 py-0.5 rounded text-[10px] font-black">02</span>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-2xl shadow-[0_8px_30px_rgba(13,28,50,0.06)] border border-outline-variant/10 space-y-4">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline font-extrabold text-on-surface">#1201</h4>
+<p class="text-xs text-on-surface-variant">2 items • Delivery</p>
+</div>
+<span class="text-sm font-bold text-primary-container">$ 3.200</span>
+</div>
+<div class="flex items-center gap-2 text-[10px] font-bold text-tertiary-fixed-dim bg-tertiary/5 w-fit px-2 py-1 rounded-full">
+<span class="material-symbols-outlined text-xs">skillet</span>
+                                hace 15 min
+                            </div>
+<div class="h-1 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full w-[70%] bg-tertiary-fixed-dim"></div>
+</div>
+</div>
+</div>
+<!-- Columna: En Camino -->
+<div class="flex-none w-80 bg-surface-container-low/50 rounded-3xl p-4 flex flex-col gap-4">
+<div class="flex items-center justify-between px-2 py-1">
+<span class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-surface-tint"></span>
+<span class="text-sm font-bold uppercase tracking-tighter text-on-surface-variant">En Camino</span>
+</span>
+<span class="bg-surface-container-highest px-2 py-0.5 rounded text-[10px] font-black">06</span>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-2xl shadow-[0_8px_30px_rgba(13,28,50,0.06)] border border-outline-variant/10 space-y-4">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline font-extrabold text-on-surface">#1198</h4>
+<p class="text-xs text-on-surface-variant">5 items • Delivery Rapido</p>
+</div>
+<span class="text-sm font-bold text-primary-container">$ 5.800</span>
+</div>
+<div class="flex items-center gap-2 text-[10px] font-bold text-on-primary-container bg-primary-container/10 w-fit px-2 py-1 rounded-full">
+<span class="material-symbols-outlined text-xs">delivery_dining</span>
+                                hace 25 min
+                            </div>
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-secondary-container"></div>
+<span class="text-[10px] font-medium text-on-surface-variant">Repartidor: Carlos M.</span>
+</div>
+</div>
+</div>
+<!-- Columna: Entregados -->
+<div class="flex-none w-80 bg-surface-container-low/50 rounded-3xl p-4 flex flex-col gap-4">
+<div class="flex items-center justify-between px-2 py-1">
+<span class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-sm font-bold uppercase tracking-tighter text-on-surface-variant">Finalizados</span>
+</span>
+<span class="bg-surface-container-highest px-2 py-0.5 rounded text-[10px] font-black">28</span>
+</div>
+<div class="h-full flex items-center justify-center border-2 border-dashed border-outline-variant/20 rounded-2xl p-6 text-center">
+<p class="text-xs font-medium text-on-surface-variant italic">Arrastra pedidos aquí para finalizar el servicio.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Insights (Bento Grid Style) -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6 pb-12">
+<div class="md:col-span-8 p-8 bg-primary-container rounded-[2.5rem] text-white flex flex-col justify-between min-h-[300px] relative overflow-hidden group">
+<div class="relative z-10">
+<h2 class="text-4xl font-headline font-black mb-4 leading-tight">Tu negocio está<br/>creciendo un 22%</h2>
+<p class="text-on-primary-container font-medium max-w-md">Basado en el rendimiento de los últimos 7 días. Has superado el promedio de ventas de la zona.</p>
+</div>
+<div class="relative z-10 flex gap-4">
+<button class="bg-white text-primary-container px-6 py-3 rounded-full font-bold text-sm hover:scale-105 transition-transform">Ver Reporte Detallado</button>
+</div>
+<!-- Decorative Graphic -->
+<div class="absolute right-[-10%] bottom-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl group-hover:bg-white/10 transition-colors"></div>
+<div class="absolute top-10 right-10 flex gap-1 items-end h-32">
+<div class="w-3 bg-white/20 rounded-full h-1/2"></div>
+<div class="w-3 bg-white/40 rounded-full h-2/3"></div>
+<div class="w-3 bg-white/60 rounded-full h-3/4"></div>
+<div class="w-3 bg-tertiary-fixed-dim rounded-full h-full"></div>
+</div>
+</div>
+<div class="md:col-span-4 p-8 bg-surface-container rounded-[2.5rem] flex flex-col gap-6">
+<h3 class="font-headline font-bold text-lg text-primary-container">Plato Estrella</h3>
+<div class="relative w-full aspect-square rounded-3xl overflow-hidden shadow-2xl">
+<img alt="Star Dish" class="w-full h-full object-cover" data-alt="A premium culinary masterpiece: a tender, perfectly seared steak garnished with microgreens and a rich reduction sauce on a dark, minimalist ceramic plate. The lighting is dramatic and low-key, emphasizing the glossy texture of the sauce and the high-end, editorial feel of the dish. The overall aesthetic is one of extreme quality and gastronomic excellence." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBR6YRZZ3kBj5abeIk1Q7tFqGJ4R0yvvo9lKdApaffpqU7cuwBOw-xNS4OAmdYI_mAGhRNzIsLNl5mpPk5TGhcalBXnsUKs010xhXlcS7Op6xTiIFzhEC8S6uJz5sW0vJElTPIWQrLUS3K1nb8POZcwLnAERsOpqSkgartZToITsf01EovchmEryTbpveA_s-gFNrYuRcLfmMFgTy3tJQIeIuF5cRRpHXC8809-IHU1ktq28wkmsscz-3rrWgvimWUDeaVOLij7Po8"/>
+<div class="absolute bottom-4 left-4 right-4 p-4 glass-effect rounded-2xl flex justify-between items-center">
+<div>
+<p class="text-[10px] font-bold text-on-surface-variant uppercase">Más Vendido</p>
+<h4 class="font-headline font-bold text-primary">Solomillo Angus</h4>
+</div>
+<span class="text-primary font-black">$ 8.900</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</body></html>

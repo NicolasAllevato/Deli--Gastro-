@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Curator | Portal de Cliente</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-bright": "#f5f6f7",
+                        "error-dim": "#b92902",
+                        "on-error": "#ffefec",
+                        "surface": "#f5f6f7",
+                        "on-tertiary": "#cefbff",
+                        "surface-dim": "#d1d5d7",
+                        "tertiary-dim": "#00595f",
+                        "on-secondary-fixed-variant": "#5c5b5b",
+                        "primary-dim": "#015d00",
+                        "primary-container": "#4bfd39",
+                        "on-secondary-fixed": "#403f3f",
+                        "on-tertiary-fixed-variant": "#005c62",
+                        "secondary-fixed-dim": "#d6d4d3",
+                        "secondary": "#5c5b5b",
+                        "secondary-dim": "#504f4f",
+                        "surface-container-low": "#eff1f2",
+                        "tertiary-fixed-dim": "#00dbe9",
+                        "on-error-container": "#520c00",
+                        "surface-container-highest": "#dadddf",
+                        "surface-variant": "#dadddf",
+                        "primary-fixed": "#4bfd39",
+                        "on-background": "#2c2f30",
+                        "inverse-surface": "#0c0f10",
+                        "on-secondary": "#f5f2f1",
+                        "on-primary-fixed-variant": "#016700",
+                        "outline-variant": "#abadae",
+                        "tertiary-container": "#08ebf9",
+                        "background": "#f5f6f7",
+                        "primary": "#016b00",
+                        "on-surface": "#2c2f30",
+                        "error": "#b02500",
+                        "secondary-container": "#e5e2e1",
+                        "on-primary-container": "#015c00",
+                        "error-container": "#f95630",
+                        "inverse-primary": "#4bfd39",
+                        "on-secondary-container": "#525151",
+                        "on-primary-fixed": "#014700",
+                        "on-primary": "#d3ffc2",
+                        "surface-container": "#e6e8ea",
+                        "on-surface-variant": "#595c5d",
+                        "surface-container-high": "#e0e3e4",
+                        "on-tertiary-container": "#005257",
+                        "tertiary": "#00666c",
+                        "tertiary-fixed": "#08ebf9",
+                        "on-tertiary-fixed": "#003d41",
+                        "primary-fixed-dim": "#37ee29",
+                        "inverse-on-surface": "#9b9d9e",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-tint": "#016b00",
+                        "secondary-fixed": "#e5e2e1",
+                        "outline": "#757778"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Plus Jakarta Sans"],
+                        "display": ["Plus Jakarta Sans"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .hero-clip {
+            clip-path: circle(70% at 90% 50%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md docked full-width top-0 sticky z-50">
+<div class="flex justify-between items-center w-full px-6 py-4">
+<button class="text-green-600 dark:text-green-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors p-2 rounded-full scale-95 active:duration-200">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-plus-jakarta text-2xl font-bold tracking-tight text-2xl font-extrabold text-zinc-900 dark:text-zinc-100 italic">Curator</h1>
+<div class="w-10 h-10 rounded-full bg-surface-container overflow-hidden ring-2 ring-primary/10">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A professional and clean studio headshot of a friendly user for a profile avatar. The lighting is soft and even, emphasizing a welcoming and modern aesthetic. The background is a neutral, minimalist grey that complements the high-end food delivery app's clean UI. The overall mood is sophisticated and personalized." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6TRvM5WVl872ApV6IkxZvrxn6MsEOT9KDtXjic5z2z21mYAhPRv9E_7fW0-tzjcc4Uxpx0Im34IjGwIfiSlI8a15ixzG4wxJem3oBEoaGCbmUqEIe6vfhovI2V_dfzWdqc8e16UofhufEAYRHzmbXIsVgd7QtHZebxJVuYMwB4ZYyo5LuCbrgQtGiEjSX7n_HtUqT_WVylWp_QF6Y_R4ErgrINTZVwxit0IPa6yv3iJdUt8gqRGQV8-D0QXvRyWIcjP8mddEy-hQ"/>
+</div>
+</div>
+</header>
+<main class="pb-32 overflow-x-hidden">
+<!-- Hero Plate Section -->
+<section class="relative min-h-[500px] flex items-center pt-8 pb-16 px-6">
+<div class="z-10 max-w-xl">
+<span class="font-label text-primary font-bold tracking-[0.2em] text-xs mb-4 block">PLATILLO DE TEMPORADA</span>
+<h2 class="font-display text-6xl md:text-8xl font-extrabold text-on-surface leading-[0.9] tracking-tighter mb-6">
+                    Pasta <br/> <span class="text-primary italic">Primavera</span>
+</h2>
+<p class="font-body text-on-surface-variant text-lg max-w-sm mb-8">
+                    Una sinfonía de vegetales frescos de la huerta, salteados con aceite de oliva premium y hierbas silvestres.
+                </p>
+<button class="bg-gradient-to-br from-primary to-primary-container text-on-primary-container font-bold px-8 py-4 rounded-full flex items-center gap-3 shadow-lg hover:scale-105 transition-transform active:scale-95">
+                    Pedir Ahora — $380
+                    <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+<div class="absolute right-[-10%] md:right-[-5%] top-1/2 -translate-y-1/2 w-[350px] h-[350px] md:w-[600px] md:h-[600px] z-0">
+<div class="w-full h-full rounded-full overflow-hidden shadow-2xl ring-[12px] ring-white/20">
+<img alt="Pasta Primavera" class="w-full h-full object-cover" data-alt="A top-down, high-quality gourmet photograph of a vibrant pasta primavera dish served in a wide white ceramic bowl. Bright green asparagus, sun-yellow bell peppers, and ruby red cherry tomatoes are artfully arranged among al dente fettuccine. The lighting is bright and natural, casting soft shadows on a clean linen surface. The aesthetic is high-end culinary editorial, emphasizing freshness and color." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDqxaFpF7BpeiEgKh0q1UghEviYP3tFow5zvs1Qv6eY7Npe9-j_IcbVo7T4LR4Yy3vwPQxMDANR_uIjpOMTFljV1Qxq8qyeZAopBymndpRTbm92HgMnH_NmOuVFEZOI19O20GbMG11LirYl_PGYj-9mVlH_PEihe904J1BlRCV1JNs-Xsgtcn_XxBUv9tCoHjPwwtM8sl1dwMIUUNyIYRrePvfftK_5PxiFet18paBsSfQGkCGETf_oUqge0hk9AlG8irQ55XZCfbc"/>
+</div>
+</div>
+</section>
+<!-- Loyalty Tracker -->
+<section class="px-6 mb-16">
+<div class="bg-surface-container-low rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-8">
+<div class="flex-1">
+<h3 class="font-display text-2xl font-bold mb-2">Tu Viaje Culinario</h3>
+<p class="font-body text-on-surface-variant">¡Faltan solo 2 pedidos para tu postre artesanal de cortesía!</p>
+</div>
+<div class="w-full md:w-1/2">
+<div class="flex justify-between items-end mb-3">
+<span class="font-label text-xs font-bold text-primary tracking-widest uppercase">Progreso Nivel Oro</span>
+<span class="font-label text-sm font-bold">8/10</span>
+</div>
+<div class="h-4 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary to-primary-container w-[80%] rounded-full shadow-[0_0_12px_rgba(75,253,57,0.4)]"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Featured Menu (Asymmetrical Grid) -->
+<section class="px-6 mb-16">
+<div class="flex justify-between items-end mb-10">
+<h3 class="font-display text-3xl font-bold">Selección del Chef</h3>
+<a class="font-label text-primary font-bold border-b-2 border-primary-container pb-1 hover:text-primary-dim transition-colors" href="#">Ver menú completo</a>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+<!-- Large Item -->
+<div class="md:col-span-7 bg-surface-container-low rounded-xl overflow-hidden flex flex-col group cursor-pointer transition-all">
+<div class="aspect-[16/10] overflow-hidden">
+<img alt="Bowl Energético" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="A premium food photograph of a fresh power bowl with vibrant ingredients like avocado slices, quinoa, roasted chickpeas, and leafy greens. The lighting is high-key and airy, creating a healthy and appetizing atmosphere. The colors are rich and saturated, showcasing the high quality of the ingredients in a modern, professional culinary style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbMyD2SXtx7Qqo-7dL_jniRb61l1Ev0eyrHMnsg0wsBSaKXYK3w6I9sM_y4QZuq1Rp6GYbxbN5TzxOn8wvMhra2oCFSZ9i-GNZE12K9vnbKChYIyhzaRCn7lPSYe-Q1UKfXVU49v-zeFgbbRxfrpTV8T8S5sWzG0a9OK8NEF3s5zqfflbOymzhZAbVlrOBS7WrUtPg_POJa_x3UP_TSVb2K9odkb9pEcky1FubOQDwMMOs5aK2ebINdA-9QnX-Zhjr_xMvUiGadhg"/>
+</div>
+<div class="p-8">
+<div class="flex justify-between items-start mb-4">
+<h4 class="font-display text-2xl font-bold">Power Bowl de Salmón</h4>
+<span class="font-display text-xl font-bold text-primary">$450</span>
+</div>
+<p class="font-body text-on-surface-variant text-sm line-clamp-2">Base de quinua orgánica, salmón fresco marinado en cítricos y aguacate de temporada.</p>
+</div>
+</div>
+<!-- Small Items Side Stack -->
+<div class="md:col-span-5 grid grid-cols-1 gap-8">
+<div class="bg-surface-container-low rounded-xl overflow-hidden flex items-center group cursor-pointer h-full">
+<div class="w-1/3 aspect-square overflow-hidden">
+<img alt="Postre Chocolate" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="A close-up shot of a gourmet chocolate lava cake with a molten center, served on a dark artisanal plate. The dessert is dusted with powdered sugar and garnished with a single fresh raspberry. The lighting is dramatic and warm, emphasizing the rich textures and decadent mood of a premium restaurant dessert." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgzuFYqSBtB34kDz8rm4odqcy2hjZ1vWfrrQhQcx6C1jbg35VlIPAbk_L7qM7lrJyLQ06NF2dU6IUKu-CNUqycOiVtiW08KRK9tuQxUFAQe83XYHlvsCb1p8wnwokTkLkO76fAdcPRu-Uy9BSs8muC716ZbC2WU0kPoeqdavy7FsgCVDO0J6UY-dsIsEaGQnvVDQg6Suv6srlIjpAJQpgSSPizhTkJeRztwOQFalJNO3X2KTccWoP7-fyrU1TNmjO6dMw7_S7-CXg"/>
+</div>
+<div class="p-6 w-2/3">
+<h4 class="font-display text-lg font-bold mb-1">Volcán de Cacao</h4>
+<p class="font-label text-primary font-bold text-sm">$180</p>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-xl overflow-hidden flex items-center group cursor-pointer h-full">
+<div class="w-1/3 aspect-square overflow-hidden">
+<img alt="Ensalada Verde" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="A lush green salad with vibrant edible flowers, toasted pine nuts, and thin shavings of parmesan cheese. The image is captured in soft, natural daylight on a light marble surface. The overall aesthetic is fresh, organic, and sophisticated, aligning with the premium food delivery app's high-end visual language." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3K3gQAbnWBnfEwiGJNhViz10UX-Cfo4sHzZmdV49GGCOtpdIEfZP-47fKJVePwJzbTSutL1n26j2lLd7FrrTyImS3_q2uDN89DldFg4fZBn7pY0JDntK09g9zsyWHHUFvmXL3csuUdyZmgVDFIuLWDagmrVS_eBlREgOUVVm5HDPemy3l05ErwD07MydIViks-OgOezn3NJ308EPBCCKMpy8cRHM5oXKe1C0vwCEkZ568czXkOYr46tfs09x-dvXeKkiAwUp8cD4"/>
+</div>
+<div class="p-6 w-2/3">
+<h4 class="font-display text-lg font-bold mb-1">Ensalada del Bosque</h4>
+<p class="font-label text-primary font-bold text-sm">$290</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- AI Assistant Widget -->
+<button class="fixed bottom-28 right-6 w-14 h-14 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl rounded-full shadow-lg border border-white/20 flex items-center justify-center z-40 hover:scale-110 active:scale-95 transition-all group">
+<span class="material-symbols-outlined text-primary text-3xl group-hover:rotate-12 transition-transform" data-icon="chat_bubble_outline">chat_bubble_outline</span>
+</button>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-6 left-0 right-0 z-50 flex justify-around items-center px-4 py-2 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] rounded-full glassmorphism contrast shadow-[0_8px_24px_-4px_rgba(44,47,48,0.06)]">
+<!-- Explore (Active) -->
+<a class="flex flex-col items-center justify-center bg-gradient-to-br from-green-600 to-green-400 text-white rounded-full w-12 h-12 shadow-lg scale-90 duration-300 ease-out hover:text-green-500 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="restaurant" style="font-variation-settings: 'FILL' 1;">restaurant</span>
+<span class="font-manrope text-[10px] font-semibold uppercase tracking-widest absolute -bottom-6 text-green-600">Explore</span>
+</a>
+<!-- Orders -->
+<a class="flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 w-12 h-12 scale-90 duration-300 ease-out hover:text-green-500 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
+<span class="font-manrope text-[10px] font-semibold uppercase tracking-widest hidden">Orders</span>
+</a>
+<!-- Rewards -->
+<a class="flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 w-12 h-12 scale-90 duration-300 ease-out hover:text-green-500 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="military_tech">military_tech</span>
+<span class="font-manrope text-[10px] font-semibold uppercase tracking-widest hidden">Rewards</span>
+</a>
+<!-- Profile -->
+<a class="flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 w-12 h-12 scale-90 duration-300 ease-out hover:text-green-500 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-manrope text-[10px] font-semibold uppercase tracking-widest hidden">Profile</span>
+</a>
+</nav>
+</body></html>

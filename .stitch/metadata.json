@@ -1,0 +1,33 @@
+{
+  "name": "projects/5641053766336576746",
+  "projectId": "5641053766336576746",
+  "title": "Plan de Proyecto: Delivery Gastronómico",
+  "visibility": "PRIVATE",
+  "createTime": "2026-03-29T22:53:53.169573Z",
+  "updateTime": "2026-03-29T23:03:58.790655Z",
+  "projectType": "PROJECT_DESIGN",
+  "origin": "STITCH",
+  "deviceType": "DESKTOP",
+  "designTheme": {
+    "colorMode": "LIGHT",
+    "font": "PLUS_JAKARTA_SANS",
+    "roundness": "ROUND_EIGHT",
+    "customColor": "#00D700",
+    "headlineFont": "PLUS_JAKARTA_SANS",
+    "bodyFont": "MANROPE",
+    "labelFont": "MANROPE"
+  },
+  "screens": {
+    "dashboard_admin": {
+      "id": "2707b385fc384029a2d3e720dd619134",
+      "sourceScreen": "projects/5641053766336576746/screens/2707b385fc384029a2d3e720dd619134",
+      "x": 911,
+      "y": 0,
+      "width": 1280,
+      "height": 3480
+    }
+  },
+  "metadata": {
+    "userRole": "OWNER"
+  }
+}
