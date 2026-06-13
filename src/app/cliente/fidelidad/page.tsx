@@ -16,7 +16,6 @@ const recompensas = [
 
 const totalPuntos = historialPuntos.reduce((sum, h) => sum + h.puntos, 0);
 const puntosParaSiguiente = 300;
-const progreso = Math.min((totalPuntos / puntosParaSiguiente) * 100, 100);
 
 export default function FidelidadPage() {
   return (

@@ -54,3 +54,5 @@ screenshot_pages.js
 __pycache__/
 dist/
 .venv/
+
+.vercel

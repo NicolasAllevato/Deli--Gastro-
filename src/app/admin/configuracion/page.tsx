@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import {
-  Save, Settings, Map, Clock, DollarSign, Gift,
-  Star, Bell, Zap, ChevronRight, Plus, Trash2,
+  Save, Settings, Star, Bell, Zap, ChevronRight, Plus, Trash2,
 } from "lucide-react";
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
