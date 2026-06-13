@@ -1,89 +1,103 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
+
+export type OrderStatus = 'Recibidos' | 'En Preparación' | 'En Camino' | 'Finalizados' | 'Cancelado'
+export type ClientTier  = 'Bronce' | 'Plata' | 'Oro' | 'Platino'
 
 export interface Database {
   public: {
     Tables: {
-      global_config: {
-        Row: {
-          id: string
-          cancellation_time_limit_minutes: number
-          google_maps_review_link: string | null
-          cost_per_km: number
-          point_value: number
-          updated_at: string
-        }
-      }
       clients: {
         Row: {
           id: string
-          user_id: string
-          phone: string | null
-          email: string | null
-          full_name: string | null
-          points_balance: number
-          created_at: string
-        }
-      }
-      products: {
-        Row: {
-          id: string
+          user_id: string | null
           name: string
-          description: string | null
-          price: number
-          image_url: string | null
-          is_active: boolean
+          phone: string | null
+          address: string | null
+          tier: ClientTier
+          total_points: number
           created_at: string
+          updated_at: string
         }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          name: string
+          phone?: string | null
+          address?: string | null
+          tier?: ClientTier
+          total_points?: number
+        }
+        Update: {
+          name?: string
+          phone?: string | null
+          address?: string | null
+          tier?: ClientTier
+          total_points?: number
+        }
+        Relationships: []
       }
       orders: {
         Row: {
           id: string
-          client_id: string
-          status: 'pending' | 'preparing' | 'delivering' | 'delivered' | 'cancelled'
+          client_id: string | null
+          status: OrderStatus
+          items_desc: string
           total: number
-          delivery_address: string
-          delivery_lat: number | null
-          delivery_lng: number | null
           created_at: string
-          delivered_at: string | null
+          updated_at: string
         }
-      }
-      order_items: {
-        Row: {
-          id: string
-          order_id: string
-          product_id: string
-          quantity: number
-          unit_price: number
+        Insert: {
+          id?: string
+          client_id?: string | null
+          status?: OrderStatus
+          items_desc: string
+          total: number
         }
+        Update: {
+          status?: OrderStatus
+          items_desc?: string
+          total?: number
+        }
+        Relationships: []
       }
       points_ledger: {
         Row: {
           id: string
           client_id: string
           order_id: string | null
-          points_change: number
-          reason: string
+          delta: number
+          description: string
           created_at: string
         }
-      }
-      reviews: {
-        Row: {
-          id: string
-          order_id: string
+        Insert: {
+          id?: string
           client_id: string
-          rating: number
-          comment: string | null
-          ticket_generated: boolean
-          created_at: string
+          order_id?: string | null
+          delta: number
+          description: string
         }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      global_config: {
+        Row: {
+          key: string
+          value: Json
+          updated_at: string
+        }
+        Insert: {
+          key: string
+          value: Json
+        }
+        Update: {
+          value?: Json
+        }
+        Relationships: []
       }
     }
+    Views: { [_ in never]: never }
+    Functions: { [_ in never]: never }
+    Enums: { [_ in never]: never }
+    CompositeTypes: { [_ in never]: never }
   }
 }

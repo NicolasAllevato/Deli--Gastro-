@@ -26,7 +26,7 @@ const supabase = createClient(url, serviceKey, {
 
 const { data, error } = await supabase.auth.admin.createUser({
   email: "admin@deli-gastro.com",
-  password: "admin",
+  password: "admin123",
   email_confirm: true,
   user_metadata: { role: "admin" },
 });
