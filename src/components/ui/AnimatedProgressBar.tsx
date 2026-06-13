@@ -13,9 +13,8 @@ export function AnimatedProgressBar({ value, max = 100, className }: AnimatedPro
   const target = Math.min((value / max) * 100, 100);
 
   useEffect(() => {
-    let raf1: number;
     let raf2: number;
-    raf1 = requestAnimationFrame(() => {
+    const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => setWidth(target));
     });
     return () => {

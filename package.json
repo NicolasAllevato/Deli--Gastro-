@@ -6,7 +6,7 @@
     "dev": "next dev -p 5178 --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint src",
     "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs"
   },
   "dependencies": {
