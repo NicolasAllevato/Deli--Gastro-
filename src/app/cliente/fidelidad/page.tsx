@@ -37,7 +37,7 @@ export default async function FidelidadPage() {
   const historial = ledger ?? [];
 
   return (
-    <div className="px-6 py-8 max-w-2xl mx-auto space-y-6">
+    <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-2xl mx-auto space-y-6">
       <div>
         <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Mis Recompensas</h2>
         <p className="text-gray-500 text-sm font-medium mt-1">Acumulá puntos con cada pedido</p>
@@ -48,13 +48,13 @@ export default async function FidelidadPage() {
         <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-yellow-50 neumorphic-inset flex items-center justify-center">
           <Star size={36} className="fill-yellow-400 text-yellow-400" />
         </div>
-        <p className="text-5xl font-headline font-black text-gray-800">{totalPuntos}</p>
+        <p className="text-4xl sm:text-5xl font-headline font-black text-gray-800">{totalPuntos}</p>
         <p className="text-gray-500 font-medium mt-1">puntos acumulados</p>
 
         <div className="mt-6">
-          <div className="flex justify-between text-xs font-bold text-gray-500 mb-2">
+          <div className="flex flex-wrap justify-between gap-1 text-xs font-bold text-gray-500 mb-2">
             <span>{totalPuntos} pts</span>
-            <span>{puntosParaSiguiente} pts para el próximo nivel</span>
+            <span className="text-right">{puntosParaSiguiente} pts para el próximo nivel</span>
           </div>
           <AnimatedProgressBar value={totalPuntos} max={puntosParaSiguiente} />
         </div>
@@ -72,23 +72,21 @@ export default async function FidelidadPage() {
             return (
               <div
                 key={recompensa.nombre}
-                className={`neumorphic rounded-[1.5rem] p-4 flex items-center justify-between gap-4 ${disponible ? "neumorphic-hover" : "opacity-60"}`}
+                className={`neumorphic rounded-[1.5rem] p-4 flex items-center gap-3 ${disponible ? "neumorphic-hover" : "opacity-60"}`}
               >
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center ${disponible ? "bg-yellow-50" : "bg-gray-100"}`}>
-                    <Award size={18} className={disponible ? "text-yellow-500" : "text-gray-500"} />
-                  </div>
-                  <div>
-                    <p className="font-headline font-black text-gray-800 text-sm">{recompensa.nombre}</p>
-                    <p className="text-xs text-gray-500">{recompensa.descripcion}</p>
-                  </div>
+                <div className={`w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center shrink-0 ${disponible ? "bg-yellow-50" : "bg-gray-100"}`}>
+                  <Award size={18} className={disponible ? "text-yellow-500" : "text-gray-500"} />
                 </div>
-                <div className="text-right shrink-0">
+                <div className="flex-1 min-w-0">
+                  <p className="font-headline font-black text-gray-800 text-sm truncate">{recompensa.nombre}</p>
+                  <p className="text-xs text-gray-500 truncate">{recompensa.descripcion}</p>
+                </div>
+                <div className="text-right shrink-0 flex flex-col items-end gap-1">
                   <p className="text-xs font-bold text-yellow-600">{recompensa.puntosRequeridos} pts</p>
                   {disponible && (
                     <button
                       type="button"
-                      className="mt-1 px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(255,123,0,0.3)] hover:scale-105 transition-transform"
+                      className="px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(255,123,0,0.3)] hover:scale-105 transition-transform"
                     >
                       Canjear
                     </button>

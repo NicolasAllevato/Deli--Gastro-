@@ -101,7 +101,7 @@ export default function TableroClient({ initialOrders, ventasHoy }: Props) {
   };
 
   return (
-    <section className="p-6 md:p-8 space-y-8 h-full flex flex-col">
+    <section className="p-4 md:p-6 space-y-6 md:space-y-8 h-full flex flex-col">
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0">
         <div className="card-3d p-4 neumorphic rounded-2xl flex items-center justify-between group fade-up-1">

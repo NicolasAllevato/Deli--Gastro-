@@ -3,7 +3,7 @@ import { ShieldAlert, UserCheck, ArrowRight } from "lucide-react";
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-background relative overflow-hidden">
+    <div className="min-h-screen flex flex-col items-center justify-center px-5 py-8 sm:p-8 text-center bg-background relative overflow-hidden">
 
       {/* Subtle background depth — single orb each side */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -16,7 +16,7 @@ export default function Home() {
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl neumorphic mb-5">
           <span className="text-xl select-none">🍽️</span>
         </div>
-        <h1 className="font-headline text-5xl font-black text-gray-800 tracking-tight leading-none">
+        <h1 className="font-headline text-4xl sm:text-5xl font-black text-gray-800 tracking-tight leading-none">
           Deli<span className="text-brand-orange">-</span>Gastro
         </h1>
         <p className="text-gray-500 mt-3 text-sm font-medium max-w-xs mx-auto">
@@ -25,11 +25,11 @@ export default function Home() {
       </div>
 
       {/* Portal cards */}
-      <div className="flex flex-col sm:flex-row gap-5 relative z-10">
+      <div className="flex flex-col sm:flex-row gap-5 relative z-10 w-full max-w-sm sm:max-w-none">
 
         <Link
           href="/admin/tablero"
-          className="portal-card neumorphic p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-56 h-56 group fade-up-1"
+          className="portal-card neumorphic p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-full sm:w-56 h-44 sm:h-56 group fade-up-1"
         >
           <div className="w-14 h-14 rounded-xl neumorphic-inset flex items-center justify-center text-brand-orange group-hover:scale-110 transition-transform duration-200">
             <ShieldAlert size={26} />
@@ -47,7 +47,7 @@ export default function Home() {
 
         <Link
           href="/cliente"
-          className="portal-card neumorphic p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-56 h-56 group fade-up-2"
+          className="portal-card neumorphic p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-full sm:w-56 h-44 sm:h-56 group fade-up-2"
         >
           <div className="w-14 h-14 rounded-xl neumorphic-inset flex items-center justify-center text-brand-green group-hover:scale-110 transition-transform duration-200">
             <UserCheck size={26} />

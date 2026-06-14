@@ -55,7 +55,7 @@ function LoginContent() {
           <p className="text-gray-500 text-sm mt-2">Panel de administración</p>
         </div>
 
-        <div className="neumorphic rounded-3xl p-8 space-y-6">
+        <div className="neumorphic rounded-3xl p-6 sm:p-8 space-y-6">
           <div>
             <h2 className="font-headline font-black text-xl text-gray-800">Iniciá sesión</h2>
             <p className="text-gray-500 text-xs mt-1">Solo para personal autorizado</p>

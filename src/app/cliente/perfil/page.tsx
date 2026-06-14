@@ -78,14 +78,14 @@ export default function PerfilPage() {
   };
 
   return (
-    <div className="px-6 py-8 max-w-2xl mx-auto space-y-6">
+    <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-2xl mx-auto space-y-6">
       <div>
         <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Mi Perfil</h2>
         <p className="text-gray-500 text-sm font-medium mt-1">Tu cuenta en Deli-Gastro</p>
       </div>
 
       {/* Avatar y resumen */}
-      <div className={`neumorphic rounded-[2rem] p-6 flex items-center gap-5 transition-opacity ${loading ? "opacity-50" : "opacity-100"}`}>
+      <div className={`neumorphic rounded-[2rem] p-4 sm:p-6 flex items-center gap-4 sm:gap-5 transition-opacity ${loading ? "opacity-50" : "opacity-100"}`}>
         <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center neumorphic-inset shrink-0">
           <User size={36} className="text-brand-orange" />
         </div>

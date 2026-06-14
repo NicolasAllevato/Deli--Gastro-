@@ -40,7 +40,7 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
   if (submitted) {
     return (
       <div className="max-w-md mx-auto mt-10 text-center space-y-6">
-        <div className="neumorphic p-8 rounded-3xl">
+        <div className="neumorphic p-6 sm:p-8 rounded-3xl">
           <div className="w-16 h-16 mx-auto bg-green-100 rounded-full neumorphic-inset flex items-center justify-center mb-4">
             <Star className="w-8 h-8 text-green-500 fill-green-500" />
           </div>
@@ -70,10 +70,10 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         </div>
       </div>
 
-      <div className="neumorphic p-8 rounded-3xl text-center">
+      <div className="neumorphic p-5 sm:p-8 rounded-3xl text-center">
         <h2 className="font-headline font-bold text-base text-gray-700 mb-6">¿Cómo estuvo tu experiencia?</h2>
 
-        <div className="flex justify-center gap-3 mb-8">
+        <div className="flex justify-center gap-1.5 sm:gap-3 mb-8">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
@@ -82,10 +82,10 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
               onMouseEnter={() => setHoverRating(star)}
               onMouseLeave={() => setHoverRating(0)}
               onClick={() => setRating(star)}
-              className="p-2 transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange/60 rounded-lg"
+              className="p-1.5 sm:p-2 transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange/60 rounded-lg"
             >
               <Star
-                className={`w-12 h-12 transition-colors duration-200 ${
+                className={`w-10 h-10 sm:w-12 sm:h-12 transition-colors duration-200 ${
                   star <= (hoverRating || rating)
                     ? "text-yellow-400 fill-yellow-400 drop-shadow-md"
                     : "text-gray-300"

@@ -1,0 +1,11 @@
+name            = "deli-gastro-dispatcher"
+main            = "index.js"
+compatibility_date  = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cuenta de Cloudflare (completar antes de deployar)
+# account_id = "TU_ACCOUNT_ID"
+
+# Variables de entorno en texto plano (no secretos)
+# [vars]
+# EJEMPLO_VAR = "valor"

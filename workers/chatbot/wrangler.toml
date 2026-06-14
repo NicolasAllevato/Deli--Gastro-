@@ -1,0 +1,19 @@
+name            = "deli-gastro-chatbot"
+main            = "index.js"
+compatibility_date  = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cuenta de Cloudflare (completar antes de deployar)
+# account_id = "TU_ACCOUNT_ID"
+
+# Variables de entorno en texto plano
+# [vars]
+# EJEMPLO_VAR = "valor"
+
+# ANTHROPIC_API_KEY es un SECRET — nunca va en este archivo.
+# Para agregarlo, ejecutar:
+#
+#   wrangler secret put ANTHROPIC_API_KEY
+#
+# Wrangler pedirá el valor de forma interactiva y lo almacenará
+# de forma cifrada en Cloudflare (nunca queda en el repo).

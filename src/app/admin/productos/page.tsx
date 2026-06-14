@@ -58,16 +58,18 @@ export default function AdminProductosPage() {
           <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Catálogo</h2>
           <p className="text-xs font-bold text-gray-500 mt-1 uppercase tracking-widest">Gestiona tu menú</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <Button
             variant="secondary"
-            leftIcon={<Settings2 size={18} />}
+            size="sm"
+            leftIcon={<Settings2 size={16} />}
             onClick={() => setIsManagingCats(true)}
           >
             Categorías
           </Button>
           <Button
-            leftIcon={<Plus size={18} />}
+            size="sm"
+            leftIcon={<Plus size={16} />}
             onClick={() => openProductForm()}
           >
             Nuevo Producto
