@@ -88,13 +88,13 @@ export default function ClienteDashboardPage() {
       <div className="px-5 mb-8 fade-up-3">
         <Link
           href="/cliente/chat"
-          className="neumorphic rounded-2xl p-4 flex items-center justify-between group hover:bg-brand-orange/3 transition-colors duration-200"
+          className="neumorphic rounded-2xl p-4 flex items-center justify-between group hover:bg-[#6b7c45]/8 transition-colors duration-200"
         >
           <div>
             <p className="font-bold text-sm text-gray-800">Asistente Virtual</p>
             <p className="text-xs text-gray-500 mt-0.5">¿Dudas con tu pedido?</p>
           </div>
-          <div className="w-9 h-9 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-[0_4px_12px_rgba(255,123,0,0.3)] group-hover:scale-110 transition-transform duration-200">
+          <div className="w-9 h-9 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-[0_4px_12px_rgba(107,124,69,0.3)] group-hover:scale-110 transition-transform duration-200">
             <MessageSquare size={16} />
           </div>
         </Link>

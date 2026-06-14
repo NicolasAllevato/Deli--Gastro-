@@ -61,13 +61,13 @@ export default async function PedidosPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-200 text-gray-500">
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">ID Pedido</th>
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Fecha</th>
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Cliente</th>
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Items</th>
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Total</th>
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Estado</th>
-                  <th className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Acciones</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">ID Pedido</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Fecha</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Cliente</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Items</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Total</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Estado</th>
+                  <th scope="col" className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest">Acciones</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700">

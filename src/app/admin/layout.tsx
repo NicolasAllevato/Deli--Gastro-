@@ -103,7 +103,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <div className="mt-auto pt-4 border-t border-gray-200/50">
           <div className="px-2">
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Uso del plan</p>
-            <div className="h-1.5 w-full neumorphic-inset rounded-full overflow-hidden">
+            <div
+              role="progressbar"
+              aria-valuenow={66}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Uso del plan: 66%"
+              className="h-1.5 w-full neumorphic-inset rounded-full overflow-hidden"
+            >
               <div className="h-full bg-brand-orange rounded-full" style={{ width: "66%" }} />
             </div>
             <p className="text-[10px] text-gray-500 mt-1.5">66% utilizado</p>

@@ -37,7 +37,7 @@ export default async function FidelidadPage() {
   const historial = ledger ?? [];
 
   return (
-    <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-2xl mx-auto space-y-6">
+    <div className="px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       <div>
         <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Mis Recompensas</h2>
         <p className="text-gray-500 text-sm font-medium mt-1">Acumulá puntos con cada pedido</p>
@@ -56,7 +56,7 @@ export default async function FidelidadPage() {
             <span>{totalPuntos} pts</span>
             <span className="text-right">{puntosParaSiguiente} pts para el próximo nivel</span>
           </div>
-          <AnimatedProgressBar value={totalPuntos} max={puntosParaSiguiente} />
+          <AnimatedProgressBar value={totalPuntos} max={puntosParaSiguiente} label="Progreso hacia el próximo nivel" />
         </div>
       </div>
 
@@ -86,7 +86,8 @@ export default async function FidelidadPage() {
                   {disponible && (
                     <button
                       type="button"
-                      className="px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(255,123,0,0.3)] hover:scale-105 transition-transform"
+                      aria-label={`Canjear: ${recompensa.nombre}`}
+                      className="px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(107,124,69,0.3)] hover:scale-105 transition-transform"
                     >
                       Canjear
                     </button>

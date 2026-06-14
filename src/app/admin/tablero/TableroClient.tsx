@@ -239,7 +239,7 @@ export default function TableroClient({ initialOrders, ventasHoy }: Props) {
                 </div>
                 <button
                   onClick={() => moveOrder(order.id, "Finalizados")}
-                  className="w-full py-2 rounded-xl bg-brand-orange text-white shadow-[0_3px_8px_rgba(255,123,0,0.3)] hover:bg-orange-600 transition-all font-bold text-xs"
+                  className="w-full py-2 rounded-xl bg-brand-orange text-white shadow-[0_3px_8px_rgba(107,124,69,0.3)] hover:bg-orange-600 transition-all font-bold text-xs"
                 >
                   Entregado
                 </button>

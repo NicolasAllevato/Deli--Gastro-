@@ -31,7 +31,7 @@ export function ClienteBottomNav() {
             className={cn(
               "flex items-center justify-center w-10 h-10 rounded-full transition-all duration-200",
               isActive
-                ? "bg-brand-green text-white shadow-[0_3px_8px_rgba(75,253,57,0.3)] scale-105"
+                ? "bg-[#6b7c45] text-white shadow-[0_3px_8px_rgba(107,124,69,0.35)] scale-105"
                 : "text-gray-500 hover:text-gray-700 hover:bg-gray-100",
             )}
           >

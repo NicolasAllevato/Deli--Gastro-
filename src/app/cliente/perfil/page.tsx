@@ -78,7 +78,7 @@ export default function PerfilPage() {
   };
 
   return (
-    <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-2xl mx-auto space-y-6">
+    <div className="px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       <div>
         <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Mi Perfil</h2>
         <p className="text-gray-500 text-sm font-medium mt-1">Tu cuenta en Deli-Gastro</p>

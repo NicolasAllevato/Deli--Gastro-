@@ -97,13 +97,13 @@ export default function ChatPage() {
             <div key={msg.id} className={`flex w-full ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`flex gap-2.5 max-w-[80%] ${msg.sender === "user" ? "flex-row-reverse" : "flex-row"}`}>
 
-                <div className={`w-8 h-8 rounded-full neumorphic-inset flex items-center justify-center flex-shrink-0 ${msg.sender === "user" ? "text-blue-600" : "text-brand-orange"}`} aria-hidden>
+                <div className={`w-8 h-8 rounded-full neumorphic-inset flex items-center justify-center flex-shrink-0 ${msg.sender === "user" ? "text-brand-orange" : "text-brand-orange"}`} aria-hidden>
                   {msg.sender === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
 
                 <div className={`px-4 py-3 rounded-2xl text-sm ${
                   msg.sender === "user"
-                    ? "bg-blue-50 text-blue-900 rounded-tr-none"
+                    ? "bg-[#e8eddc] text-[#2a3a18] rounded-tr-none"
                     : msg.isError
                       ? "bg-red-50 text-red-700 rounded-tl-none"
                       : "neumorphic-inset text-gray-700 rounded-tl-none"
@@ -122,7 +122,7 @@ export default function ChatPage() {
                 </div>
                 <div className="px-4 py-3 rounded-2xl neumorphic-inset rounded-tl-none">
                   <div className="flex gap-1" aria-hidden>
-                    <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" />
                     <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
                     <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }} />
                   </div>

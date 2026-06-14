@@ -6,9 +6,10 @@ interface AnimatedProgressBarProps {
   value: number;
   max?: number;
   className?: string;
+  label?: string;
 }
 
-export function AnimatedProgressBar({ value, max = 100, className }: AnimatedProgressBarProps) {
+export function AnimatedProgressBar({ value, max = 100, className, label }: AnimatedProgressBarProps) {
   const [width, setWidth] = useState(0);
   const target = Math.min((value / max) * 100, 100);
 
@@ -29,6 +30,7 @@ export function AnimatedProgressBar({ value, max = 100, className }: AnimatedPro
       aria-valuenow={value}
       aria-valuemax={max}
       aria-valuemin={0}
+      aria-label={label}
       className={className ?? "h-3 rounded-full neumorphic-inset"}
     >
       <div

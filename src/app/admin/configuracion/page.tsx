@@ -396,10 +396,14 @@ export default function ConfiguracionPage() {
         </Button>
       </div>
 
-      <div className="neumorphic rounded-2xl p-1.5 flex gap-1">
+      <div role="tablist" aria-label="Secciones de configuración" className="neumorphic rounded-2xl p-1.5 flex gap-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`tabpanel-${tab.id}`}
+            id={`tab-${tab.id}`}
             onClick={() => setActiveTab(tab.id)}
             className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all duration-200 ${
               activeTab === tab.id
@@ -418,7 +422,12 @@ export default function ConfiguracionPage() {
           <p className="text-gray-500 text-sm">Cargando configuración...</p>
         </div>
       ) : (
-        <div className="neumorphic rounded-2xl p-5 animate-in fade-in duration-150">
+        <div
+          role="tabpanel"
+          id={`tabpanel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+          className="neumorphic rounded-2xl p-5 animate-in fade-in duration-150"
+        >
           {activeTab === "general" && (
             <TabGeneral config={config} onChange={handleChange} />
           )}
