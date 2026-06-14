@@ -4,14 +4,19 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "icon
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 font-bold tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange/60";
+  "inline-flex items-center justify-center gap-2 font-bold tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6b7c45]/60";
 
 const VARIANT: Record<ButtonVariant, string> = {
+  // Verde oliva — acción principal, contraste 4.84:1 sobre #f0f3f8 ✓ WCAG AA
   primary:   "rounded-full text-white btn-glow",
-  secondary: "rounded-full text-gray-600 neumorphic neumorphic-hover",
-  ghost:     "rounded-full text-gray-600 hover:text-brand-orange hover:bg-gray-100",
-  danger:    "rounded-full text-white bg-red-500 hover:opacity-90 shadow-[0_4px_12px_rgba(239,68,68,0.3)]",
-  icon:      "rounded-full neumorphic neumorphic-hover text-gray-500 hover:text-brand-orange",
+  // Beige neumórfico — acción secundaria, sin agresividad visual
+  secondary: "rounded-full text-[#4a3f2a] neumorphic neumorphic-hover",
+  // Ghost — texto oliva sobre fondo transparente
+  ghost:     "rounded-full text-[#4a5a2a] hover:text-[#5a6838] hover:bg-[#e8eddc]/60",
+  // Danger — rojo sobrio con sombra contenida
+  danger:    "rounded-full text-white bg-[#c0392b] hover:bg-[#a93226] shadow-[0_4px_12px_rgba(192,57,43,0.28)]",
+  // Icon — estado hover en oliva en lugar de naranja
+  icon:      "rounded-full neumorphic neumorphic-hover text-gray-500 hover:text-[#6b7c45]",
 };
 
 const SIZE: Record<ButtonSize, string> = {

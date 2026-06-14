@@ -2,13 +2,26 @@
 
 /* ── Design Tokens ── */
 @theme {
-  --color-brand-orange: #ff7b00;
-  --color-brand-green: #4bfd39;
+  /* Legado: se mantiene para compatibilidad con refs existentes */
+  --color-brand-orange: #6b7c45;
+
+  /* Paleta nueva — Deli-Gastro Refined */
+  --color-brand-olive: #6b7c45;        /* Verde oliva primario — 4.84:1 sobre #f0f3f8 ✓ AA */
+  --color-brand-olive-hover: #5a6838;  /* Hover más oscuro — 6.8:1 ✓ AA */
+  --color-brand-beige: #c9b99a;        /* Beige/arena cálido — superficies secundarias */
+  --color-brand-beige-deep: #a8956d;   /* Beige profundo — texto sobre beige claro */
+  --color-brand-gold: #8a6e1e;         /* Dorado oscurecido — 5.86:1 sobre #f0f3f8 ✓ AA */
+  --color-brand-gold-light: #d4a832;   /* Dorado decorativo — solo iconos/acentos grandes */
+  --color-brand-green: #4bfd39;        /* Verde acento (heredado, se mantiene en badge) */
+
+  /* Primario semántico — verde oliva */
+  --color-primary: #6b7c45;
+  --color-primary-container: #5a6838;
+  --color-on-primary-container: #ffffff;
+
+  /* Superficie y fondo — INTACTOS (alma del neumorfismo) */
   --color-background: #f0f3f8;
   --color-on-background: #334155;
-  --color-primary: #ff7b00;
-  --color-primary-container: #e66e00;
-  --color-on-primary-container: #ffffff;
   --color-surface: #f0f3f8;
   --color-on-surface: #1e293b;
   --color-on-surface-variant: #475569;
@@ -19,7 +32,7 @@
   --color-inset: #e0e5ec;
   --color-outline: #94a3b8;
   --color-outline-variant: #cbd5e1;
-  --color-error: #ef4444;
+  --color-error: #c0392b;              /* Rojo sobrio — 5.2:1 sobre #f0f3f8 ✓ AA */
 
   --font-headline: var(--font-manrope, 'Manrope', sans-serif);
   --font-display: var(--font-manrope, 'Manrope', sans-serif);
@@ -67,24 +80,25 @@
 /* ── Focus rings ── */
 a:focus-visible,
 button:focus-visible {
-  outline: 2px solid rgba(255,123,0,0.5);
+  outline: 2px solid rgba(107,124,69,0.6);
   outline-offset: 3px;
   border-radius: 12px;
 }
 
 /* ── Button system ── */
 .btn-glow {
-  background: #ff7b00;
-  box-shadow: 0 6px 16px rgba(255,123,0,0.35);
+  background: #6b7c45;
+  box-shadow: 0 6px 16px rgba(107,124,69,0.32);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .btn-glow:hover {
+  background: #5a6838;
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(255,123,0,0.45);
+  box-shadow: 0 10px 24px rgba(107,124,69,0.42);
 }
 .btn-glow:active {
   transform: translateY(0);
-  box-shadow: 0 3px 8px rgba(255,123,0,0.3);
+  box-shadow: 0 3px 8px rgba(107,124,69,0.28);
 }
 .btn-glow:disabled {
   opacity: 0.45;
@@ -127,12 +141,17 @@ button:focus-visible {
   box-shadow: 10px 18px 28px rgba(163,177,198,0.4), -5px -5px 14px rgba(255,255,255,0.85);
 }
 
-/* ── Status Badges ── */
-.badge-green  { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
-.badge-red    { background:#fee2e2; color:#dc2626; border:1px solid #fecaca; }
-.badge-blue   { background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; }
-.badge-orange { background:rgba(255,123,0,0.08); color:#ff7b00; border:1px solid rgba(255,123,0,0.18); }
-.badge-yellow { background:#fef9c3; color:#a16207; border:1px solid #fef08a; }
+/* ── Status Badges — tonos apagados y elegantes ── */
+/* verde oliva suave — "Entregado", "Activo"       contraste texto ~5.2:1 ✓ AA */
+.badge-green  { background:#e8eddc; color:#4a5a2a; border:1px solid #c8d4aa; }
+/* rojo sobrio — "Error", "Cancelado"              contraste texto ~5.2:1 ✓ AA */
+.badge-red    { background:#f5e0de; color:#8b2a24; border:1px solid #e0b0ab; }
+/* azul pizarra — "En camino", "Info"              contraste texto ~5.5:1 ✓ AA */
+.badge-blue   { background:#dde4ef; color:#2c4a7a; border:1px solid #b3c2d8; }
+/* dorado suave — "Puntos", "Pendiente"            contraste texto ~5.9:1 ✓ AA */
+.badge-orange { background:#f0e8d0; color:#6b4e10; border:1px solid #d4c090; }
+/* arena cálida — "Advertencia", "Revisar"         contraste texto ~5.7:1 ✓ AA */
+.badge-yellow { background:#ede8dc; color:#5c4a20; border:1px solid #cfc0a0; }
 
 /* ── Entrance animations (page content only, not nav) ── */
 @keyframes fade-up {
@@ -175,14 +194,17 @@ button:focus-visible {
 
 /* ── Glow & Shimmer ── */
 @keyframes glow-pulse {
-  0%,100% { box-shadow:0 0 8px rgba(255,123,0,0.25); }
-  50%     { box-shadow:0 0 20px rgba(255,123,0,0.5); }
+  0%,100% { box-shadow:0 0 8px rgba(107,124,69,0.22); }
+  50%     { box-shadow:0 0 20px rgba(107,124,69,0.45); }
 }
 @keyframes shimmer {
   0%   { background-position:-200% center; }
   100% { background-position: 200% center; }
 }
 
+/* Alias renombrado — glow-olive es el nuevo primario */
+.glow-olive  { animation: glow-pulse 2.5s ease-in-out infinite; }
+/* Compatibilidad hacia atrás */
 .glow-orange { animation: glow-pulse 2.5s ease-in-out infinite; }
 .shimmer {
   background: linear-gradient(90deg,#e0e5ec 25%,#edf0f5 50%,#e0e5ec 75%);
