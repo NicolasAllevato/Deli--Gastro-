@@ -1,22 +1,75 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { User, Phone, MapPin, Star, ShoppingBag, LogOut, ChevronRight, Bell } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
-const mockUsuario = {
-  nombre: "María López",
-  email: "maria.lopez@email.com",
-  telefono: "+54 9 11 1234-5678",
-  direccion: "Av. Corrientes 1234, CABA",
-  puntos: 280,
-  pedidosTotal: 12,
-  miembroDesde: "Marzo 2025",
+interface PerfilData {
+  nombre: string;
+  email: string;
+  telefono: string;
+  direccion: string;
+  puntos: number;
+  pedidosTotal: number;
+  miembroDesde: string;
+}
+
+const PLACEHOLDER: PerfilData = {
+  nombre: "—",
+  email: "—",
+  telefono: "—",
+  direccion: "—",
+  puntos: 0,
+  pedidosTotal: 0,
+  miembroDesde: "—",
 };
+
+function formatMes(iso: string) {
+  return new Date(iso).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+}
 
 export default function PerfilPage() {
   const router = useRouter();
+  const [perfil, setPerfil] = useState<PerfilData>(PLACEHOLDER);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadPerfil() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const [{ data: client }, { count }] = await Promise.all([
+        supabase
+          .from("clients")
+          .select("name, phone, address, total_points, created_at")
+          .eq("user_id", user.id)
+          .single(),
+        supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true }),
+      ]);
+
+      setPerfil({
+        nombre: client?.name ?? user.email?.split("@")[0] ?? "—",
+        email: user.email ?? "—",
+        telefono: client?.phone ?? "—",
+        direccion: client?.address ?? "—",
+        puntos: client?.total_points ?? 0,
+        pedidosTotal: count ?? 0,
+        miembroDesde: client?.created_at ? formatMes(client.created_at) : "—",
+      });
+      setLoading(false);
+    }
+
+    loadPerfil();
+  }, []);
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -32,14 +85,16 @@ export default function PerfilPage() {
       </div>
 
       {/* Avatar y resumen */}
-      <div className="neumorphic rounded-[2rem] p-6 flex items-center gap-5">
+      <div className={`neumorphic rounded-[2rem] p-6 flex items-center gap-5 transition-opacity ${loading ? "opacity-50" : "opacity-100"}`}>
         <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center neumorphic-inset shrink-0">
           <User size={36} className="text-brand-orange" />
         </div>
         <div className="min-w-0">
-          <p className="font-headline font-black text-xl text-gray-800 truncate">{mockUsuario.nombre}</p>
-          <p className="text-sm text-gray-500 truncate">{mockUsuario.email}</p>
-          <p className="text-xs text-gray-500 mt-1">Miembro desde {mockUsuario.miembroDesde}</p>
+          <p className="font-headline font-black text-xl text-gray-800 truncate">{perfil.nombre}</p>
+          <p className="text-sm text-gray-500 truncate">{perfil.email}</p>
+          {perfil.miembroDesde !== "—" && (
+            <p className="text-xs text-gray-500 mt-1">Miembro desde {perfil.miembroDesde}</p>
+          )}
         </div>
       </div>
 
@@ -48,14 +103,14 @@ export default function PerfilPage() {
         <div className="neumorphic rounded-[1.5rem] p-4 text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
             <Star size={16} className="fill-yellow-400 text-yellow-400" />
-            <span className="font-headline font-black text-2xl text-gray-800">{mockUsuario.puntos}</span>
+            <span className="font-headline font-black text-2xl text-gray-800">{perfil.puntos}</span>
           </div>
           <p className="text-xs text-gray-500 font-medium">Puntos acumulados</p>
         </div>
         <div className="neumorphic rounded-[1.5rem] p-4 text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
             <ShoppingBag size={16} className="text-brand-orange" />
-            <span className="font-headline font-black text-2xl text-gray-800">{mockUsuario.pedidosTotal}</span>
+            <span className="font-headline font-black text-2xl text-gray-800">{perfil.pedidosTotal}</span>
           </div>
           <p className="text-xs text-gray-500 font-medium">Pedidos realizados</p>
         </div>
@@ -68,13 +123,13 @@ export default function PerfilPage() {
           <div className="w-9 h-9 rounded-full neumorphic-inset flex items-center justify-center shrink-0">
             <Phone size={15} className="text-gray-500" />
           </div>
-          <span>{mockUsuario.telefono}</span>
+          <span>{perfil.telefono}</span>
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-600">
           <div className="w-9 h-9 rounded-full neumorphic-inset flex items-center justify-center shrink-0">
             <MapPin size={15} className="text-gray-500" />
           </div>
-          <span>{mockUsuario.direccion}</span>
+          <span>{perfil.direccion}</span>
         </div>
       </div>
 
