@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { createAdminClient } from "@/utils/supabase/admin";

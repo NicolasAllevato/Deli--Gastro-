@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import Link from "next/link";
 import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight } from "lucide-react";
 import { createAdminClient } from "@/utils/supabase/admin";

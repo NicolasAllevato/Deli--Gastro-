@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { createAdminClient } from "@/utils/supabase/admin";
 import PuntosClient, { type ClientePuntos } from "./PuntosClient";
 import type { ClientTier } from "@/types/database";

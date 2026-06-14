@@ -17,7 +17,7 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
   const body = await req.json() as Record<string, unknown>;
 
-  const rows = Object.entries(body).map(([key, value]) => ({ key, value: value as Json }));
+  const rows: Array<{ key: string; value: Json }> = Object.entries(body).map(([key, value]) => ({ key, value: value as Json }));
   if (rows.length === 0) return NextResponse.json({ ok: true });
 
   const supabase = createAdminClient();

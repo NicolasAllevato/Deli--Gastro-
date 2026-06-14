@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { createAdminClient } from "@/utils/supabase/admin";
 import TableroClient from "./TableroClient";
 

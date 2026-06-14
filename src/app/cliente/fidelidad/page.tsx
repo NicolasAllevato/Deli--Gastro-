@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { Star, Gift, TrendingUp, Award } from "lucide-react";
 import { AnimatedProgressBar } from "@/components/ui/AnimatedProgressBar";
 import { createAdminClient } from "@/utils/supabase/admin";
