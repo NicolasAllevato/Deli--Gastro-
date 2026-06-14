@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!rateLimit(getClientIp(req), 30, 60_000)) {
+  if (!(await rateLimit(getClientIp(req), 30, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes. Intentá en un momento." }, { status: 429 });
   }
 

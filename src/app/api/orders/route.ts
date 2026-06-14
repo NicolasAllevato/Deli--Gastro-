@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import type { OrderStatus } from "@/types/database";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
 ];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!(await rateLimit(getClientIp(req), 200, 60_000))) {
+    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+  }
+
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
@@ -20,6 +25,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!(await rateLimit(getClientIp(req), 10, 60_000))) {
+    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+  }
+
   const body = await req.json() as { items_desc?: string; total?: number; client_id?: string };
 
   if (!body.items_desc || body.total == null) {
@@ -42,6 +51,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
+    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+  }
+
   const body = await req.json() as { id?: string; status?: OrderStatus };
 
   if (!body.id || !body.status || !VALID_STATUSES.includes(body.status)) {

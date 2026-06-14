@@ -1,20 +1,38 @@
-﻿import Link from "next/link";
-import { Star, Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight } from "lucide-react";
+import Link from "next/link";
+import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight } from "lucide-react";
+import { createAdminClient } from "@/utils/supabase/admin";
 
-const mockPedidos = [
-  { id: "ORD-101", fecha: "01/05/2026", items: ["Power Bowl de Salmón", "Volcán de Cacao"], total: 16630, estado: "Entregado",      puntos: 83, orderId: "101" },
-  { id: "ORD-098", fecha: "28/04/2026", items: ["Pasta Primavera", "Ensalada del Bosque"],  total: 14790, estado: "Entregado",      puntos: 74, orderId: "098" },
-  { id: "ORD-089", fecha: "20/04/2026", items: ["Hamburguesa Clásica"],                     total: 13500, estado: "Cancelado",     puntos: 0,  orderId: "089" },
-  { id: "ORD-075", fecha: "10/04/2026", items: ["Ensalada del Bosque", "Volcán de Cacao"],  total: 10470, estado: "En Preparación", puntos: 0,  orderId: "075" },
-];
-
-const estadoConfig: Record<string, { icon: React.ReactNode; classes: string }> = {
-  Entregado:        { icon: <CheckCircle size={12} />, classes: "badge-green" },
+const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> = {
+  Finalizados:      { icon: <CheckCircle size={12} />, classes: "badge-green" },
   Cancelado:        { icon: <XCircle size={12} />,    classes: "badge-red" },
   "En Preparación": { icon: <Clock size={12} />,      classes: "badge-blue" },
+  Recibidos:        { icon: <Clock size={12} />,      classes: "badge-yellow" },
+  "En Camino":      { icon: <Clock size={12} />,      classes: "badge-orange" },
 };
 
-export default function ClientePedidosPage() {
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatId(uuid: string) {
+  return `#${uuid.slice(0, 8).toUpperCase()}`;
+}
+
+export default async function ClientePedidosPage() {
+  const supabase = createAdminClient();
+
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("id, status, items_desc, total, created_at")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  const pedidos = orders ?? [];
+
   return (
     <div className="px-5 py-6 max-w-2xl mx-auto pb-8">
 
@@ -23,10 +41,10 @@ export default function ClientePedidosPage() {
         <p className="text-gray-500 text-sm mt-0.5">Historial de tus órdenes</p>
       </div>
 
-      {mockPedidos.length > 0 ? (
+      {pedidos.length > 0 ? (
         <div className="space-y-3">
-          {mockPedidos.map((pedido, i) => {
-            const cfg = estadoConfig[pedido.estado] ?? estadoConfig["En Preparación"];
+          {pedidos.map((pedido, i) => {
+            const cfg = ESTADO_CONFIG[pedido.status] ?? ESTADO_CONFIG["En Preparación"];
             return (
               <div
                 key={pedido.id}
@@ -34,31 +52,23 @@ export default function ClientePedidosPage() {
               >
                 <div className="flex justify-between items-start gap-2">
                   <div>
-                    <p className="font-bold text-sm text-gray-800">{pedido.id}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">{pedido.fecha}</p>
+                    <p className="font-bold text-sm text-gray-800">{formatId(pedido.id)}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">{formatDate(pedido.created_at)}</p>
                   </div>
                   <span className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold flex-shrink-0 ${cfg.classes}`}>
-                    {cfg.icon}{pedido.estado}
+                    {cfg.icon}{pedido.status}
                   </span>
                 </div>
 
-                <p className="text-xs text-gray-500 truncate">{pedido.items.join(", ")}</p>
+                <p className="text-xs text-gray-500 truncate">{pedido.items_desc}</p>
 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-200/50">
-                  <div className="flex items-center gap-2">
-                    <span className="font-headline font-black text-brand-orange text-base">
-                      ${pedido.total.toLocaleString("es-AR")}
-                    </span>
-                    {pedido.puntos > 0 && (
-                      <span className="flex items-center gap-0.5 text-[11px] font-bold badge-yellow px-2 py-0.5 rounded-full">
-                        <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                        +{pedido.puntos} pts
-                      </span>
-                    )}
-                  </div>
-                  {pedido.estado === "Entregado" && (
+                  <span className="font-headline font-black text-brand-orange text-base">
+                    ${Number(pedido.total).toLocaleString("es-AR")}
+                  </span>
+                  {pedido.status === "Finalizados" && (
                     <Link
-                      href={`/cliente/resenas/${pedido.orderId}`}
+                      href={`/cliente/resenas/${pedido.id}`}
                       className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-orange-600 transition-colors"
                     >
                       Reseñar <ChevronRight size={13} />
@@ -76,7 +86,10 @@ export default function ClientePedidosPage() {
           </div>
           <p className="font-bold text-gray-500 text-sm">No tenés pedidos aún</p>
           <p className="text-gray-500 text-xs mt-1">¡Explorá el menú y hacé tu primer pedido!</p>
-          <Link href="/cliente" className="inline-flex items-center gap-1.5 mt-5 px-6 py-2.5 rounded-full bg-brand-orange text-white font-bold text-sm btn-glow">
+          <Link
+            href="/cliente"
+            className="inline-flex items-center gap-1.5 mt-5 px-6 py-2.5 rounded-full bg-brand-orange text-white font-bold text-sm btn-glow"
+          >
             Ver Menú <ArrowRight size={14} />
           </Link>
         </div>

@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   }
 
   // Rate limiting estricto para el endpoint más sensible
-  if (!rateLimit(getClientIp(req), 20, 60_000)) {
+  if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 

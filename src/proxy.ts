@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
 // Auth desactivada temporalmente — acceso libre a admin y cliente
-export function proxy(_req: NextRequest) {
+export function proxy(): NextResponse {
   return NextResponse.next();
 }
 
