@@ -25,7 +25,7 @@ export default function Home() {
       </div>
 
       {/* Portal cards */}
-      <div className="flex flex-col sm:flex-row gap-5 relative z-10 w-full max-w-sm sm:max-w-none">
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-5 relative z-10 w-full max-w-sm sm:max-w-none">
 
         <Link
           href="/admin/tablero"
