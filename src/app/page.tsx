@@ -25,7 +25,7 @@ export default function Home() {
       </div>
 
       {/* Portal cards */}
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-5 relative z-10 w-full max-w-sm sm:max-w-none">
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-5 relative z-10 mx-auto w-full max-w-xs sm:max-w-none">
 
         <Link
           href="/admin/tablero"
@@ -34,7 +34,7 @@ export default function Home() {
           <div className="w-14 h-14 rounded-xl neumorphic-inset flex items-center justify-center text-brand-orange group-hover:scale-110 transition-transform duration-200">
             <ShieldAlert size={26} />
           </div>
-          <div>
+          <div className="text-center">
             <h2 className="text-base font-black text-gray-800 group-hover:text-brand-orange transition-colors duration-200">
               Portal Admin
             </h2>
@@ -52,7 +52,7 @@ export default function Home() {
           <div className="w-14 h-14 rounded-xl neumorphic-inset flex items-center justify-center text-brand-green group-hover:scale-110 transition-transform duration-200">
             <UserCheck size={26} />
           </div>
-          <div>
+          <div className="text-center">
             <h2 className="text-base font-black text-gray-800 group-hover:text-brand-green transition-colors duration-200">
               Portal Cliente
             </h2>
