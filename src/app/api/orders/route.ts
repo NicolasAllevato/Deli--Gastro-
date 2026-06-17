@@ -8,7 +8,7 @@ const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
 ];
 
-async function requireAuth(req: NextRequest): Promise<NextResponse | null> {
+async function requireAuth(): Promise<NextResponse | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 200, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const denied = await requireAuth(req);
+  const denied = await requireAuth();
   if (denied) return denied;
 
   const supabase = createAdminClient();
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 10, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const denied = await requireAuth(req);
+  const denied = await requireAuth();
   if (denied) return denied;
 
   const body = await req.json() as { items_desc?: string; total?: number; client_id?: string };
@@ -66,7 +66,7 @@ export async function PATCH(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const denied = await requireAuth(req);
+  const denied = await requireAuth();
   if (denied) return denied;
 
   const body = await req.json() as { id?: string; status?: OrderStatus };
