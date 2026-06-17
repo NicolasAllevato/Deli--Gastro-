@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, LogIn, Loader2, ShieldCheck, User } from "lucide-react";
+import { Eye, EyeOff, LogIn, Loader2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
 function LoginContent() {
@@ -125,28 +125,6 @@ function LoginContent() {
           </form>
         </div>
 
-        {/* Acceso directo sin login */}
-        <div className="mt-6 space-y-3">
-          <p className="text-center text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-            Acceso rápido
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <Link
-              href="/admin/tablero"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl neumorphic text-sm font-bold text-gray-700 hover:text-brand-orange transition-colors"
-            >
-              <ShieldCheck size={16} />
-              Admin
-            </Link>
-            <Link
-              href="/cliente"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl neumorphic text-sm font-bold text-gray-700 hover:text-brand-orange transition-colors"
-            >
-              <User size={16} />
-              Cliente
-            </Link>
-          </div>
-        </div>
       </div>
     </div>
   );

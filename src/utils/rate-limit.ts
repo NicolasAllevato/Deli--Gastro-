@@ -21,8 +21,12 @@ function rateLimitMemory(key: string, limit: number, windowMs: number): boolean 
 function createUpstashClient(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  return new Redis({ url, token });
+  if (!url || !token || !url.startsWith("https://")) return null;
+  try {
+    return new Redis({ url, token });
+  } catch {
+    return null;
+  }
 }
 
 const upstashRedis: Redis | null = createUpstashClient();
