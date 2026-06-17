@@ -64,10 +64,11 @@ function LoginContent() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">
+              <label htmlFor="login-email" className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">
                 Email
               </label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -80,11 +81,12 @@ function LoginContent() {
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">
+              <label htmlFor="login-password" className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">
                 Contraseña
               </label>
               <div className="relative">
                 <input
+                  id="login-password"
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={e => setPassword(e.target.value)}

@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
 
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight } from "lucide-react";
+import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> = {
@@ -25,18 +27,32 @@ function formatId(uuid: string) {
 }
 
 export default async function ClientePedidosPage() {
+  const authClient = await createClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) redirect("/login");
+
   const supabase = createAdminClient();
 
-  const { data: orders } = await supabase
-    .from("orders")
-    .select("id, status, items_desc, total, created_at")
-    .order("created_at", { ascending: false })
-    .limit(50);
+  // Obtener el registro del cliente vinculado al usuario autenticado
+  const { data: clientData } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const { data: orders } = clientData
+    ? await supabase
+        .from("orders")
+        .select("id, status, items_desc, total, created_at")
+        .eq("client_id", clientData.id)
+        .order("created_at", { ascending: false })
+        .limit(50)
+    : { data: [] };
 
   const pedidos = orders ?? [];
 
   return (
-    <div className="px-5 py-6 max-w-2xl mx-auto pb-8">
+    <div className="px-4 py-6 max-w-2xl mx-auto pb-8">
 
       <div className="mb-6 fade-up">
         <h2 className="font-headline text-2xl font-black text-gray-800">Mis Pedidos</h2>
@@ -71,7 +87,7 @@ export default async function ClientePedidosPage() {
                   {pedido.status === "Finalizados" && (
                     <Link
                       href={`/cliente/resenas/${pedido.id}`}
-                      className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-orange-600 transition-colors"
+                      className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-[#5a6838] transition-colors"
                     >
                       Reseñar <ChevronRight size={13} />
                     </Link>

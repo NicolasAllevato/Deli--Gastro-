@@ -21,11 +21,11 @@ export interface ClientePuntos {
   pedidos: PedidoPuntos[];
 }
 
-const NIVEL_CONFIG: Record<string, { badge: string }> = {
-  Bronce:  { badge: "bg-amber-50 text-amber-700 border-amber-200" },
-  Plata:   { badge: "bg-slate-100 text-slate-600 border-slate-300" },
-  Oro:     { badge: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  Platino: { badge: "badge-orange" },
+const NIVEL_TONE: Record<string, "yellow" | "blue" | "orange" | "green"> = {
+  Bronce:  "yellow",
+  Plata:   "blue",
+  Oro:     "orange",
+  Platino: "orange",
 };
 
 const PROMOS = [
@@ -114,7 +114,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
           {filtrados.map(cliente => {
             const isOpen = expandedId === cliente.id;
             const promos = getPromos(cliente.puntosTotales);
-            const cfg = NIVEL_CONFIG[cliente.nivel] ?? NIVEL_CONFIG.Bronce;
+            const nivelTone = NIVEL_TONE[cliente.nivel] ?? "yellow";
 
             return (
               <div key={cliente.id} className="neumorphic rounded-2xl overflow-hidden">
@@ -130,9 +130,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm text-gray-800 truncate">{cliente.nombre}</p>
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${cfg.badge}`}>
-                        {cliente.nivel}
-                      </span>
+                      <Badge tone={nivelTone}>{cliente.nivel}</Badge>
                       {promos.length > 0 && (
                         <Badge tone="green">{promos.length} promo{promos.length > 1 ? "s" : ""}</Badge>
                       )}

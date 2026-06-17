@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
 
+import { redirect } from "next/navigation";
 import { Star, Gift, TrendingUp, Award } from "lucide-react";
 import { AnimatedProgressBar } from "@/components/ui/AnimatedProgressBar";
+import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 const RECOMPENSAS = [
@@ -19,22 +21,28 @@ function formatDate(iso: string) {
 }
 
 export default async function FidelidadPage() {
+  const authClient = await createClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) redirect("/login");
+
   const supabase = createAdminClient();
 
-  const [{ data: clients }, { data: ledger }] = await Promise.all([
-    supabase
-      .from("clients")
-      .select("total_points, tier")
-      .order("total_points", { ascending: false })
-      .limit(1),
-    supabase
-      .from("points_ledger")
-      .select("id, delta, description, created_at")
-      .order("created_at", { ascending: false })
-      .limit(10),
-  ]);
+  const { data: clientData } = await supabase
+    .from("clients")
+    .select("id, total_points, tier")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  const totalPuntos = clients?.[0]?.total_points ?? 0;
+  const { data: ledger } = clientData
+    ? await supabase
+        .from("points_ledger")
+        .select("id, delta, description, created_at")
+        .eq("client_id", clientData.id)
+        .order("created_at", { ascending: false })
+        .limit(10)
+    : { data: [] };
+
+  const totalPuntos = clientData?.total_points ?? 0;
   const puntosParaSiguiente = 300;
   const historial = ledger ?? [];
 

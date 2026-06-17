@@ -123,8 +123,8 @@ export default function ChatPage() {
                 <div className="px-4 py-3 rounded-2xl neumorphic-inset rounded-tl-none">
                   <div className="flex gap-1" aria-hidden>
                     <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" />
-                    <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
-                    <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }} />
+                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: "0.2s" }} />
+                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: "0.4s" }} />
                   </div>
                 </div>
               </div>

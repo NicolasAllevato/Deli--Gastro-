@@ -39,6 +39,7 @@ export default function TableroClient({ initialOrders, ventasHoy }: Props) {
   const [orders, setOrders] = useState<KanbanOrder[]>(initialOrders);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [newOrderError, setNewOrderError] = useState<string | null>(null);
 
   const getOrders = (status: OrderStatus) => orders.filter((o) => o.status === status);
 
@@ -94,7 +95,7 @@ export default function TableroClient({ initialOrders, ventasHoy }: Props) {
         timestamp: new Date().toISOString(),
       }).catch(() => null);
     } catch {
-      // Error silencioso — modal sigue abierto para reintento
+      setNewOrderError("No se pudo crear el pedido. Intentá de nuevo.");
     } finally {
       setIsSubmitting(false);
     }
@@ -282,7 +283,7 @@ export default function TableroClient({ initialOrders, ventasHoy }: Props) {
       {/* Modal: Nuevo Pedido */}
       <Modal
         open={isNewOrderModalOpen}
-        onClose={() => setIsNewOrderModalOpen(false)}
+        onClose={() => { setIsNewOrderModalOpen(false); setNewOrderError(null); }}
         title="Nuevo Pedido"
         footer={
           <Button type="submit" form="new-order-form" fullWidth disabled={isSubmitting}>
@@ -294,6 +295,11 @@ export default function TableroClient({ initialOrders, ventasHoy }: Props) {
           <Field label="Nombre del Cliente" name="customer" type="text" placeholder="Ej. Juan Pérez" />
           <Field label="Ítems (Descripción)" name="items" type="text" required placeholder="Ej. 2 items • Delivery" />
           <Field label="Precio Total ($)" name="price" type="number" step="100" required placeholder="Ej. 3500" />
+          {newOrderError && (
+            <p role="alert" className="text-xs font-bold text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+              {newOrderError}
+            </p>
+          )}
         </form>
       </Modal>
     </section>

@@ -1,5 +1,5 @@
 ﻿import Link from "next/link";
-import { ShieldAlert, UserCheck, ArrowRight } from "lucide-react";
+import { ShieldAlert, UserCheck, ArrowRight, UtensilsCrossed } from "lucide-react";
 
 export default function Home() {
   return (
@@ -14,7 +14,7 @@ export default function Home() {
       {/* Logo */}
       <div className="fade-up relative z-10 mb-10">
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl neumorphic mb-5">
-          <span className="text-xl select-none">🍽️</span>
+          <UtensilsCrossed size={24} className="text-brand-orange" aria-hidden />
         </div>
         <h1 className="font-headline text-4xl sm:text-5xl font-black text-gray-800 tracking-tight leading-none">
           Deli<span className="text-brand-orange">-</span>Gastro

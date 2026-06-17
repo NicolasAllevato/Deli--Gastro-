@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { createClient } from "@/utils/supabase/server";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import type { OrderStatus } from "@/types/database";
 
@@ -7,10 +8,19 @@ const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
 ];
 
+async function requireAuth(req: NextRequest): Promise<NextResponse | null> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 200, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
+  const denied = await requireAuth(req);
+  if (denied) return denied;
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -28,6 +38,8 @@ export async function POST(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 10, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
+  const denied = await requireAuth(req);
+  if (denied) return denied;
 
   const body = await req.json() as { items_desc?: string; total?: number; client_id?: string };
 
@@ -54,6 +66,8 @@ export async function PATCH(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
+  const denied = await requireAuth(req);
+  if (denied) return denied;
 
   const body = await req.json() as { id?: string; status?: OrderStatus };
 
