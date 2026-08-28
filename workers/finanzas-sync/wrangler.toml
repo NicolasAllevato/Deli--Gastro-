@@ -1,0 +1,12 @@
+name = "finanzas-sync"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["0 * * * *"] # cada hora, en punto
+
+# Secrets requeridos (setear con `npx wrangler secret put <NOMBRE>` desde
+# este directorio, una vez que el proyecto Supabase real esté conectado):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY

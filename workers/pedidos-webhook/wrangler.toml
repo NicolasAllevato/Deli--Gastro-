@@ -1,0 +1,11 @@
+name = "pedidos-webhook"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets requeridos (NO van acá, se setean con `npx wrangler secret put <NOMBRE>`
+# desde este directorio, una vez que el proyecto Supabase real esté conectado):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   WEBHOOK_SECRET       (compartido con el llamador; firma HMAC-SHA256 del
+#                         body en el header `x-webhook-signature`, hex)

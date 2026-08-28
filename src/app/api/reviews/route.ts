@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 
-const ORDER_ID_REGEX = /^[A-Za-z0-9#-]{1,50}$/;
 const MAX_FEEDBACK_LENGTH = 1000;
+
+const reviewSchema = z.object({
+  orderId: z.uuid("orderId inválido"),
+  rating: z.number().int().min(1).max(5),
+  feedback: z.string().max(MAX_FEEDBACK_LENGTH).optional(),
+});
+
+function zodErrorMessage(error: z.ZodError): string {
+  return error.issues[0]?.message ?? "Body inválido.";
+}
 
 export async function POST(req: Request) {
   // Autenticación requerida — no se aceptan reseñas anónimas
@@ -18,21 +29,42 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as { orderId?: unknown; rating?: unknown; feedback?: unknown };
-    const { orderId, rating, feedback } = body;
-
-    if (typeof orderId !== "string" || !ORDER_ID_REGEX.test(orderId)) {
-      return NextResponse.json({ error: "orderId inválido" }, { status: 400 });
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Body inválido." }, { status: 400 });
     }
 
-    if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
-      return NextResponse.json({ error: "rating debe ser entero entre 1 y 5" }, { status: 400 });
+    const parsed = reviewSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
+    }
+    const { orderId, rating, feedback } = parsed.data;
+
+    // Ownership check: el pedido reseñado debe pertenecer al cliente
+    // autenticado. Sin esto, cualquier usuario logueado podría enviar una
+    // reseña (y potencialmente generar un ticket) para el pedido de otro
+    // cliente adivinando/enumerando UUIDs (IDOR).
+    const adminClient = createAdminClient();
+    const { data: clientRow } = await adminClient
+      .from("clients")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!clientRow) {
+      return NextResponse.json({ error: "Cliente no encontrado." }, { status: 403 });
     }
 
-    if (feedback !== undefined) {
-      if (typeof feedback !== "string" || feedback.length > MAX_FEEDBACK_LENGTH) {
-        return NextResponse.json({ error: "feedback demasiado largo" }, { status: 400 });
-      }
+    const { data: orderRow } = await adminClient
+      .from("orders")
+      .select("id, client_id")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (!orderRow || orderRow.client_id !== clientRow.id) {
+      return NextResponse.json({ error: "No autorizado para reseñar este pedido." }, { status: 403 });
     }
 
     const webhookUrl = process.env.N8N_WEBHOOK_URL_REVIEWS;

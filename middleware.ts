@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getUserRole } from "@/lib/auth/roles";
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
@@ -23,6 +24,20 @@ export async function middleware(req: NextRequest) {
 
   if (!user) {
     return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  const role = getUserRole(user);
+  const { pathname } = req.nextUrl;
+
+  // Un cliente autenticado no puede entrar al portal admin.
+  if (pathname.startsWith("/admin") && role !== "admin") {
+    return NextResponse.redirect(new URL("/cliente", req.url));
+  }
+
+  // El admin usa su propio portal; se lo redirige fuera del portal cliente
+  // para mantener los flujos separados.
+  if (pathname.startsWith("/cliente") && role === "admin") {
+    return NextResponse.redirect(new URL("/admin/tablero", req.url));
   }
 
   return res;
