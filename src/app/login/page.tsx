@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, LogIn, Loader2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
+import { isDemoMode } from "@/lib/demo/mode";
+import { DemoAccessPanel } from "@/components/demo/DemoAccessPanel";
 
 function LoginContent() {
   const router = useRouter();
@@ -54,6 +56,17 @@ function LoginContent() {
           <p className="text-gray-500 text-sm mt-2">Panel de administración</p>
         </div>
 
+        {isDemoMode() ? (
+          <div className="neumorphic rounded-3xl p-6 sm:p-8 space-y-6">
+            <div>
+              <h2 className="font-headline font-black text-xl text-gray-800">Modo demostración</h2>
+              <p className="text-gray-500 text-xs mt-1">
+                Elegí un rol para recorrer la plataforma con datos de ejemplo. No se guarda nada.
+              </p>
+            </div>
+            <DemoAccessPanel />
+          </div>
+        ) : (
         <div className="neumorphic rounded-3xl p-6 sm:p-8 space-y-6">
           <div>
             <h2 className="font-headline font-black text-xl text-gray-800">Iniciá sesión</h2>
@@ -125,6 +138,7 @@ function LoginContent() {
             </button>
           </form>
         </div>
+        )}
 
       </div>
     </div>

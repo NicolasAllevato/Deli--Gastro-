@@ -2,6 +2,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type OrderStatus = 'Recibidos' | 'En Preparación' | 'En Camino' | 'Finalizados' | 'Cancelado'
 export type ClientTier  = 'Bronce' | 'Plata' | 'Oro' | 'Platino'
+export type PaymentMethod = 'Efectivo' | 'Tarjeta' | 'Mercado Pago'
 
 export interface Database {
   public: {
@@ -43,6 +44,13 @@ export interface Database {
           status: OrderStatus
           items_desc: string
           total: number
+          delivery_fee: number
+          delivery_address: string | null
+          delivery_lat: number | null
+          delivery_lng: number | null
+          payment_method: PaymentMethod | null
+          notes: string | null
+          courier_name: string | null
           created_at: string
           updated_at: string
         }
@@ -52,11 +60,19 @@ export interface Database {
           status?: OrderStatus
           items_desc: string
           total: number
+          delivery_fee?: number
+          delivery_address?: string | null
+          delivery_lat?: number | null
+          delivery_lng?: number | null
+          payment_method?: PaymentMethod | null
+          notes?: string | null
+          courier_name?: string | null
         }
         Update: {
           status?: OrderStatus
           items_desc?: string
           total?: number
+          courier_name?: string | null
         }
         Relationships: []
       }
@@ -75,6 +91,78 @@ export interface Database {
           order_id?: string | null
           delta: number
           description: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      categories: {
+        Row: {
+          id: string
+          name: string
+          description: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string
+          is_active?: boolean
+        }
+        Update: {
+          name?: string
+          description?: string
+          is_active?: boolean
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          id: string
+          category_id: string | null
+          name: string
+          description: string
+          price: number
+          image_url: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          category_id?: string | null
+          name: string
+          description?: string
+          price: number
+          image_url?: string
+          is_active?: boolean
+        }
+        Update: {
+          category_id?: string | null
+          name?: string
+          description?: string
+          price?: number
+          image_url?: string
+          is_active?: boolean
+        }
+        Relationships: []
+      }
+      reviews: {
+        Row: {
+          id: string
+          order_id: string
+          client_id: string
+          rating: number
+          feedback: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          order_id: string
+          client_id: string
+          rating: number
+          feedback?: string | null
         }
         Update: Record<string, never>
         Relationships: []

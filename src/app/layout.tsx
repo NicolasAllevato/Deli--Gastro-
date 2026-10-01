@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, Inter } from "next/font/google";
 import "./globals.css";
+import { DemoBanner } from "@/components/demo/DemoBanner";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${manrope.variable} ${inter.variable} antialiased`}>
         {children}
+        <DemoBanner />
       </body>
     </html>
   );

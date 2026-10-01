@@ -46,4 +46,19 @@ export async function requireRole(role: UserRole): Promise<AuthorizationResult> 
   return result;
 }
 
+/**
+ * Igual que `requireRole` pero acepta varios roles (ej. admin y repartidor
+ * comparten el listado de pedidos con distinto alcance).
+ */
+export async function requireAnyRole(roles: readonly UserRole[]): Promise<AuthorizationResult> {
+  const result = await requireAuth();
+  if (isError(result)) return result;
+
+  if (!roles.includes(result.role)) {
+    return { error: NextResponse.json({ error: "Acceso denegado." }, { status: 403 }) };
+  }
+
+  return result;
+}
+
 export { isError as isAuthorizationError };

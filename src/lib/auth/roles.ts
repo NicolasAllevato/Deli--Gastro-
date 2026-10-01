@@ -10,7 +10,7 @@ import type { User } from "@supabase/supabase-js";
  * `supabase.auth.updateUser()` desde el cliente — a diferencia de
  * `user_metadata`, que sí es editable por el propio usuario.
  */
-export type UserRole = "admin" | "cliente";
+export type UserRole = "admin" | "cliente" | "repartidor";
 
 const DEFAULT_ROLE: UserRole = "cliente";
 
@@ -21,7 +21,8 @@ const DEFAULT_ROLE: UserRole = "cliente";
  */
 export function getUserRole(user: Pick<User, "app_metadata"> | null | undefined): UserRole {
   const rawRole = user?.app_metadata?.role;
-  return rawRole === "admin" ? "admin" : DEFAULT_ROLE;
+  if (rawRole === "admin" || rawRole === "repartidor") return rawRole;
+  return DEFAULT_ROLE;
 }
 
 export function isAdmin(user: Pick<User, "app_metadata"> | null | undefined): boolean {

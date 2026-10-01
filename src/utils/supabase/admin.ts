@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+import { isDemoMode } from "@/lib/demo/mode";
+import { createDemoAdminClient } from "@/lib/demo/server-client";
 
 function readEnv(key: string): string {
   const v = process.env[key] ?? "";
@@ -8,6 +10,8 @@ function readEnv(key: string): string {
 }
 
 export function createAdminClient() {
+  if (isDemoMode()) return createDemoAdminClient();
+
   return createClient<Database>(
     readEnv("NEXT_PUBLIC_SUPABASE_URL"),
     readEnv("SUPABASE_SERVICE_ROLE_KEY"),

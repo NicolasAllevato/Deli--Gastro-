@@ -1,5 +1,5 @@
 ﻿import Link from "next/link";
-import { ShieldAlert, UserCheck, ArrowRight, UtensilsCrossed } from "lucide-react";
+import { ShieldAlert, UserCheck, ArrowRight, UtensilsCrossed, Bike } from "lucide-react";
 
 export default function Home() {
   return (
@@ -59,6 +59,24 @@ export default function Home() {
             <span className="text-xs text-gray-500 font-medium block mt-0.5">Pedidos y recompensas</span>
           </div>
           <span className="flex items-center gap-1 text-xs font-bold text-brand-green/50 group-hover:text-brand-green transition-colors duration-200">
+            Ingresar <ArrowRight size={12} />
+          </span>
+        </Link>
+
+        <Link
+          href="/repartidor"
+          className="portal-card neumorphic p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-full sm:w-56 h-44 sm:h-56 group fade-up-3"
+        >
+          <div className="w-14 h-14 rounded-xl neumorphic-inset flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform duration-200">
+            <Bike size={26} />
+          </div>
+          <div className="text-center">
+            <h2 className="text-base font-black text-gray-800 group-hover:text-blue-500 transition-colors duration-200">
+              Portal Repartidor
+            </h2>
+            <span className="text-xs text-gray-500 font-medium block mt-0.5">Entregas en ruta</span>
+          </div>
+          <span className="flex items-center gap-1 text-xs font-bold text-blue-500/50 group-hover:text-blue-500 transition-colors duration-200">
             Ingresar <ArrowRight size={12} />
           </span>
         </Link>
