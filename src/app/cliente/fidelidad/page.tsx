@@ -1,16 +1,10 @@
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { redirect } from "next/navigation";
 import { Star, Gift, TrendingUp, Award } from "lucide-react";
 import { AnimatedProgressBar } from "@/components/ui/AnimatedProgressBar";
-import { createClient } from "@/utils/supabase/server";
-import { createAdminClient } from "@/utils/supabase/admin";
-
-const RECOMPENSAS = [
-  { nombre: "Postre gratis",    puntosRequeridos: 200, descripcion: "Cualquier postre del menú" },
-  { nombre: "Bebida gratis",    puntosRequeridos: 150, descripcion: "Bebida de hasta $2.000" },
-  { nombre: "10% de descuento", puntosRequeridos: 100, descripcion: "En tu próximo pedido" },
-];
+import { requireClientPage } from "@/lib/auth/clientPage";
+import { REWARDS } from "@/lib/orders";
+import { RedeemButton } from "./RedeemButton";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("es-AR", {
@@ -21,36 +15,31 @@ function formatDate(iso: string) {
 }
 
 export default async function FidelidadPage() {
-  const authClient = await createClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) redirect("/login");
+  const { client, db } = await requireClientPage();
 
-  const supabase = createAdminClient();
-
-  const { data: clientData } = await supabase
-    .from("clients")
-    .select("id, total_points, tier")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const { data: ledger } = clientData
-    ? await supabase
+  const { data: ledger } = client
+    ? await db
         .from("points_ledger")
         .select("id, delta, description, created_at")
-        .eq("client_id", clientData.id)
+        .eq("client_id", client.id)
         .order("created_at", { ascending: false })
         .limit(10)
     : { data: [] };
 
-  const totalPuntos = clientData?.total_points ?? 0;
-  const puntosParaSiguiente = 300;
+  const totalPuntos = client?.total_points ?? 0;
+  const nextReward = [...REWARDS]
+    .filter((r) => r.puntosRequeridos > totalPuntos)
+    .sort((a, b) => a.puntosRequeridos - b.puntosRequeridos)[0];
+  const puntosParaSiguiente = nextReward?.puntosRequeridos ?? Math.max(...REWARDS.map((r) => r.puntosRequeridos));
   const historial = ledger ?? [];
 
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       <div>
         <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Mis Recompensas</h2>
-        <p className="text-gray-500 text-sm font-medium mt-1">Acumulá puntos con cada pedido</p>
+        <p className="text-gray-500 text-sm font-medium mt-1">
+          Nivel {client?.tier ?? "Bronce"} · Acumulá puntos con cada pedido
+        </p>
       </div>
 
       {/* Balance de puntos */}
@@ -64,9 +53,11 @@ export default async function FidelidadPage() {
         <div className="mt-6">
           <div className="flex flex-wrap justify-between gap-1 text-xs font-bold text-gray-500 mb-2">
             <span>{totalPuntos} pts</span>
-            <span className="text-right">{puntosParaSiguiente} pts para el próximo nivel</span>
+            <span className="text-right">
+              {nextReward ? `${puntosParaSiguiente} pts para "${nextReward.nombre}"` : "¡Alcanzaste todas las recompensas!"}
+            </span>
           </div>
-          <AnimatedProgressBar value={totalPuntos} max={puntosParaSiguiente} label="Progreso hacia el próximo nivel" />
+          <AnimatedProgressBar value={totalPuntos} max={puntosParaSiguiente} label="Progreso hacia la próxima recompensa" />
         </div>
       </div>
 
@@ -77,11 +68,11 @@ export default async function FidelidadPage() {
           <h3 className="font-headline font-black text-lg text-gray-800">Canjeá tus puntos</h3>
         </div>
         <div className="space-y-3">
-          {RECOMPENSAS.map((recompensa) => {
+          {REWARDS.map((recompensa) => {
             const disponible = totalPuntos >= recompensa.puntosRequeridos;
             return (
               <div
-                key={recompensa.nombre}
+                key={recompensa.id}
                 className={`neumorphic rounded-[1.5rem] p-4 flex items-center gap-3 ${disponible ? "neumorphic-hover" : "opacity-60"}`}
               >
                 <div className={`w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center shrink-0 ${disponible ? "bg-yellow-50" : "bg-gray-100"}`}>
@@ -93,15 +84,7 @@ export default async function FidelidadPage() {
                 </div>
                 <div className="text-right shrink-0 flex flex-col items-end gap-1">
                   <p className="text-xs font-bold text-yellow-600">{recompensa.puntosRequeridos} pts</p>
-                  {disponible && (
-                    <button
-                      type="button"
-                      aria-label={`Canjear: ${recompensa.nombre}`}
-                      className="px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(107,124,69,0.3)] hover:scale-105 transition-transform"
-                    >
-                      Canjear
-                    </button>
-                  )}
+                  {disponible && <RedeemButton rewardId={recompensa.id} rewardName={recompensa.nombre} />}
                 </div>
               </div>
             );
@@ -127,9 +110,9 @@ export default async function FidelidadPage() {
                   <p className="font-bold text-sm text-gray-700 font-headline truncate">{item.description}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{formatDate(item.created_at)}</p>
                 </div>
-                <span className="flex items-center gap-1 text-sm font-black text-yellow-600 shrink-0">
-                  <Star size={13} className="fill-yellow-400 text-yellow-400" />
-                  +{item.delta}
+                <span className={`flex items-center gap-1 text-sm font-black shrink-0 ${item.delta < 0 ? "text-red-500" : "text-yellow-600"}`}>
+                  <Star size={13} className={item.delta < 0 ? "text-red-400" : "fill-yellow-400 text-yellow-400"} />
+                  {item.delta > 0 ? `+${item.delta}` : item.delta}
                 </span>
               </div>
             ))}

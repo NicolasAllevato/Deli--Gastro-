@@ -45,16 +45,18 @@ export default function PerfilPage() {
         return;
       }
 
-      const [{ data: client }, { count }] = await Promise.all([
-        supabase
-          .from("clients")
-          .select("name, phone, address, total_points, created_at")
-          .eq("user_id", user.id)
-          .single(),
-        supabase
-          .from("orders")
-          .select("id", { count: "exact", head: true }),
-      ]);
+      const { data: client } = await supabase
+        .from("clients")
+        .select("id, name, phone, address, total_points, created_at")
+        .eq("user_id", user.id)
+        .single();
+
+      const { count } = client
+        ? await supabase
+            .from("orders")
+            .select("id", { count: "exact", head: true })
+            .eq("client_id", client.id)
+        : { count: 0 };
 
       setPerfil({
         nombre: client?.name ?? user.email?.split("@")[0] ?? "—",

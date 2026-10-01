@@ -4,6 +4,7 @@ import { use, useState } from "react";
 import { Star, Send, ExternalLink, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { buttonClasses } from "@/lib/buttonClasses";
+import { formatOrderId } from "@/lib/orders";
 
 export default function ResenaPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = use(params);
@@ -66,7 +67,7 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         </Link>
         <div>
           <h1 className="font-headline font-black text-xl text-gray-800 tracking-tight">Calificá tu pedido</h1>
-          <p className="text-gray-500 text-xs mt-0.5">Pedido #{orderId}</p>
+          <p className="text-gray-500 text-xs mt-0.5">Pedido {formatOrderId(orderId)}</p>
         </div>
       </div>
 

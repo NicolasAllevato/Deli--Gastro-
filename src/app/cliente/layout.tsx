@@ -2,9 +2,12 @@
 import Image from "next/image";
 import { Menu, MessageCircle } from "lucide-react";
 import { ClienteBottomNav } from "./_components/ClienteBottomNav";
+import { CartProvider } from "./_components/CartProvider";
+import { CartBar } from "./_components/CartBar";
 
 export default function ClienteLayout({ children }: { children: React.ReactNode }) {
   return (
+    <CartProvider>
     <div className="bg-surface text-on-surface font-body min-h-screen">
 
       {/* TopBar */}
@@ -38,7 +41,9 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
         <MessageCircle size={20} className="text-brand-orange" />
       </Link>
 
+      <CartBar />
       <ClienteBottomNav />
     </div>
+    </CartProvider>
   );
 }

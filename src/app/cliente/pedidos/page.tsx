@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic';
 
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight } from "lucide-react";
-import { createClient } from "@/utils/supabase/server";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { requireClientPage } from "@/lib/auth/clientPage";
+import { formatOrderId } from "@/lib/orders";
 
 const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> = {
   Finalizados:      { icon: <CheckCircle size={12} />, classes: "badge-green" },
@@ -22,34 +21,25 @@ function formatDate(iso: string) {
   });
 }
 
-function formatId(uuid: string) {
-  return `#${uuid.slice(0, 8).toUpperCase()}`;
-}
-
 export default async function ClientePedidosPage() {
-  const authClient = await createClient();
-  const { data: { user } } = await authClient.auth.getUser();
-  if (!user) redirect("/login");
+  const { client, db } = await requireClientPage();
 
-  const supabase = createAdminClient();
-
-  // Obtener el registro del cliente vinculado al usuario autenticado
-  const { data: clientData } = await supabase
-    .from("clients")
-    .select("id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const { data: orders } = clientData
-    ? await supabase
+  const { data: orders } = client
+    ? await db
         .from("orders")
         .select("id, status, items_desc, total, created_at")
-        .eq("client_id", clientData.id)
+        .eq("client_id", client.id)
         .order("created_at", { ascending: false })
         .limit(50)
     : { data: [] };
 
   const pedidos = orders ?? [];
+
+  // Pedidos ya reseñados (si la tabla `reviews` no existe todavía, queda vacío).
+  const { data: reviewRows } = client
+    ? await db.from("reviews").select("order_id").eq("client_id", client.id)
+    : { data: [] };
+  const reviewed = new Set((reviewRows ?? []).map((r) => r.order_id));
 
   return (
     <div className="px-4 py-6 max-w-2xl mx-auto pb-8">
@@ -70,7 +60,7 @@ export default async function ClientePedidosPage() {
               >
                 <div className="flex justify-between items-start gap-2">
                   <div>
-                    <p className="font-bold text-sm text-gray-800">{formatId(pedido.id)}</p>
+                    <p className="font-bold text-sm text-gray-800">{formatOrderId(pedido.id)}</p>
                     <p className="text-[11px] text-gray-500 mt-0.5">{formatDate(pedido.created_at)}</p>
                   </div>
                   <span className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold flex-shrink-0 ${cfg.classes}`}>
@@ -84,14 +74,22 @@ export default async function ClientePedidosPage() {
                   <span className="font-headline font-black text-brand-orange text-base">
                     ${Number(pedido.total).toLocaleString("es-AR")}
                   </span>
-                  {pedido.status === "Finalizados" && (
+                  <div className="flex items-center gap-4">
+                    {pedido.status === "Finalizados" && !reviewed.has(pedido.id) && (
+                      <Link
+                        href={`/cliente/resenas/${pedido.id}`}
+                        className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-[#5a6838] transition-colors"
+                      >
+                        Reseñar <ChevronRight size={13} />
+                      </Link>
+                    )}
                     <Link
-                      href={`/cliente/resenas/${pedido.id}`}
-                      className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-[#5a6838] transition-colors"
+                      href={`/cliente/pedidos/${pedido.id}`}
+                      className="flex items-center gap-0.5 text-[11px] font-black text-gray-500 hover:text-brand-orange transition-colors"
                     >
-                      Reseñar <ChevronRight size={13} />
+                      {pedido.status === "Finalizados" || pedido.status === "Cancelado" ? "Ver detalle" : "Seguir pedido"} <ChevronRight size={13} />
                     </Link>
-                  )}
+                  </div>
                 </div>
               </div>
             );
