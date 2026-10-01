@@ -9,7 +9,7 @@ import type { Json } from "@/types/database";
 // arbitrarias en `global_config`.
 const nivelSchema = z.object({
   nombre: z.string().trim().min(1).max(60),
-  puntos_min: z.number().finite().nonnegative(),
+  desde: z.number().finite().nonnegative(),
 }).catchall(z.unknown());
 
 const configPatchSchema = z.object({

@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { isDemoMode } from "@/lib/demo/mode";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -65,6 +66,13 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   if (file.size > MAX_SIZE_BYTES) {
     return NextResponse.json({ error: "El archivo supera el límite de 5MB." }, { status: 400 });
+  }
+
+  // Modo demo: no se sube a R2. La imagen vuelve como data URL y vive sólo en
+  // el producto en memoria.
+  if (isDemoMode()) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    return NextResponse.json({ success: true, url: `data:${file.type};base64,${bytes.toString("base64")}` });
   }
 
   const bucketName = process.env.R2_BUCKET_NAME;

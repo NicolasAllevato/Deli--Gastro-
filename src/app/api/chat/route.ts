@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/utils/supabase/server";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { isDemoMode } from "@/lib/demo/mode";
+import { buildDemoReply } from "@/lib/demo/chatbot";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -78,6 +80,10 @@ export async function POST(req: Request) {
       } finally {
         clearTimeout(timeoutId);
       }
+    }
+
+    if (isDemoMode()) {
+      return NextResponse.json({ reply: await buildDemoReply(user.id, message) });
     }
 
     return NextResponse.json({ reply: "Hola, soy el asistente virtual de Deli-Gastro. (Conectá n8n para activarme)" });

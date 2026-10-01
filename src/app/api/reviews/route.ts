@@ -59,13 +59,35 @@ export async function POST(req: Request) {
 
     const { data: orderRow } = await adminClient
       .from("orders")
-      .select("id, client_id")
+      .select("id, client_id, status")
       .eq("id", orderId)
       .maybeSingle();
 
     if (!orderRow || orderRow.client_id !== clientRow.id) {
       return NextResponse.json({ error: "No autorizado para reseñar este pedido." }, { status: 403 });
     }
+
+    if (orderRow.status !== "Finalizados") {
+      return NextResponse.json({ error: "Sólo se pueden reseñar pedidos entregados." }, { status: 409 });
+    }
+
+    // Una reseña por pedido. Si la tabla `reviews` todavía no existe en la
+    // base (migración 004 pendiente) la consulta devuelve error y se sigue.
+    const { data: existingReview } = await adminClient
+      .from("reviews")
+      .select("id")
+      .eq("order_id", orderId)
+      .limit(1);
+    if ((existingReview ?? []).length > 0) {
+      return NextResponse.json({ error: "Ya calificaste este pedido." }, { status: 409 });
+    }
+
+    await adminClient.from("reviews").insert({
+      order_id: orderId,
+      client_id: clientRow.id,
+      rating,
+      feedback: feedback?.trim() || null,
+    });
 
     const webhookUrl = process.env.N8N_WEBHOOK_URL_REVIEWS;
 
