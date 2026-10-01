@@ -44,6 +44,13 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [notifCliente, setNotifCliente] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Las notificaciones todavía no salen por n8n/WhatsApp: se simula el envío.
+  const announce = (message: string) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 3500);
+  };
 
   const filtrados = clientes.filter(c =>
     c.nombre.toLowerCase().includes(search.toLowerCase())
@@ -63,10 +70,20 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
             Puntos acumulados por cliente y promociones disponibles
           </p>
         </div>
-        <Button leftIcon={<Bell size={14} />} size="sm">
+        <Button
+          leftIcon={<Bell size={14} />}
+          size="sm"
+          onClick={() => announce(`Notificación enviada a ${clientes.length} clientes (simulado).`)}
+        >
           Notificar a todos
         </Button>
       </div>
+
+      {notice && (
+        <p role="status" className="text-xs font-bold text-green-700 px-3 py-2 rounded-lg bg-green-50 border border-green-100">
+          {notice}
+        </p>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -172,9 +189,9 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                                   <p className="text-[10px] text-gray-500 truncate">{p.items}</p>
                                   <p className="text-[10px] text-gray-500">{p.fecha}</p>
                                 </div>
-                                <span className="flex items-center gap-1 text-xs font-black text-yellow-600 shrink-0">
-                                  <Star size={11} className="fill-yellow-400 text-yellow-400" />
-                                  +{p.puntos}
+                                <span className={`flex items-center gap-1 text-xs font-black shrink-0 ${p.puntos < 0 ? "text-red-500" : "text-yellow-600"}`}>
+                                  <Star size={11} className={p.puntos < 0 ? "text-red-400" : "fill-yellow-400 text-yellow-400"} />
+                                  {p.puntos > 0 ? `+${p.puntos}` : p.puntos}
                                 </span>
                               </div>
                             ))}
@@ -215,7 +232,12 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                           >
                             Notificar
                           </Button>
-                          <Button size="sm" fullWidth leftIcon={<Gift size={13} />}>
+                          <Button
+                            size="sm"
+                            fullWidth
+                            leftIcon={<Gift size={13} />}
+                            onClick={() => announce(`Promo enviada a ${cliente.nombre} (simulado).`)}
+                          >
                             Enviar promo
                           </Button>
                         </div>
@@ -230,7 +252,16 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                               placeholder="Ej: ¡Tus puntos están por vencer! Usálos antes del viernes."
                               className="w-full px-3 py-2 rounded-lg neumorphic-inset text-xs text-gray-700 placeholder-gray-400 outline-none focus:ring-2 focus:ring-brand-orange/40 transition-all resize-none"
                             />
-                            <Button fullWidth size="sm">Enviar notificación</Button>
+                            <Button
+                              fullWidth
+                              size="sm"
+                              onClick={() => {
+                                announce(`Notificación enviada a ${cliente.nombre} (simulado).`);
+                                setNotifCliente(null);
+                              }}
+                            >
+                              Enviar notificación
+                            </Button>
                           </div>
                         )}
                       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Category } from "@/fixtures/productos";
+import type { Category } from "@/types/catalog";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";

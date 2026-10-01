@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import NextImage from "next/image";
 import { Image as ImageIcon, Tag, Loader2, Upload } from "lucide-react";
-import type { Product, Category } from "@/fixtures/productos";
+import type { Product, Category } from "@/types/catalog";
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
