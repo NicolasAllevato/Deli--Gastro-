@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 5178 --turbo",
+    "demo": "node scripts/demo.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
+    "test": "node --no-warnings --test \"tests/**/*.test.ts\"",
     "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs"
   },
   "dependencies": {
