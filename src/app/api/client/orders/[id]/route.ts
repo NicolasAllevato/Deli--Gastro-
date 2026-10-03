@@ -77,7 +77,13 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   const cancelWindow = numberConfig(await readConfig(db), "cancelacion_min", 15);
   if (order.status !== "Recibidos") {
-    return NextResponse.json({ error: "El pedido ya está en preparación y no se puede cancelar." }, { status: 409 });
+    const error =
+      order.status === "Finalizados"
+        ? "El pedido ya fue entregado y no se puede cancelar."
+        : order.status === "Cancelado"
+          ? "El pedido ya está cancelado."
+          : "El pedido ya está en preparación y no se puede cancelar.";
+    return NextResponse.json({ error }, { status: 409 });
   }
   if (minutesSince(order.created_at) > cancelWindow) {
     return NextResponse.json({ error: `Pasaron más de ${cancelWindow} minutos: ya no se puede cancelar.` }, { status: 409 });
