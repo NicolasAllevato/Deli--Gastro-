@@ -1,6 +1,6 @@
 -- Deli-Gastro — datos de entrega en pedidos + reseñas
 -- Soporta el flujo cliente → tablero → repartidor → reseña (ver docs/FLUJO_PEDIDO.md).
--- NO APLICADA todavía en la base real: el modo demo (`npm run demo`) no la necesita.
+-- Aplicada en la base real el 2026-10-03 (SQL Editor); el modo demo no la necesita.
 -- Todas las columnas nuevas son opcionales o tienen default, así que los pedidos
 -- existentes siguen siendo válidos.
 

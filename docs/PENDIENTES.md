@@ -20,8 +20,10 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
 
 ## Nuevos pendientes para pasar a producción
 
-- [ ] Aplicar `supabase/migrations/004_order_delivery_reviews.sql` (reseñas y
-      datos de entrega; sin esto el checkout real no guarda dirección ni medio de pago).
+- [x] Aplicar `supabase/migrations/004_order_delivery_reviews.sql` (reseñas y
+      datos de entrega). Aplicada el 2026-10-03 desde el SQL Editor del proyecto
+      `Delivery`; no figura en el historial de migraciones de Supabase porque no se
+      corrió con el CLI.
 - [ ] Registro de clientes: crear la fila en `clients` al darse de alta un usuario.
 - [ ] Crear usuarios admin y repartidor con `app_metadata.role`.
 - [ ] Geocodificación de direcciones reales (hoy hay 5 zonas de ejemplo).
