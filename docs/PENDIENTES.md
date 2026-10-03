@@ -24,8 +24,11 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
       datos de entrega). Aplicada el 2026-10-03 desde el SQL Editor del proyecto
       `Delivery`; no figura en el historial de migraciones de Supabase porque no se
       corrió con el CLI.
-- [ ] Registro de clientes: crear la fila en `clients` al darse de alta un usuario.
-- [ ] Crear usuarios admin y repartidor con `app_metadata.role`.
+- [x] Registro de clientes: ya lo cubre el trigger `on_auth_user_created` →
+      `handle_new_user()` (crea la fila en `clients`; `clients_user_id_key` existe).
+- [ ] Crear el usuario repartidor con `app_metadata.role = "repartidor"`. Recomendado:
+      Dashboard → Authentication → Users → Add user (autoconfirmar) y después asignar
+      el rol con un `UPDATE` de `raw_app_meta_data`. El admin ya existe.
 - [ ] Geocodificación de direcciones reales (hoy hay 5 zonas de ejemplo).
 - [ ] Notificaciones y asistente por n8n (hoy simulados).
 - [ ] Reemplazar polling por Supabase Realtime.
