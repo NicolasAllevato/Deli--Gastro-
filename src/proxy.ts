@@ -7,7 +7,7 @@ import { accountByRole } from "@/lib/demo/users";
 const PORTAL_PREFIXES = ["/admin", "/cliente", "/repartidor"] as const;
 
 const HOME_BY_ROLE = {
-  admin: "/admin/tablero",
+  admin: "/admin/ejecutivo",
   cliente: "/cliente",
   repartidor: "/repartidor",
 } as const;

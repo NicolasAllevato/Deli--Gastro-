@@ -11,10 +11,10 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Validar que redirectTo sea una ruta interna para evitar open redirect
-  const raw = searchParams.get("redirectTo") ?? "/admin/tablero";
+  const raw = searchParams.get("redirectTo") ?? "/admin/ejecutivo";
   const redirectTo = raw.startsWith("/") && !raw.startsWith("//") && !raw.includes("://")
     ? raw
-    : "/admin/tablero";
+    : "/admin/ejecutivo";
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");

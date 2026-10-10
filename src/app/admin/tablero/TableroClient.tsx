@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { sendToDispatcher } from "@/utils/api";
 import { Wallet, UtensilsCrossed, Timer } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
-import { Button, buttonClasses } from "@/components/ui/Button";
+import { Button } from "@/components/ui/Button";
 import { formatMoney, formatOrderId, isActiveStatus } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
@@ -226,7 +225,6 @@ export default function TableroClient({ initialOrders }: Props) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2 shrink-0">
           <h2 className="font-headline font-bold text-lg text-gray-800 tracking-tight">Órdenes en tiempo real</h2>
           <div className="flex gap-3">
-            <Link href="/admin/pedidos" className={buttonClasses("secondary", "sm")}>Historial</Link>
             <Button size="sm" onClick={() => setIsNewOrderModalOpen(true)}>+ Nuevo Pedido</Button>
           </div>
         </div>

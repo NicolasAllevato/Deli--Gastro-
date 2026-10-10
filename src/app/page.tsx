@@ -28,7 +28,7 @@ export default function Home() {
       <div className="flex flex-col sm:flex-row items-center justify-center gap-5 relative z-10 mx-auto w-full max-w-xs sm:max-w-none">
 
         <Link
-          href="/admin/tablero"
+          href="/admin/ejecutivo"
           className="portal-card neumorphic p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-full sm:w-56 h-44 sm:h-56 group fade-up-1"
         >
           <div className="w-14 h-14 rounded-xl neumorphic-inset flex items-center justify-center text-brand-orange group-hover:scale-110 transition-transform duration-200">

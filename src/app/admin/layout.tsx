@@ -4,34 +4,17 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import {
-  LayoutDashboard, Map as MapIcon, Package, ShoppingBag,
-  Settings, Bell, LogOut, Star, Menu, X, Hexagon, MessageCircle, Bot, MessagesSquare, FileText, Megaphone, BarChart3, Gauge,
-} from "lucide-react";
+import { Bell, LogOut, Menu, X } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { cn } from "@/lib/cn";
-
-const navItems = [
-  { href: "/admin/tablero",       icon: LayoutDashboard, label: "Tablero" },
-  { href: "/admin/mapa",          icon: MapIcon,         label: "Mapa" },
-  { href: "/admin/zonas",         icon: Hexagon,         label: "Zonas" },
-  { href: "/admin/pedidos",       icon: Package,         label: "Pedidos" },
-  { href: "/admin/ejecutivo",     icon: Gauge,           label: "Ejecutivo" },
-  { href: "/admin/informes",      icon: BarChart3,       label: "Informes" },
-  { href: "/admin/puntos",        icon: Star,            label: "Puntos" },
-  { href: "/admin/productos",     icon: ShoppingBag,     label: "Productos" },
-  { href: "/admin/whatsapp",      icon: MessageCircle,   label: "WhatsApp" },
-  { href: "/admin/agente",        icon: Bot,             label: "Agente IA" },
-  { href: "/admin/conversaciones", icon: MessagesSquare, label: "Conversaciones" },
-  { href: "/admin/plantillas",     icon: FileText,        label: "Plantillas" },
-  { href: "/admin/campanas",       icon: Megaphone,       label: "Campañas" },
-  { href: "/admin/configuracion", icon: Settings,        label: "Configuración" },
-];
+import { SectionTabs } from "@/components/ui/SectionTabs";
+import { NAV_SECTIONS, findSection, isTabActive } from "./_nav";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const activeSection = findSection(pathname);
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -85,8 +68,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav aria-label="Navegación principal" className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 -mx-1 px-1">
-          {navItems.map((item) => {
-            const isActive = pathname?.startsWith(item.href);
+          {NAV_SECTIONS.map((item) => {
+            const isActive = activeSection === item;
             const Icon = item.icon;
             return (
               <Link
@@ -173,6 +156,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         {/* Content */}
         <div className="flex-1 min-h-0 px-3 pb-8">
           <div className="neumorphic-inset rounded-2xl p-2 md:p-3 h-full overflow-y-auto overflow-x-hidden">
+            {activeSection && activeSection.tabs.length > 0 && (
+              <SectionTabs
+                label={`Secciones de ${activeSection.label}`}
+                tabs={activeSection.tabs.map((t) => ({ ...t, active: isTabActive(pathname, t) }))}
+              />
+            )}
             {children}
           </div>
         </div>

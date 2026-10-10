@@ -19,7 +19,7 @@ export const DEMO_ACCOUNTS: readonly DemoAccount[] = [
     email: "admin@deli-gastro.com",
     label: "Administrador",
     name: "Admin Central",
-    home: "/admin/tablero",
+    home: "/admin/ejecutivo",
   },
   {
     role: "cliente",
