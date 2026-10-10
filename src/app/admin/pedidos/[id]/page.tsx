@@ -3,9 +3,10 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
-import { ArrowLeft, User, MapPin, Receipt, AlertTriangle, Phone, Bike, CreditCard, Star } from "lucide-react";
+import { ArrowLeft, User, MapPin, Receipt, AlertTriangle, Phone, Bike, CreditCard, Star, Timer } from "lucide-react";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { enrichOrders } from "@/lib/orders-server";
+import { computeDurations, type TrackingDurations } from "@/lib/tracking";
 import { formatMoney, formatOrderId, parseItems } from "@/lib/orders";
 import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/lib/buttonClasses";
@@ -16,6 +17,18 @@ const ESTADO_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"
   "En Preparación": "yellow",
   Recibidos:        "blue",
   "En Camino":      "orange",
+};
+
+const DURATION_LABELS: ReadonlyArray<{ key: keyof TrackingDurations; label: string }> = [
+  { key: "kitchen", label: "Cocina" },
+  { key: "dispatchWait", label: "Espera de despacho" },
+  { key: "route", label: "En ruta" },
+  { key: "total", label: "Total" },
+];
+
+const EVENT_LABELS: Record<string, string> = {
+  picked_up: "El repartidor salió con el pedido",
+  assigned: "Repartidor asignado",
 };
 
 /** Reseñas de 3 estrellas o menos abren un ticket de atención interna. */
@@ -29,14 +42,18 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
   const { data: row } = await db.from("orders").select("*").eq("id", id.data).maybeSingle();
   if (!row) notFound();
 
-  const [[pedido], reviewRes, clientRes] = await Promise.all([
+  const [[pedido], reviewRes, clientRes, eventsRes] = await Promise.all([
     enrichOrders(db, [row]),
     db.from("reviews").select("rating, feedback, created_at").eq("order_id", row.id).limit(1),
     row.client_id
       ? db.from("clients").select("address").eq("id", row.client_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    db.from("order_events").select("event, actor, detail, created_at").eq("order_id", row.id).order("created_at", { ascending: true }),
   ]);
   if (!pedido) notFound();
+
+  const durations = computeDurations(pedido);
+  const events = eventsRes.data ?? [];
 
   const review = reviewRes.data?.[0];
   const hasTicket = review !== undefined && review.rating <= TICKET_MAX_RATING;
@@ -145,6 +162,40 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Tiempos */}
+      <div className="neumorphic p-5 rounded-2xl">
+        <div className="flex items-center gap-2 mb-4 text-gray-700">
+          <Timer className="w-4 h-4" />
+          <h2 className="font-headline font-bold text-sm uppercase tracking-widest">Tiempos</h2>
+        </div>
+        <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          {DURATION_LABELS.map(({ key, label }) => (
+            <div key={key} className="neumorphic-inset rounded-xl p-3">
+              <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">{label}</dt>
+              <dd className="font-headline font-black text-lg text-gray-800 mt-1">
+                {durations[key] === null ? "—" : `${durations[key]} min`}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {events.length > 0 && (
+          <ol className="mt-5 space-y-1.5 text-xs text-gray-600">
+            {events.map((e, i) => (
+              <li key={`${e.created_at}-${i}`} className="flex gap-3">
+                <time dateTime={e.created_at} className="font-bold text-gray-500 w-14 shrink-0">
+                  {new Date(e.created_at).toLocaleTimeString("es-AR", { timeStyle: "short" })}
+                </time>
+                <span>
+                  {EVENT_LABELS[e.event] ?? e.event}
+                  {e.detail ? ` · ${e.detail}` : ""}
+                  {e.actor ? ` (${e.actor})` : ""}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </div>
   );

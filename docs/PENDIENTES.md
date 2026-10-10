@@ -29,10 +29,13 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
 - [ ] Crear el usuario repartidor con `app_metadata.role = "repartidor"`. Recomendado:
       Dashboard → Authentication → Users → Add user (autoconfirmar) y después asignar
       el rol con un `UPDATE` de `raw_app_meta_data`. El admin ya existe.
-- [ ] Geocodificación de direcciones reales (hoy hay 5 zonas de ejemplo).
-- [ ] Notificaciones y asistente por n8n (hoy simulados).
+- [x] Geocodificación de direcciones reales: hecha con Nominatim (`/api/geocode`); para
+      producción con volumen conviene Google Geocoding o Mapbox.
+- [x] Notificaciones y asistente: ahora por WhatsApp Cloud API + OpenAI, sin n8n. Ver
+      `docs/WHATSAPP_AGENTE.md` (incluye migraciones 005–008 **sin aplicar**, variables y
+      pendientes).
 - [ ] Reemplazar polling por Supabase Realtime.
-- [ ] Tests (unitarios, integración, E2E) y cobertura.
+- [ ] Tests E2E y medición de cobertura (hay tests unitarios de las piezas puras).
 - [ ] Decisiones abiertas de producto: ver `docs/FLUJO_PEDIDO.md` §8.
 
 ## Manuales (bloquean a Claude, requieren dashboard/CLI del usuario)

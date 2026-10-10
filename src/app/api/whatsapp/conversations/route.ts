@@ -1,0 +1,56 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/utils/supabase/admin";
+import { guardAdmin } from "@/lib/auth/adminGuard";
+import { TEST_PHONE } from "@/lib/agent/settings";
+
+const LIST_LIMIT = 50;
+
+/** Conversaciones recientes con el último mensaje y el nombre del cliente. */
+export async function GET(req: NextRequest) {
+  const denied = await guardAdmin(req, 120);
+  if (denied) return denied;
+
+  const db = createAdminClient();
+  const { data: conversations } = await db
+    .from("wa_conversations")
+    .select("*")
+    .neq("client_phone", TEST_PHONE)
+    .order("last_inbound_at", { ascending: false })
+    .limit(LIST_LIMIT);
+  const list = conversations ?? [];
+  if (list.length === 0) return NextResponse.json([]);
+
+  const clientIds = [...new Set(list.map((c) => c.client_id).filter((id): id is string => Boolean(id)))];
+  const [{ data: clients }, { data: messages }] = await Promise.all([
+    clientIds.length > 0 ? db.from("clients").select("id, name").in("id", clientIds) : Promise.resolve({ data: [] }),
+    db
+      .from("wa_messages")
+      .select("conversation_id, direction, type, body, created_at")
+      .in("conversation_id", list.map((c) => c.id))
+      .order("created_at", { ascending: false })
+      .limit(LIST_LIMIT * 5),
+  ]);
+
+  const names = new Map((clients ?? []).map((c) => [c.id, c.name]));
+  const lastByConversation = new Map<string, { direction: string; text: string; at: string }>();
+  for (const m of messages ?? []) {
+    if (!lastByConversation.has(m.conversation_id)) {
+      lastByConversation.set(m.conversation_id, {
+        direction: m.direction,
+        text: m.body ?? (m.type === "audio" ? "🎤 Audio" : "Mensaje"),
+        at: m.created_at,
+      });
+    }
+  }
+
+  return NextResponse.json(
+    list.map((c) => ({
+      id: c.id,
+      phone: c.client_phone,
+      name: (c.client_id && names.get(c.client_id)) || c.contact_name || c.client_phone,
+      humanTakeover: c.human_takeover,
+      lastInboundAt: c.last_inbound_at,
+      last: lastByConversation.get(c.id) ?? null,
+    })),
+  );
+}

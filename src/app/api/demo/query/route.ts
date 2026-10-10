@@ -6,13 +6,15 @@ import { accountByRole } from "@/lib/demo/users";
 import { executePlan, type QueryPlan } from "@/lib/demo/query";
 import { getStore } from "@/lib/demo/store";
 
+// Las tablas de WhatsApp (credenciales, conversaciones, campañas) NO se exponen acá: ningún código del
+// navegador las consulta y, en el demo, cualquier sesión podría leer lo que el admin cargó.
 const planSchema = z.object({
-  table: z.enum(["clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews"]),
+  table: z.enum(["clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events", "delivery_zones"]),
   action: z.enum(["select", "insert", "update", "upsert", "delete"]),
   columns: z.string(),
   filters: z.array(
     z.object({
-      op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike"]),
+      op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "not"]),
       column: z.string(),
       value: z.unknown(),
     }),

@@ -12,6 +12,12 @@ function emptyStore(): Tables {
     categories: [],
     products: [],
     reviews: [],
+    order_events: [],
+    delivery_zones: [],
+    integration_secrets: [],
+    wa_conversations: [],
+    wa_messages: [],
+    wa_campaigns: [],
   };
 }
 
@@ -42,6 +48,25 @@ beforeEach(() => {
     { id: "b", status: "En Camino", total: 300, created_at: "2026-01-01T12:00:00Z" },
     { id: "c", status: "Recibidos", total: 200, created_at: "2026-01-01T11:00:00Z" },
   );
+});
+
+describe("not", () => {
+  it("niega el filtro interno (not is null = tiene valor)", () => {
+    store.orders.push({ id: "d", status: "Recibidos", total: 1, courier_name: "Diego" });
+    const res = executePlan(
+      plan({ filters: [{ op: "not", column: "courier_name", value: { op: "is", value: null } }] }),
+      store,
+    );
+    assert.deepEqual((res.data as Array<{ id: string }>).map((r) => r.id), ["d"]);
+  });
+
+  it("niega un eq", () => {
+    const res = executePlan(
+      plan({ filters: [{ op: "not", column: "status", value: { op: "eq", value: "Recibidos" } }] }),
+      store,
+    );
+    assert.deepEqual((res.data as Array<{ id: string }>).map((r) => r.id), ["b"]);
+  });
 });
 
 describe("select", () => {

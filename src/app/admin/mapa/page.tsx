@@ -6,6 +6,7 @@ import Link from "next/link";
 import { MapPin, Search, Bike, Clock, ClipboardCheck } from "lucide-react";
 import { formatOrderId, minutesSince } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
+import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 
 const MapComponent = dynamic(() => import("./MapComponent"), {
   ssr: false,
@@ -32,6 +33,20 @@ export default function MapaPage() {
   const [orders, setOrders] = useState<EnrichedOrder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
+  const [zones, setZones] = useState<DeliveryZone[]>([]);
+  const [local, setLocal] = useState<GeoPoint | undefined>(undefined);
+
+  // Las zonas casi no cambian: se piden una sola vez (el mapa funciona igual si falla).
+  useEffect(() => {
+    fetch("/api/zones", { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<{ zones: DeliveryZone[]; local: GeoPoint }>) : null))
+      .then((data) => {
+        if (!data) return;
+        setZones(data.zones);
+        setLocal(data.local);
+      })
+      .catch(() => { /* sin zonas: solo se muestran los pedidos */ });
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -77,7 +92,7 @@ export default function MapaPage() {
 
       {/* Mapa */}
       <div className="neumorphic rounded-2xl p-1 overflow-hidden">
-        <MapComponent orders={visible} />
+        <MapComponent orders={visible} zones={zones} local={local} />
       </div>
 
       {/* Búsqueda */}

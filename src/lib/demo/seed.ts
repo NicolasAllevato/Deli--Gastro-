@@ -1,4 +1,4 @@
-import { SAMPLE_ADDRESSES } from "@/lib/restaurant";
+import { RESTAURANT_LOCATION, SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { DEMO_ACCOUNTS } from "@/lib/demo/users";
 
 export type Row = Record<string, unknown>;
@@ -9,7 +9,13 @@ export type TableName =
   | "global_config"
   | "categories"
   | "products"
-  | "reviews";
+  | "reviews"
+  | "order_events"
+  | "delivery_zones"
+  | "integration_secrets"
+  | "wa_conversations"
+  | "wa_messages"
+  | "wa_campaigns";
 
 export type Tables = Record<TableName, Row[]>;
 
@@ -22,7 +28,7 @@ export function demoId(group: number, n: number): string {
   return `${String(group).padStart(2, "0")}${String(n).padStart(6, "0")}-0000-4000-8000-000000000000`;
 }
 
-const G = { cat: 1, prod: 2, client: 3, order: 4, ledger: 5, review: 6 } as const;
+const G = { cat: 1, prod: 2, client: 3, order: 4, ledger: 5, review: 6, zone: 7 } as const;
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
@@ -87,6 +93,238 @@ const ORDERS: readonly OrderSpec[] = [
   { client: 3, status: "Finalizados",    minutesAgo: 95,   items: [[4, 2]],          fee: 700,  pay: "Mercado Pago", address: 1, courier: "Diego Rojas" },
 ];
 
+/** Tiempos de etapa de ejemplo (minutos desde la creación): acepta +2, listo +15, sale +18, entrega +40. */
+function stageSeed(status: string, minutesAgo: number): Record<string, string | null> {
+  const at = (offset: number, from: string[]) =>
+    from.includes(status) ? ago(Math.max(0, minutesAgo - offset)) : null;
+  return {
+    accepted_at: at(2, ["En Preparación", "En Camino", "Finalizados"]),
+    ready_at: at(15, ["En Camino", "Finalizados"]),
+    picked_up_at: at(18, ["En Camino", "Finalizados"]),
+    delivered_at: at(40, ["Finalizados"]),
+  };
+}
+
+/* ---------- Volumen para el tablero ejecutivo (determinista: PRNG con semilla fija) ---------- */
+
+type Rand = () => number;
+
+/** mulberry32: pseudoaleatorio reproducible. Mismo seed, misma secuencia. */
+function prng(seed: number): Rand {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const EXTRA_SEED = 20260410;
+const EXTRA_ORDER_COUNT = 300;
+const EXTRA_CANCEL_COUNT = 15; // ~5%
+const EXTRA_REVIEW_COUNT = 120;
+/** 45% web, 35% whatsapp, 20% mostrador sobre 300 pedidos. */
+const CHANNEL_MIX: ReadonlyArray<readonly [string, number]> = [["web", 135], ["whatsapp", 105], ["mostrador", 60]];
+const PAYMENTS = ["Efectivo", "Tarjeta", "Mercado Pago"] as const;
+const COURIERS = ["Diego Rojas", "Lucía Vera", "Marcos Solé"] as const;
+const LOW_FEEDBACK = [
+  "Llegó frío y tardó más de lo prometido.",
+  "La hamburguesa llegó aplastada.",
+  "Se demoró mucho en la entrega y nadie avisó.",
+  "Faltó una bebida que había pedido.",
+  "La pizza llegó tibia.",
+  "La comida bien, pero el envío fue lento.",
+] as const;
+const GOOD_FEEDBACK = ["¡Excelente, gracias!", "Muy rico, volvemos a pedir.", "Llegó rápido y bien empaquetado."] as const;
+
+/**
+ * Zonas rectangulares demo (box = [minLat, maxLat, minLng, maxLng]) ubicadas a más
+ * de 8 km del local, fuera de los círculos de las zonas existentes: no se superponen.
+ * Z5 y Z6 son las lentas: generan alertas de demora en el tablero.
+ */
+interface DemoZone {
+  name: string;
+  box: readonly [number, number, number, number];
+  fee: number;
+  minOrder: number;
+  slow: boolean;
+}
+
+const DEMO_ZONES: readonly DemoZone[] = [
+  { name: "Z1", box: [-34.515, -34.485, -58.42, -58.38], fee: 900, minOrder: 0, slow: false },
+  { name: "Z2", box: [-34.715, -34.685, -58.42, -58.38], fee: 900, minOrder: 0, slow: false },
+  { name: "Z3", box: [-34.62, -34.59, -58.28, -58.25], fee: 1100, minOrder: 8000, slow: false },
+  { name: "Z4", box: [-34.62, -34.59, -58.52, -58.49], fee: 1200, minOrder: 0, slow: false },
+  { name: "Z5", box: [-34.53, -34.5, -58.3, -58.27], fee: 1400, minOrder: 10000, slow: true },
+  { name: "Z6", box: [-34.7, -34.67, -58.52, -58.49], fee: 1400, minOrder: 10000, slow: true },
+];
+
+const ACTIVE_PRODUCTS: readonly number[] = PRODUCTS.flatMap((p, i) => (p[5] ? [i] : []));
+
+const round6 = (n: number) => Number(n.toFixed(6));
+
+function intIn(rand: Rand, min: number, max: number): number {
+  return min + Math.floor(rand() * (max - min + 1));
+}
+
+function pick<T>(rand: Rand, items: readonly T[]): T {
+  return items[Math.floor(rand() * items.length)]!;
+}
+
+function shuffle<T>(items: readonly T[], rand: Rand): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+function boxCorners([minLat, maxLat, minLng, maxLng]: DemoZone["box"]): Array<[number, number]> {
+  return [[minLat, minLng], [minLat, maxLng], [maxLat, maxLng], [maxLat, minLng]];
+}
+
+/** Arma una canasta de 1 a 3 productos cuyo subtotal cae en [lo, hi]. */
+function pickItems(rand: Rand, lo: number, hi: number): { lines: Array<[number, number]>; subtotal: number } {
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const merged = new Map<number, number>();
+    const n = intIn(rand, 1, 3);
+    for (let k = 0; k < n; k++) {
+      const p = pick(rand, ACTIVE_PRODUCTS);
+      merged.set(p, (merged.get(p) ?? 0) + intIn(rand, 1, 2));
+    }
+    const lines = [...merged.entries()];
+    const subtotal = lines.reduce((s, [p, q]) => s + PRODUCTS[p]![3] * q, 0);
+    if (subtotal >= lo && subtotal <= hi) return { lines, subtotal };
+  }
+  throw new Error("No se pudo armar un pedido dentro del rango de montos");
+}
+
+/**
+ * Minutos desde la creación de cada etapa. Prep 10-28, aceptación 2-5, retiro 2-8.
+ * Entrega total 25-60 (zonas lentas 45-75). El mostrador retira en 1-3 min tras listo.
+ */
+function stageMinutes(rand: Rand, mostrador: boolean, slow: boolean) {
+  const accept = intIn(rand, 2, 5);
+  const prep = intIn(rand, 10, 28);
+  if (mostrador) {
+    const pickup = intIn(rand, 1, 3);
+    const picked = accept + prep + pickup;
+    return { accept, ready: accept + prep, picked, total: picked };
+  }
+  const pickup = intIn(rand, 2, 8);
+  const target = slow ? intIn(rand, 45, 75) : intIn(rand, 25, 60);
+  const total = Math.max(target, accept + prep + pickup + 5);
+  return { accept, ready: accept + prep, picked: accept + prep + pickup, total };
+}
+
+function buildExtraOrders(
+  base: number,
+  clientIds: readonly string[],
+  rand: Rand,
+): { orders: Row[]; slowIds: Set<string> } {
+  const ago = (minutes: number) => new Date(base - minutes * 60_000).toISOString();
+  const channels = shuffle(CHANNEL_MIX.flatMap(([ch, n]) => Array.from({ length: n }, () => ch)), rand);
+  const cancelIdx = new Set(
+    shuffle(Array.from({ length: EXTRA_ORDER_COUNT }, (_, i) => i), rand).slice(0, EXTRA_CANCEL_COUNT),
+  );
+  const slowIds = new Set<string>();
+  const orders: Row[] = [];
+
+  for (let i = 0; i < EXTRA_ORDER_COUNT; i++) {
+    const id = demoId(G.order, ORDERS.length + i + 1);
+    const channel = channels[i]!;
+    const mostrador = channel === "mostrador";
+    const zone = pick(rand, DEMO_ZONES);
+    const createdAgo = intIn(rand, 120, 43_200); // entre 2 h y 30 días atrás
+    const fee = mostrador ? 0 : zone.fee;
+    const lo = mostrador ? 6000 : Math.max(6000 - fee, zone.minOrder);
+    const { lines, subtotal } = pickItems(rand, lo, 25_000 - fee);
+    const clientId = pick(rand, clientIds);
+    const payment = pick(rand, PAYMENTS);
+    const courier = mostrador ? null : pick(rand, COURIERS);
+    const [minLat, maxLat, minLng, maxLng] = zone.box;
+    const lat = round6(minLat + rand() * (maxLat - minLat));
+    const lng = round6(minLng + rand() * (maxLng - minLng));
+    if (zone.slow) slowIds.add(id);
+
+    const baseRow: Row = {
+      id,
+      client_id: clientId,
+      items_desc: lines.map(([p, q]) => `${q}x ${PRODUCTS[p]![1]}`).join(" · "),
+      total: subtotal + fee,
+      delivery_fee: fee,
+      delivery_address: mostrador ? "Retiro en mostrador" : `Dirección demo ${i + 1}, ${zone.name}`,
+      delivery_lat: lat,
+      delivery_lng: lng,
+      payment_method: payment,
+      notes: null,
+      courier_name: courier,
+      channel,
+      created_at: ago(createdAgo),
+    };
+
+    if (cancelIdx.has(i)) {
+      orders.push({
+        ...baseRow,
+        status: "Cancelado",
+        accepted_at: null,
+        ready_at: null,
+        picked_up_at: null,
+        delivered_at: null,
+        updated_at: ago(createdAgo - 10),
+      });
+      continue;
+    }
+
+    const t = stageMinutes(rand, mostrador, zone.slow);
+    const at = (offset: number) => ago(createdAgo - offset);
+    orders.push({
+      ...baseRow,
+      status: "Finalizados",
+      accepted_at: at(t.accept),
+      ready_at: at(t.ready),
+      picked_up_at: at(t.picked),
+      delivered_at: at(t.total),
+      updated_at: at(t.total),
+    });
+  }
+
+  return { orders, slowIds };
+}
+
+function ratingFrom(x: number): number {
+  if (x < 0.05) return 1;
+  if (x < 0.1) return 2;
+  if (x < 0.2) return 3;
+  if (x < 0.55) return 4;
+  return 5;
+}
+
+function buildExtraReviews(orders: readonly Row[], slowIds: ReadonlySet<string>, rand: Rand): Row[] {
+  const finalized = orders.filter((o) => o.status === "Finalizados");
+  const chosen = shuffle(finalized, rand).slice(0, EXTRA_REVIEW_COUNT);
+  return chosen.map((o, i) => {
+    // En zonas lentas la probabilidad de calificación baja sube.
+    const boost = slowIds.has(String(o.id)) ? 0.15 : 0;
+    const rating = ratingFrom(rand() - boost);
+    let feedback: string | null = null;
+    if (rating <= 3) feedback = pick(rand, LOW_FEEDBACK);
+    else if (rand() < (rating === 4 ? 0.3 : 0.15)) feedback = pick(rand, GOOD_FEEDBACK);
+    const deliveredMs = Date.parse(String(o.delivered_at));
+    return {
+      id: demoId(G.review, 3 + i),
+      order_id: o.id,
+      client_id: o.client_id,
+      rating,
+      feedback,
+      created_at: new Date(deliveredMs + intIn(rand, 10, 40) * 60_000).toISOString(),
+    };
+  });
+}
+
 export function buildSeed(): Tables {
   const categories: Row[] = CATEGORIES.map((c, i) => ({
     id: demoId(G.cat, i + 1),
@@ -118,6 +356,7 @@ export function buildSeed(): Tables {
     address: SAMPLE_ADDRESSES[addr]!.address,
     tier,
     total_points: points,
+    wa_marketing_opt_in: i < 4,
     created_at: ago(60 * 24 * (120 - i * 15)),
     updated_at: ago(60 * 24),
   }));
@@ -139,6 +378,8 @@ export function buildSeed(): Tables {
       payment_method: o.pay,
       notes: o.notes ?? null,
       courier_name: o.courier ?? null,
+      channel: "web",
+      ...stageSeed(o.status, o.minutesAgo),
       created_at: ago(o.minutesAgo),
       updated_at: ago(Math.max(0, o.minutesAgo - 5)),
     };
@@ -213,5 +454,42 @@ export function buildSeed(): Tables {
     ] as const
   ).map(([key, value]) => ({ key, value, updated_at: ago(60 * 24 * 30) }));
 
-  return { clients, orders, points_ledger, global_config, categories, products, reviews };
+  const delivery_zones: Row[] = [
+    { name: "Zona cercana", radius_km: 3, fee: 600, min_order: 0 },
+    { name: "Zona extendida", radius_km: 8, fee: 1000, min_order: 8000 },
+  ].map((z, i) => ({
+    id: demoId(G.zone, i + 1),
+    name: z.name,
+    shape: { type: "circle", lat: RESTAURANT_LOCATION.lat, lng: RESTAURANT_LOCATION.lng, radius_km: z.radius_km },
+    fee: z.fee,
+    min_order: z.min_order,
+    sort_order: i,
+    is_active: true,
+    created_at: ago(60 * 24 * 30),
+    updated_at: ago(60 * 24 * 30),
+  }));
+
+  const rand = prng(EXTRA_SEED);
+  const extra = buildExtraOrders(Date.now(), clients.map((c) => String(c.id)), rand);
+  const extraReviews = buildExtraReviews(extra.orders, extra.slowIds, rand);
+  const demoZones: Row[] = DEMO_ZONES.map((z, i) => ({
+    id: demoId(G.zone, 3 + i),
+    name: z.name,
+    shape: { type: "polygon", points: boxCorners(z.box) },
+    fee: z.fee,
+    min_order: z.minOrder,
+    sort_order: 2 + i,
+    is_active: true,
+    created_at: ago(60 * 24 * 30),
+    updated_at: ago(60 * 24 * 30),
+  }));
+
+  return {
+    clients,
+    orders: [...orders, ...extra.orders],
+    points_ledger, global_config, categories, products,
+    reviews: [...reviews, ...extraReviews],
+    order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
+    integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [],
+  };
 }

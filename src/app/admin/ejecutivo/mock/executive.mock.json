@@ -1,0 +1,98 @@
+{
+  "range": { "key": "last_7_days", "from": "2026-09-28T03:00:00.000Z", "to": "2026-10-05T03:00:00.000Z" },
+  "previous": { "from": "2026-09-21T03:00:00.000Z", "to": "2026-09-28T03:00:00.000Z" },
+  "zone": null,
+  "kpis": {
+    "current": {
+      "orders": 361,
+      "delivered": 351,
+      "revenue": 3014350,
+      "onTime": 88.4,
+      "prepMinutes": 18.2,
+      "csat": 4.4,
+      "complaints": 3.4,
+      "avgTicket": 8350
+    },
+    "previous": {
+      "orders": 332,
+      "delivered": 324,
+      "revenue": 2687872,
+      "onTime": 90.6,
+      "prepMinutes": 17.5,
+      "csat": 4.5,
+      "complaints": 2.5,
+      "avgTicket": 8096
+    }
+  },
+  "trends": {
+    "onTime": { "delta": -2.2, "pct": -2.4, "direction": "down", "good": false },
+    "prepMinutes": { "delta": 0.7, "pct": 4, "direction": "up", "good": false },
+    "csat": { "delta": -0.1, "pct": -2.2, "direction": "down", "good": false },
+    "complaints": { "delta": 0.9, "pct": 36, "direction": "up", "good": false },
+    "avgTicket": { "delta": 254, "pct": 3.1, "direction": "up", "good": true }
+  },
+  "series": [
+    { "date": "2026-09-28", "onTime": 91.2, "prepMinutes": 16.8, "orders": 38 },
+    { "date": "2026-09-29", "onTime": 89.5, "prepMinutes": 17.4, "orders": 41 },
+    { "date": "2026-09-30", "onTime": 92.1, "prepMinutes": 16.2, "orders": 44 },
+    { "date": "2026-10-01", "onTime": 88.3, "prepMinutes": 18.9, "orders": 47 },
+    { "date": "2026-10-02", "onTime": 85, "prepMinutes": 19.6, "orders": 62 },
+    { "date": "2026-10-03", "onTime": 84.1, "prepMinutes": 20.4, "orders": 71 },
+    { "date": "2026-10-04", "onTime": 90.3, "prepMinutes": 17.1, "orders": 58 }
+  ],
+  "zones": [
+    { "zoneId": "Z1", "label": "Zona 1", "orders": 96, "revenue": 812000, "onTime": 93.8, "previousOnTime": 94.1, "slaMinutes": 40 },
+    { "zoneId": "Z2", "label": "Zona 2", "orders": 72, "revenue": 605000, "onTime": 90.3, "previousOnTime": 91, "slaMinutes": 40 },
+    { "zoneId": "Z3", "label": "Zona 3", "orders": 64, "revenue": 540350, "onTime": 75, "previousOnTime": 88.2, "slaMinutes": 50 },
+    { "zoneId": "Z4", "label": "Zona 4", "orders": 58, "revenue": 489000, "onTime": 89.7, "previousOnTime": 90.5, "slaMinutes": 40 },
+    { "zoneId": "Z5", "label": "Zona 5", "orders": 41, "revenue": 340000, "onTime": 87.8, "previousOnTime": 86, "slaMinutes": 40 },
+    { "zoneId": "Z6", "label": "Zona 6", "orders": 30, "revenue": 228000, "onTime": 93.3, "previousOnTime": 95, "slaMinutes": 40 }
+  ],
+  "zoneOptions": [
+    { "id": "Z1", "label": "Zona 1" },
+    { "id": "Z2", "label": "Zona 2" },
+    { "id": "Z3", "label": "Zona 3" },
+    { "id": "Z4", "label": "Zona 4" },
+    { "id": "Z5", "label": "Zona 5" },
+    { "id": "Z6", "label": "Zona 6" }
+  ],
+  "channels": [
+    { "channel": "web", "orders": 172, "revenue": 1480000, "share": 47.6 },
+    { "channel": "whatsapp", "orders": 131, "revenue": 1150000, "share": 36.3 },
+    { "channel": "mostrador", "orders": 58, "revenue": 384350, "share": 16.1 }
+  ],
+  "complaints": [
+    { "orderId": "demo-ord-0341", "rating": 2, "comment": "Llegó frío y tardó mucho.", "createdAt": "2026-10-03T23:40:00.000Z" },
+    { "orderId": "demo-ord-0329", "rating": 3, "comment": "Faltó una bebida del pedido.", "createdAt": "2026-10-03T00:15:00.000Z" },
+    { "orderId": "demo-ord-0312", "rating": 1, "comment": "Más de una hora de espera en Zona 3.", "createdAt": "2026-10-02T22:05:00.000Z" },
+    { "orderId": "demo-ord-0287", "rating": 3, "comment": null, "createdAt": "2026-10-01T01:30:00.000Z" }
+  ],
+  "insights": [
+    {
+      "severity": "critical",
+      "text": "La puntualidad en Zona 3 cayó al 75% (venía de 88.2%).",
+      "action": "Revisá los repartidores asignados a Zona 3 y si el tiempo prometido (50 min) es realista."
+    },
+    {
+      "severity": "warning",
+      "text": "Entregas a tiempo está en 88.4% y no llega a la meta (90%).",
+      "action": "Revisá la dotación de repartidores y los tiempos prometidos por zona."
+    },
+    {
+      "severity": "warning",
+      "text": "Tiempo de preparación está en 18.2 min y no llega a la meta (18 min).",
+      "action": "Mirá la carga de la cocina en los horarios pico y reforzá el turno."
+    },
+    {
+      "severity": "warning",
+      "text": "Satisfacción (CSAT) está en 4.4 y no llega a la meta (4.5).",
+      "action": "Leé las reseñas bajas y hablá con los clientes afectados."
+    },
+    {
+      "severity": "warning",
+      "text": "Reclamos está en 3.4% y no llega a la meta (3%).",
+      "action": "Revisá los reclamos recientes y definí una compensación."
+    }
+  ],
+  "truncated": false
+}

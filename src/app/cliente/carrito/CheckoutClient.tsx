@@ -1,45 +1,102 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ImageIcon, Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { ArrowLeft, ImageIcon, Loader2, Minus, Plus, Search, ShoppingBag, Trash2 } from "lucide-react";
 import { formatMoney, PAYMENT_METHODS } from "@/lib/orders";
-import { RESTAURANT_LOCATION, SAMPLE_ADDRESSES, calcDeliveryFee, haversineKm } from "@/lib/restaurant";
+import { SAMPLE_ADDRESSES } from "@/lib/restaurant";
+import type { DeliveryQuote } from "@/lib/zones";
 import { buttonClasses } from "@/lib/buttonClasses";
 import { cn } from "@/lib/cn";
 import { useCart } from "../_components/CartProvider";
 
 interface Props {
   clientAddress: string | null;
-  costoPorKm: number;
-  radioKm: number;
   paused: boolean;
+  /** Direcciones de ejemplo para probar sin buscar (solo modo demo). */
+  showSamples: boolean;
 }
 
-export default function CheckoutClient({ clientAddress, costoPorKm, radioKm, paused }: Props) {
+interface Place {
+  label: string;
+  lat: number;
+  lng: number;
+}
+
+async function readError(res: Response, fallback: string): Promise<string> {
+  const json = (await res.json().catch(() => ({}))) as { error?: string };
+  return json.error ?? fallback;
+}
+
+export default function CheckoutClient({ clientAddress, paused, showSamples }: Props) {
   const router = useRouter();
   const { lines, subtotal, setQty, clear } = useCart();
 
-  // Si la dirección guardada del cliente coincide con una zona conocida, parte seleccionada.
-  const initialAddress = Math.max(0, SAMPLE_ADDRESSES.findIndex((a) => a.address === clientAddress));
-  const [addressIndex, setAddressIndex] = useState(initialAddress);
+  const [query, setQuery] = useState(clientAddress ?? "");
+  const [results, setResults] = useState<Place[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [address, setAddress] = useState<Place | null>(null);
+  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
   const [payment, setPayment] = useState<(typeof PAYMENT_METHODS)[number]>("Tarjeta");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [placed, setPlaced] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const address = SAMPLE_ADDRESSES[addressIndex]!;
-  const { distanceKm, fee } = useMemo(() => {
-    const km = haversineKm(RESTAURANT_LOCATION, address);
-    return { distanceKm: km, fee: calcDeliveryFee(km, costoPorKm) };
-  }, [address, costoPorKm]);
-  const outOfZone = distanceKm > radioKm;
+  // Cada vez que cambia la dirección, el servidor calcula cobertura y envío.
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQuoting(true);
+    fetch("/api/client/quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: address.lat, lng: address.lng }),
+    })
+      .then((res) => (res.ok ? (res.json() as Promise<DeliveryQuote>) : null))
+      .then((q) => { if (!cancelled) setQuote(q); })
+      .catch(() => { if (!cancelled) setQuote(null); })
+      .finally(() => { if (!cancelled) setQuoting(false); });
+    return () => { cancelled = true; };
+  }, [address]);
+
+  const pickAddress = (place: Place) => {
+    setQuote(null);
+    setAddress(place);
+  };
+
+  const search = async () => {
+    setSearchError(null);
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(query.trim())}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await readError(res, "No pudimos buscar la dirección."));
+      const found = (await res.json()) as Place[];
+      setResults(found);
+      if (found.length === 0) setSearchError("No encontramos esa dirección. Probá con calle, altura y barrio.");
+    } catch (e: unknown) {
+      setResults([]);
+      setSearchError(e instanceof Error ? e.message : "No pudimos buscar la dirección.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const covered = quote?.covered === true ? quote : null;
+  const fee = covered?.fee ?? 0;
+  const minOrder = covered?.minOrder ?? 0;
+  const belowMin = covered !== null && subtotal < minOrder;
+  const outOfZone = quote?.covered === false;
   const total = subtotal + fee;
+  const canOrder = address !== null && covered !== null && !belowMin && !quoting;
 
   const confirm = async () => {
+    if (!address) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -48,7 +105,7 @@ export default function CheckoutClient({ clientAddress, costoPorKm, radioKm, pau
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: lines.map((l) => ({ productId: l.id, qty: l.qty })),
-          address: { address: address.address, lat: address.lat, lng: address.lng },
+          address: { address: address.label, lat: address.lat, lng: address.lng },
           paymentMethod: payment,
           notes: notes.trim() || undefined,
         }),
@@ -150,23 +207,66 @@ export default function CheckoutClient({ clientAddress, costoPorKm, radioKm, pau
         <label htmlFor="address" className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest">
           Dirección de entrega
         </label>
-        <select
-          id="address"
-          value={addressIndex}
-          onChange={(e) => setAddressIndex(Number(e.target.value))}
-          className="w-full px-4 py-3 rounded-xl neumorphic-inset text-sm text-gray-700 outline-none focus:ring-2 focus:ring-brand-orange/40"
+        <form
+          onSubmit={(e) => { e.preventDefault(); void search(); }}
+          className="flex gap-2"
         >
-          {SAMPLE_ADDRESSES.map((a, i) => (
-            <option key={a.address} value={i}>
-              {a.label} — {a.address}
-            </option>
-          ))}
-        </select>
-        <p className={cn("text-xs font-medium", outOfZone ? "text-red-600 font-bold" : "text-gray-500")}>
-          {outOfZone
-            ? `Esta dirección queda a ${distanceKm.toFixed(1)} km: fuera de la zona de entrega (${radioKm} km).`
-            : `A ${distanceKm.toFixed(1)} km del local.`}
-        </p>
+          <input
+            id="address"
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            maxLength={200}
+            placeholder="Calle y altura, barrio"
+            className="flex-1 min-w-0 px-4 py-3 rounded-xl neumorphic-inset text-sm text-gray-700 placeholder-gray-500 outline-none focus:ring-2 focus:ring-brand-orange/40"
+          />
+          <button
+            type="submit"
+            disabled={searching || query.trim().length < 5}
+            aria-label="Buscar dirección"
+            className="px-4 rounded-xl neumorphic text-brand-orange font-bold text-sm flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {searching ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Search size={16} aria-hidden />}
+            Buscar
+          </button>
+        </form>
+
+        {searchError && <p role="alert" className="text-xs font-bold text-red-600">{searchError}</p>}
+
+        {(results.length > 0 || showSamples) && (
+          <ul className="space-y-1.5" aria-label="Direcciones encontradas">
+            {[...results, ...(showSamples ? SAMPLE_ADDRESSES.map((a) => ({ label: a.address, lat: a.lat, lng: a.lng })) : [])].map((place) => (
+              <li key={`${place.lat},${place.lng},${place.label}`}>
+                <button
+                  type="button"
+                  onClick={() => pickAddress(place)}
+                  aria-pressed={address?.lat === place.lat && address?.lng === place.lng}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-xl text-xs",
+                    address?.lat === place.lat && address?.lng === place.lng
+                      ? "bg-brand-orange text-white font-bold"
+                      : "neumorphic-inset text-gray-600",
+                  )}
+                >
+                  {place.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {address && (
+          <p
+            role="status"
+            className={cn("text-xs font-medium", outOfZone || belowMin ? "text-red-600 font-bold" : "text-gray-500")}
+          >
+            {quoting && "Calculando el envío..."}
+            {!quoting && quote?.covered === false && quote.reason}
+            {!quoting && belowMin && `El pedido mínimo para tu zona es ${formatMoney(minOrder)}.`}
+            {!quoting && covered && !belowMin && `Entregamos en tu zona${covered.zone ? ` (${covered.zone})` : ""}.`}
+            {!quoting && quote === null && "No pudimos calcular el envío. Probá de nuevo."}
+          </p>
+        )}
       </section>
 
       <section className="neumorphic rounded-2xl p-5 space-y-3">
@@ -228,7 +328,7 @@ export default function CheckoutClient({ clientAddress, costoPorKm, radioKm, pau
       <button
         type="button"
         onClick={confirm}
-        disabled={submitting || paused || outOfZone}
+        disabled={submitting || paused || !canOrder}
         className="w-full flex items-center justify-center gap-2 py-4 rounded-full btn-glow text-white font-black text-sm disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {submitting ? <><Loader2 size={16} className="animate-spin" aria-hidden /> Confirmando...</> : <>Confirmar pedido — {formatMoney(total)}</>}

@@ -32,6 +32,7 @@ export default function TableroClient({ initialOrders }: Props) {
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newOrderError, setNewOrderError] = useState<string | null>(null);
+  const [couriers, setCouriers] = useState<string[]>([]);
   const busyRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -43,6 +44,16 @@ export default function TableroClient({ initialOrders }: Props) {
     } catch {
       /* sin red: se reintenta en el próximo ciclo */
     }
+  }, []);
+
+  // La lista de repartidores casi no cambia: se pide una sola vez.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/couriers", { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<string[]>) : []))
+      .then((names) => { if (!cancelled) setCouriers(names); })
+      .catch(() => { /* sin lista, el selector no se muestra */ });
+    return () => { cancelled = true; };
   }, []);
 
   // Los pedidos del cliente llegan solos: se consulta la lista cada pocos segundos.
@@ -57,7 +68,7 @@ export default function TableroClient({ initialOrders }: Props) {
     const avg =
       finished.length > 0
         ? Math.round(
-            finished.reduce((s, o) => s + (new Date(o.updated_at).getTime() - new Date(o.created_at).getTime()) / 60000, 0) /
+            finished.reduce((s, o) => s + (new Date(o.delivered_at ?? o.updated_at).getTime() - new Date(o.created_at).getTime()) / 60000, 0) /
               finished.length,
           )
         : null;
@@ -67,6 +78,33 @@ export default function TableroClient({ initialOrders }: Props) {
       avgMinutes: avg,
     };
   }, [orders]);
+
+  const assignCourier = async (id: string, courierName: string | null) => {
+    const previous = orders;
+    busyRef.current = id;
+    setBusyId(id);
+    setMoveError(null);
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, courier_name: courierName } : o)));
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, courier_name: courierName }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error ?? "No se pudo asignar el repartidor.");
+      }
+    } catch (e: unknown) {
+      setOrders(previous);
+      setMoveError(e instanceof Error ? e.message : "No se pudo asignar el repartidor.");
+    } finally {
+      busyRef.current = null;
+      setBusyId(null);
+      void refresh();
+    }
+  };
 
   const moveOrder = async (id: string, newStatus: OrderStatus) => {
     if (newStatus === "Cancelado" && !confirm(`¿Cancelar el pedido ${formatOrderId(id)}?`)) return;
@@ -149,10 +187,10 @@ export default function TableroClient({ initialOrders }: Props) {
   };
 
   return (
-    <section className="p-4 md:p-6 space-y-6 md:space-y-8 h-full flex flex-col">
+    <section className="p-2 md:p-3 gap-4 min-h-full h-full flex flex-col">
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0">
-        <div className="card-3d p-4 neumorphic rounded-2xl flex items-center justify-between group fade-up-1">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
+        <div className="card-3d px-4 py-3 neumorphic rounded-2xl flex items-center justify-between group fade-up-1">
           <div>
             <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-1">Ventas Hoy</p>
             <h3 className="text-xl font-headline font-black text-gray-800">{formatMoney(stats.ventasHoy)}</h3>
@@ -161,7 +199,7 @@ export default function TableroClient({ initialOrders }: Props) {
             <Wallet size={20} aria-hidden />
           </div>
         </div>
-        <div className="card-3d p-4 neumorphic rounded-2xl flex items-center justify-between group fade-up-2">
+        <div className="card-3d px-4 py-3 neumorphic rounded-2xl flex items-center justify-between group fade-up-2">
           <div>
             <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-1">Pedidos Activos</p>
             <h3 className="text-xl font-headline font-black text-gray-800">{stats.activos}</h3>
@@ -170,7 +208,7 @@ export default function TableroClient({ initialOrders }: Props) {
             <UtensilsCrossed size={20} aria-hidden />
           </div>
         </div>
-        <div className="card-3d p-4 neumorphic rounded-2xl flex items-center justify-between group fade-up-3">
+        <div className="card-3d px-4 py-3 neumorphic rounded-2xl flex items-center justify-between group fade-up-3">
           <div>
             <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-1">Promedio Entrega</p>
             <h3 className="text-xl font-headline font-black text-gray-800">
@@ -184,7 +222,7 @@ export default function TableroClient({ initialOrders }: Props) {
       </div>
 
       {/* Kanban */}
-      <div className="flex flex-col gap-4 flex-1 min-h-0">
+      <div className="flex flex-col gap-3 flex-1 min-h-[28rem]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2 shrink-0">
           <h2 className="font-headline font-bold text-lg text-gray-800 tracking-tight">Órdenes en tiempo real</h2>
           <div className="flex gap-3">
@@ -199,7 +237,7 @@ export default function TableroClient({ initialOrders }: Props) {
           </p>
         )}
 
-        <div className="flex gap-4 overflow-x-auto overflow-y-hidden pb-4 h-full items-start snap-x snap-mandatory px-1">
+        <div className="flex lg:grid lg:grid-cols-4 gap-3 overflow-x-auto lg:overflow-x-visible overflow-y-hidden flex-1 min-h-0 items-stretch snap-x snap-mandatory lg:snap-none px-1 pb-2">
           {COLUMNS.map((column) => (
             <KanbanColumn
               key={column.status}
@@ -207,6 +245,8 @@ export default function TableroClient({ initialOrders }: Props) {
               orders={ordersFor(column.status)}
               busyId={busyId}
               onMove={moveOrder}
+              couriers={couriers}
+              onAssign={assignCourier}
             />
           ))}
         </div>

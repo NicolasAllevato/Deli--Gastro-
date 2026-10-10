@@ -31,7 +31,10 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  const act = async (id: string, body: { status: "Finalizados" } | { courier_name: string }) => {
+  const act = async (
+    id: string,
+    body: { status: "Finalizados" } | { courier_name: string } | { picked_up: true },
+  ) => {
     setBusyId(id);
     setError(null);
     try {
@@ -69,7 +72,7 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
             <h3 className="font-headline font-black text-base text-gray-800">
               {formatOrderId(order.id)} <span className="font-medium text-gray-500">· {order.client_name}</span>
             </h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">En camino hace {minutesSince(order.updated_at)} min</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">En camino hace {minutesSince(order.ready_at ?? order.updated_at)} min</p>
           </div>
           <span className="font-headline font-black text-brand-orange shrink-0">{formatMoney(order.total)}</span>
         </div>
@@ -113,6 +116,19 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
           >
             <Bike size={16} aria-hidden /> Tomar pedido
           </button>
+        )}
+        {isMine && !order.picked_up_at && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => act(order.id, { picked_up: true })}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-full neumorphic-inset text-brand-orange font-black text-sm disabled:opacity-50"
+          >
+            <Bike size={16} aria-hidden /> Salí con el pedido
+          </button>
+        )}
+        {isMine && order.picked_up_at && (
+          <p className="text-xs font-bold text-gray-500">Saliste hace {minutesSince(order.picked_up_at)} min</p>
         )}
         {isMine && (
           <button

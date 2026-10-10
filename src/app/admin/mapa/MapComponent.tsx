@@ -6,6 +6,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { RESTAURANT_LOCATION } from "@/lib/restaurant";
 import { formatOrderId } from "@/lib/orders";
+import { ZoneLayers } from "@/components/zones/ZoneLayers";
+import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import type { EnrichedOrder } from "@/lib/orders-server";
 
 // Marcadores como divIcon: no dependen de imágenes externas (la CSP del proyecto
@@ -27,13 +29,15 @@ const STATE_COLOR: Record<string, string> = {
 };
 
 const HOME_ICON = dot("#6b7c45", "L");
-const CENTER: [number, number] = [RESTAURANT_LOCATION.lat - 0.005, RESTAURANT_LOCATION.lng - 0.03];
 
 interface Props {
   orders: readonly EnrichedOrder[];
+  zones?: readonly DeliveryZone[];
+  /** Ubicación del local (configurable); por defecto la fija del proyecto. */
+  local?: GeoPoint;
 }
 
-export default function MapComponent({ orders }: Props) {
+export default function MapComponent({ orders, zones = [], local = RESTAURANT_LOCATION }: Props) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -47,13 +51,15 @@ export default function MapComponent({ orders }: Props) {
 
   return (
     <div className="w-full h-full rounded-2xl overflow-hidden shadow-[inset_5px_5px_10px_#d1d5db,inset_-5px_-5px_10px_#ffffff]">
-      <MapContainer center={CENTER} zoom={13} scrollWheelZoom className="w-full h-[360px] z-0">
+      <MapContainer center={[local.lat, local.lng]} zoom={13} scrollWheelZoom className="w-full h-[360px] z-0">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <Marker position={[RESTAURANT_LOCATION.lat, RESTAURANT_LOCATION.lng]} icon={HOME_ICON}>
+        <ZoneLayers zones={zones} />
+
+        <Marker position={[local.lat, local.lng]} icon={HOME_ICON}>
           <Popup><p className="font-bold text-sm">{RESTAURANT_LOCATION.name} (local)</p></Popup>
         </Marker>
 
@@ -64,7 +70,7 @@ export default function MapComponent({ orders }: Props) {
             <span key={order.id}>
               {order.status === "En Camino" && (
                 <Polyline
-                  positions={[[RESTAURANT_LOCATION.lat, RESTAURANT_LOCATION.lng], position]}
+                  positions={[[local.lat, local.lng], position]}
                   pathOptions={{ color, weight: 3, dashArray: "6 8", opacity: 0.7 }}
                 />
               )}

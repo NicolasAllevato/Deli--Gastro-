@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireClient } from "@/lib/auth/requireClient";
 import { isAuthorizationError } from "@/lib/auth/requireRole";
-import { buildItemsDesc, PAYMENT_METHODS } from "@/lib/orders";
-import { numberConfig, readConfig } from "@/lib/orders-server";
-import { RESTAURANT_LOCATION, calcDeliveryFee, haversineKm } from "@/lib/restaurant";
+import { PAYMENT_METHODS } from "@/lib/orders";
+import { createDeliveryOrder } from "@/lib/orders-create";
+import { notifyOrderEvent } from "@/lib/whatsapp/notify";
 
 const createSchema = z.object({
   items: z
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * Checkout. El cliente sólo manda ids y cantidades: precios, subtotal y
- * costo de envío se recalculan acá contra `products` y `global_config`.
+ * costo de envío se recalculan en el servidor (ver `createDeliveryOrder`).
  */
 export async function POST(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 10, 60_000))) {
@@ -61,62 +61,17 @@ export async function POST(req: NextRequest) {
   const { items, address, paymentMethod, notes } = parsed.data;
 
   const db = createAdminClient();
-  const config = await readConfig(db);
+  const result = await createDeliveryOrder(db, {
+    clientId: auth.client.id,
+    items,
+    address,
+    paymentMethod,
+    notes,
+    channel: "web",
+    actor: "cliente",
+  });
+  if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
 
-  if (config.modo_pausa === true || config.tienda_activa === false) {
-    return NextResponse.json({ error: "El local no está tomando pedidos en este momento." }, { status: 409 });
-  }
-
-  const distanceKm = haversineKm(RESTAURANT_LOCATION, address);
-  const radius = numberConfig(config, "radio_delivery_km", 8);
-  if (distanceKm > radius) {
-    return NextResponse.json(
-      { error: `Tu dirección está fuera de la zona de entrega (${radius} km).` },
-      { status: 400 },
-    );
-  }
-
-  const qtyByProduct = new Map<string, number>();
-  for (const item of items) {
-    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) ?? 0) + item.qty);
-  }
-
-  const { data: products, error: productsError } = await db
-    .from("products")
-    .select("id, name, price, is_active")
-    .in("id", [...qtyByProduct.keys()]);
-  if (productsError) return NextResponse.json({ error: productsError.message }, { status: 500 });
-
-  const lines = [];
-  let subtotal = 0;
-  for (const [productId, qty] of qtyByProduct) {
-    const product = (products ?? []).find((p) => p.id === productId);
-    if (!product || !product.is_active) {
-      return NextResponse.json({ error: "Un producto del carrito ya no está disponible." }, { status: 400 });
-    }
-    subtotal += Number(product.price) * qty;
-    lines.push({ qty, name: product.name });
-  }
-
-  const deliveryFee = calcDeliveryFee(distanceKm, numberConfig(config, "costo_por_km", 150));
-
-  const { data: order, error } = await db
-    .from("orders")
-    .insert({
-      client_id: auth.client.id,
-      status: "Recibidos",
-      items_desc: buildItemsDesc(lines),
-      total: subtotal + deliveryFee,
-      delivery_fee: deliveryFee,
-      delivery_address: address.address,
-      delivery_lat: address.lat,
-      delivery_lng: address.lng,
-      payment_method: paymentMethod,
-      notes: notes || null,
-    })
-    .select()
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(order, { status: 201 });
+  after(() => notifyOrderEvent(db, result.value.id, "created"));
+  return NextResponse.json(result.value, { status: 201 });
 }

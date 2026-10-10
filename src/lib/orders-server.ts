@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import type { OrderStatus } from "@/types/database";
+import type { OrderChannel, OrderStatus } from "@/types/database";
 import { pointsForTotal, tierForPoints, type TierRule } from "@/lib/orders";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -20,6 +20,11 @@ export interface EnrichedOrder {
   payment_method: string | null;
   notes: string | null;
   courier_name: string | null;
+  channel: OrderChannel;
+  accepted_at: string | null;
+  ready_at: string | null;
+  picked_up_at: string | null;
+  delivered_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +42,11 @@ interface RawOrder {
   payment_method?: string | null;
   notes?: string | null;
   courier_name?: string | null;
+  channel?: OrderChannel | null;
+  accepted_at?: string | null;
+  ready_at?: string | null;
+  picked_up_at?: string | null;
+  delivered_at?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -76,6 +86,11 @@ export async function enrichOrders(db: Db, orders: RawOrder[]): Promise<Enriched
       payment_method: o.payment_method ?? null,
       notes: o.notes ?? null,
       courier_name: o.courier_name ?? null,
+      channel: o.channel ?? "web",
+      accepted_at: o.accepted_at ?? null,
+      ready_at: o.ready_at ?? null,
+      picked_up_at: o.picked_up_at ?? null,
+      delivered_at: o.delivered_at ?? null,
       created_at: o.created_at,
       updated_at: o.updated_at ?? o.created_at,
     };

@@ -222,6 +222,15 @@ button:focus-visible {
 }
 
 /* ── Base ── */
+/* Escala general al 90%: todo lo definido en rem (Tailwind) se reduce en proporción. */
+html {
+  font-size: 90%;
+  -webkit-text-size-adjust: 100%;
+}
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
 body {
   font-family: var(--font-body);
   background-color: var(--color-background);
@@ -237,3 +246,163 @@ h1,h2,h3,h4,h5,h6,.headline { font-family: var(--font-headline); }
 ::-webkit-scrollbar-thumb:hover { background:rgba(163,177,198,0.85); }
 .custom-scrollbar::-webkit-scrollbar { width:4px; height:4px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background:rgba(163,177,198,0.5); border-radius:10px; }
+
+
+/* Tablero ejecutivo: tema claro/oscuro por contenedor (sin dark: ni prefers-color-scheme) */
+.exec-theme {
+  --ex-bg: #eef1f6;
+  --ex-surface: #ffffff;
+  --ex-surface-2: #eef2f7;
+  --ex-border: #cbd5e1;
+  --ex-text: #0f172a;
+  --ex-muted: #475569;
+  --ex-accent: #4d5c2f;
+  --ex-accent-contrast: #ffffff;
+  --ex-good: #166534;
+  --ex-bad: #b91c1c;
+  --ex-warn: #92400e;
+  --ex-info: #1e40af;
+  --ex-hover: #e2e8f0;
+  --ex-shadow: 0 4px 14px rgba(100, 116, 139, 0.16);
+  background: var(--ex-bg);
+  color: var(--ex-text);
+}
+.exec-theme[data-theme="dark"],
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) {
+  --ex-bg: #0b1220;
+  --ex-surface: #151e30;
+  --ex-surface-2: #1d2940;
+  --ex-border: #3a4c6b;
+  --ex-text: #f1f5f9;
+  --ex-muted: #b4c0d3;
+  --ex-accent: #a3b86c;
+  --ex-accent-contrast: #0b1220;
+  --ex-good: #4ade80;
+  --ex-bad: #fca5a5;
+  --ex-warn: #fcd34d;
+  --ex-info: #93c5fd;
+  --ex-hover: #263552;
+  --ex-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+/* Página: cubre todo el área de contenido, ignorando el fondo neumórfico del layout. */
+.exec-page {
+  margin: -0.5rem;
+  min-height: calc(100% + 1rem);
+  border-radius: 1rem;
+}
+@media (min-width: 768px) {
+  .exec-page { margin: -0.75rem; min-height: calc(100% + 1.5rem); }
+}
+.exec-card {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  border-radius: 1rem;
+  box-shadow: var(--ex-shadow);
+  color: var(--ex-text);
+  min-width: 0;
+}
+.exec-muted { color: var(--ex-muted); }
+.exec-skeleton {
+  background: linear-gradient(90deg, var(--ex-surface-2) 25%, var(--ex-surface) 50%, var(--ex-surface-2) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  border: 1px solid var(--ex-border);
+  border-radius: 1rem;
+}
+.exec-chip {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  color: var(--ex-text);
+  border-radius: 9999px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  box-shadow: var(--ex-shadow);
+  transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+}
+.exec-chip:hover { background: var(--ex-hover); border-color: var(--ex-accent); }
+.exec-chip:active { transform: translateY(1px); }
+.exec-chip[aria-pressed="true"] {
+  background: var(--ex-accent);
+  border-color: var(--ex-accent);
+  color: var(--ex-accent-contrast);
+}
+.exec-chip[aria-pressed="true"]:hover { filter: brightness(1.08); }
+.exec-theme a:focus-visible,
+.exec-theme button:focus-visible,
+.exec-theme select:focus-visible {
+  outline: 2px solid var(--ex-accent);
+  outline-offset: 2px;
+}
+.exec-theme select {
+  background: var(--ex-surface);
+  color: var(--ex-text);
+  border: 1px solid var(--ex-border);
+  border-radius: 9999px;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  max-width: 100%;
+  box-shadow: var(--ex-shadow);
+  cursor: pointer;
+}
+.exec-theme select:hover { border-color: var(--ex-accent); }
+.exec-theme select option { background: var(--ex-surface); color: var(--ex-text); }
+.exec-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.15rem 0.55rem 0.15rem 0.4rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.exec-copilot {
+  background:
+    linear-gradient(var(--ex-surface), var(--ex-surface)) padding-box,
+    linear-gradient(135deg, #7c9a3a, #3b82f6 55%, #a855f7) border-box;
+  border: 1.5px solid transparent;
+  border-radius: 1rem;
+  box-shadow: var(--ex-shadow);
+  color: var(--ex-text);
+  min-width: 0;
+}
+.exec-insight {
+  background: color-mix(in srgb, var(--sev) 9%, var(--ex-surface));
+  border: 1px solid color-mix(in srgb, var(--sev) 35%, transparent);
+  border-left: 4px solid var(--sev);
+  border-radius: 0.75rem;
+}
+
+/* Modal de ajustes: adopta el tema elegido (el portal queda fuera de .exec-theme). */
+.exec-modal { background: transparent; color: inherit; }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  color: var(--ex-text);
+}
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.text-gray-800, .text-gray-700) { color: var(--ex-text); }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.text-gray-600, .text-gray-500) { color: var(--ex-muted); }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.neumorphic, .neumorphic-inset) {
+  background: var(--ex-surface-2);
+  border: 1px solid var(--ex-border);
+  box-shadow: none;
+  color: var(--ex-text);
+}
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.neumorphic-hover:hover, button.neumorphic:hover) { background: var(--ex-hover); }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(input, select, textarea) {
+  background: var(--ex-surface-2);
+  color: var(--ex-text);
+  border: 1px solid var(--ex-border);
+}
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) select option { background: var(--ex-surface); color: var(--ex-text); }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) .border-gray-300 { border-color: var(--ex-border); }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) .text-red-700 { color: var(--ex-bad); }
+[role="dialog"]:has(.exec-modal[data-theme="dark"]) [role="switch"] > span:not(.bg-brand-orange) { background: var(--ex-muted); }

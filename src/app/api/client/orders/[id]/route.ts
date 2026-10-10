@@ -6,6 +6,7 @@ import { requireClient } from "@/lib/auth/requireClient";
 import { isAuthorizationError } from "@/lib/auth/requireRole";
 import { minutesSince } from "@/lib/orders";
 import { numberConfig, readConfig } from "@/lib/orders-server";
+import { cancelOrderForClient } from "@/lib/orders-create";
 
 const idSchema = z.string().uuid();
 const patchSchema = z.object({ action: z.literal("cancel") });
@@ -66,36 +67,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Acción inválida." }, { status: 400 });
   }
 
-  const db = createAdminClient();
-  const { data: order } = await db
-    .from("orders")
-    .select("id, status, created_at")
-    .eq("id", id.data)
-    .eq("client_id", auth.client.id)
-    .maybeSingle();
-  if (!order) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 });
-
-  const cancelWindow = numberConfig(await readConfig(db), "cancelacion_min", 15);
-  if (order.status !== "Recibidos") {
-    const error =
-      order.status === "Finalizados"
-        ? "El pedido ya fue entregado y no se puede cancelar."
-        : order.status === "Cancelado"
-          ? "El pedido ya está cancelado."
-          : "El pedido ya está en preparación y no se puede cancelar.";
-    return NextResponse.json({ error }, { status: 409 });
-  }
-  if (minutesSince(order.created_at) > cancelWindow) {
-    return NextResponse.json({ error: `Pasaron más de ${cancelWindow} minutos: ya no se puede cancelar.` }, { status: 409 });
-  }
-
-  const { data, error } = await db
-    .from("orders")
-    .update({ status: "Cancelado" })
-    .eq("id", order.id)
-    .select()
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  const result = await cancelOrderForClient(createAdminClient(), id.data, auth.client.id, "cliente");
+  if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
+  return NextResponse.json(result.value);
 }

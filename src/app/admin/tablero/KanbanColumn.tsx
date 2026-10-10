@@ -70,13 +70,18 @@ interface Props {
   orders: readonly EnrichedOrder[];
   busyId: string | null;
   onMove: (id: string, next: OrderStatus) => void;
+  /** Repartidores disponibles; vacío = no se muestra el selector. */
+  couriers?: readonly string[];
+  onAssign?: (id: string, courierName: string | null) => void;
 }
 
-export function KanbanColumn({ config, orders, busyId, onMove }: Props) {
+const ASSIGNABLE: readonly OrderStatus[] = ["En Preparación", "En Camino"];
+
+export function KanbanColumn({ config, orders, busyId, onMove, couriers = [], onAssign }: Props) {
   const Chip = config.chipIcon;
 
   return (
-    <div className="w-[85vw] sm:w-[260px] lg:w-[280px] xl:w-[300px] shrink-0 snap-start neumorphic-inset rounded-2xl p-4 flex flex-col gap-3 max-h-full overflow-y-auto">
+    <div className="w-[85vw] sm:w-[260px] lg:w-auto min-w-0 shrink-0 lg:shrink snap-start neumorphic-inset rounded-2xl p-3 flex flex-col gap-3 h-full overflow-y-auto custom-scrollbar">
       <div className="flex items-center justify-between px-1 mb-1 sticky top-0 bg-inset z-10 py-1.5">
         <span className="flex items-center gap-3">
           <span className={`w-3 h-3 rounded-full ${config.dot}`} aria-hidden />
@@ -143,6 +148,27 @@ export function KanbanColumn({ config, orders, busyId, onMove }: Props) {
             </div>
 
             {order.notes && <p className="text-[11px] text-gray-500 italic">&ldquo;{order.notes}&rdquo;</p>}
+
+            {onAssign && couriers.length > 0 && ASSIGNABLE.includes(config.status) && (
+              <label className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                <Bike size={12} aria-hidden />
+                <span className="sr-only">Repartidor del pedido {formatOrderId(order.id)}</span>
+                <select
+                  value={order.courier_name ?? ""}
+                  disabled={busy}
+                  onChange={(e) => onAssign(order.id, e.target.value || null)}
+                  className="flex-1 min-w-0 rounded-lg neumorphic-inset px-2 py-1 text-[11px] text-gray-700 bg-transparent disabled:opacity-50"
+                >
+                  <option value="">Sin asignar</option>
+                  {order.courier_name && !couriers.includes(order.courier_name) && (
+                    <option value={order.courier_name}>{order.courier_name}</option>
+                  )}
+                  {couriers.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             {config.action && (
               <div className="flex gap-2">

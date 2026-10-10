@@ -7,7 +7,7 @@ import type { Row, TableName, Tables } from "@/lib/demo/seed";
  * servidor lo ejecuta contra el store.
  */
 
-export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike";
+export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike" | "not";
 
 export interface Filter {
   op: FilterOp;
@@ -42,24 +42,43 @@ export interface QueryResult {
 }
 
 const KNOWN_TABLES: readonly TableName[] = [
-  "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews",
+  "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
+  "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns",
 ];
+
+/** Tablas cuya clave primaria es `key` (no `id`). */
+const KEY_TABLES: readonly TableName[] = ["global_config", "integration_secrets"];
+
+/** Tablas sin `updated_at` (solo se agregan filas). */
+const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages"];
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 const DEFAULTS: Record<TableName, () => Row> = {
-  clients: () => ({ user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0 }),
+  clients: () => ({
+    user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0, wa_marketing_opt_in: false,
+  }),
   orders: () => ({
     client_id: null, status: "Recibidos", delivery_fee: 0, delivery_address: null,
     delivery_lat: null, delivery_lng: null, payment_method: null, notes: null, courier_name: null,
+    channel: "web", accepted_at: null, ready_at: null, picked_up_at: null, delivered_at: null,
+    survey_sent_at: null,
   }),
   points_ledger: () => ({ order_id: null }),
   global_config: () => ({}),
   categories: () => ({ description: "", is_active: true }),
   products: () => ({ category_id: null, description: "", image_url: "", is_active: true }),
   reviews: () => ({ feedback: null }),
+  order_events: () => ({ actor: null, detail: null }),
+  delivery_zones: () => ({ fee: 0, min_order: 0, sort_order: 0, is_active: true }),
+  integration_secrets: () => ({}),
+  wa_conversations: () => ({
+    client_id: null, contact_name: null, state: {}, human_takeover: false, last_inbound_at: null,
+  }),
+  wa_messages: () => ({ wamid: null, body: null, status: null, tokens: null }),
+  wa_campaigns: () => ({ status: "sending", recipients: 0, sent: 0, failed: 0, finished_at: null }),
 };
 
 function compare(a: unknown, b: unknown): number {
@@ -81,6 +100,11 @@ function matches(row: Row, f: Filter): boolean {
     case "lte": return compare(v, f.value) <= 0;
     case "in": return Array.isArray(f.value) && f.value.includes(v);
     case "is": return v === f.value || (f.value === null && v === undefined);
+    case "not": {
+      // `value` lleva el filtro negado: { op, value }.
+      const inner = f.value as { op: FilterOp; value: unknown };
+      return !matches(row, { op: inner.op, column: f.column, value: inner.value });
+    }
     case "ilike": {
       const pattern = String(f.value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*");
       return new RegExp(`^${pattern}$`, "i").test(String(v ?? ""));
@@ -115,7 +139,8 @@ function finalize(plan: QueryPlan, rows: Row[], count: number | null): QueryResu
 export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
   if (!KNOWN_TABLES.includes(plan.table)) return fail(`Tabla desconocida: ${plan.table}`, "42P01");
   const table = store[plan.table];
-  const pk = plan.table === "global_config" ? "key" : "id";
+  const keyed = KEY_TABLES.includes(plan.table);
+  const pk = keyed ? "key" : "id";
 
   const filtered = () => table.filter((row) => plan.filters.every((f) => matches(row, f)));
 
@@ -145,11 +170,11 @@ export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
       }
       const stamp = nowIso();
       const row: Row = {
-        ...(plan.table === "global_config" ? {} : { id: crypto.randomUUID() }),
+        ...(keyed ? {} : { id: crypto.randomUUID() }),
         ...DEFAULTS[plan.table](),
         ...raw,
         created_at: raw.created_at ?? stamp,
-        ...(plan.table === "points_ledger" || plan.table === "reviews" ? {} : { updated_at: stamp }),
+        ...(APPEND_ONLY.includes(plan.table) ? {} : { updated_at: stamp }),
       };
       table.push(row);
       written.push(row);

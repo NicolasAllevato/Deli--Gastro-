@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, requireAnyRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { courierDisplayName } from "@/lib/auth/courier";
 import { canTransition } from "@/lib/orders";
+import { courierMayPatch, stagePatch, type StagePatch } from "@/lib/tracking";
+import { notifyOrderEvent, type OrderNotice } from "@/lib/whatsapp/notify";
 import { awardPointsForOrder, listOrders } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
 
@@ -28,9 +30,10 @@ const updateOrderSchema = z
     id: z.string().uuid(),
     status: z.enum(VALID_STATUSES as [OrderStatus, ...OrderStatus[]]).optional(),
     courier_name: z.string().trim().min(1).max(60).nullable().optional(),
+    picked_up: z.literal(true).optional(),
   })
-  .refine((v) => v.status !== undefined || v.courier_name !== undefined, {
-    message: "Indicá status o courier_name",
+  .refine((v) => v.status !== undefined || v.courier_name !== undefined || v.picked_up === true, {
+    message: "Indicá status, courier_name o picked_up",
   });
 
 function zodErrorMessage(error: z.ZodError): string {
@@ -125,36 +128,66 @@ export async function PATCH(req: NextRequest) {
   const courierName = courierDisplayName(auth.user);
 
   if (auth.role === "repartidor") {
-    const onTheWay = current.status === "En Camino";
-    const mine = current.courier_name === null || current.courier_name === courierName;
-    const takes = body.status === undefined && body.courier_name === courierName;
-    const delivers = body.status === "Finalizados" && body.courier_name === undefined;
-    if (!onTheWay || !mine || !(takes || delivers)) {
+    if (!courierMayPatch(current, courierName, body)) {
       return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
     }
-  } else if (body.status !== undefined && !canTransition(current.status, body.status)) {
-    return NextResponse.json(
-      { error: `Transición inválida: ${current.status} → ${body.status}` },
-      { status: 409 },
-    );
+  } else {
+    if (body.status !== undefined && !canTransition(current.status, body.status)) {
+      return NextResponse.json(
+        { error: `Transición inválida: ${current.status} → ${body.status}` },
+        { status: 409 },
+      );
+    }
+    const assignable = current.status === "En Preparación" || current.status === "En Camino";
+    if ((body.courier_name !== undefined || body.picked_up) && !assignable) {
+      return NextResponse.json(
+        { error: "Solo se asigna repartidor a pedidos en preparación o en camino." },
+        { status: 409 },
+      );
+    }
+  }
+  if (body.picked_up && current.status !== "En Camino") {
+    return NextResponse.json({ error: "El pedido todavía no está en camino." }, { status: 409 });
   }
 
-  const patch: { status?: OrderStatus; courier_name?: string | null } = {};
-  if (body.status !== undefined) patch.status = body.status;
+  const patch: { status?: OrderStatus; courier_name?: string | null; picked_up_at?: string } & StagePatch = {};
+  if (body.picked_up && !current.picked_up_at) patch.picked_up_at = new Date().toISOString();
+  if (body.status !== undefined) {
+    patch.status = body.status;
+    Object.assign(patch, stagePatch(body.status));
+  }
   if (body.courier_name !== undefined) patch.courier_name = body.courier_name;
   // Si entrega un repartidor que no se había asignado, queda registrado.
   if (auth.role === "repartidor" && body.status === "Finalizados" && current.courier_name === null) {
     patch.courier_name = courierName;
   }
 
-  const { data, error } = await supabase
-    .from("orders")
-    .update(patch)
-    .eq("id", body.id)
-    .select()
-    .single();
+  // Update condicional: solo aplica si el pedido sigue como lo leímos. Así un doble clic o dos
+  // personas a la vez no entregan dos veces (puntos y avisos duplicados) ni toman el mismo pedido.
+  let update = supabase.from("orders").update(patch).eq("id", body.id).eq("status", current.status);
+  if (patch.courier_name !== undefined) {
+    update = current.courier_name === null ? update.is("courier_name", null) : update.eq("courier_name", current.courier_name);
+  }
+  const { data, error } = await update.select().maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "El pedido cambió mientras lo editabas. Actualizá e intentá de nuevo." }, { status: 409 });
+
+  // Bitácora: no debe tumbar el cambio de estado si falla.
+  const events: Array<{ event: string; detail?: string }> = [];
+  if (patch.status) events.push({ event: patch.status });
+  if (patch.picked_up_at) events.push({ event: "picked_up" });
+  if (patch.courier_name && patch.courier_name !== current.courier_name) {
+    events.push({ event: "assigned", detail: patch.courier_name });
+  }
+  if (events.length > 0) {
+    await supabase
+      .from("order_events")
+      .insert(events.map((e) => ({ order_id: data.id, actor: auth.role, ...e })));
+  }
+
+  const notice = patch.status && patch.status !== "Cancelado" && patch.status !== "Recibidos" ? patch.status : null;
+  if (notice) after(() => notifyOrderEvent(supabase, data.id, notice as OrderNotice));
 
   if (patch.status === "Finalizados") {
     await awardPointsForOrder(supabase, {

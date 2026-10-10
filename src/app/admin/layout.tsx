@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Map as MapIcon, Package, ShoppingBag,
-  Settings, Bell, LogOut, Star, Menu, X,
+  Settings, Bell, LogOut, Star, Menu, X, Hexagon, MessageCircle, Bot, MessagesSquare, FileText, Megaphone, BarChart3, Gauge,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { cn } from "@/lib/cn";
@@ -14,9 +14,17 @@ import { cn } from "@/lib/cn";
 const navItems = [
   { href: "/admin/tablero",       icon: LayoutDashboard, label: "Tablero" },
   { href: "/admin/mapa",          icon: MapIcon,         label: "Mapa" },
+  { href: "/admin/zonas",         icon: Hexagon,         label: "Zonas" },
   { href: "/admin/pedidos",       icon: Package,         label: "Pedidos" },
+  { href: "/admin/ejecutivo",     icon: Gauge,           label: "Ejecutivo" },
+  { href: "/admin/informes",      icon: BarChart3,       label: "Informes" },
   { href: "/admin/puntos",        icon: Star,            label: "Puntos" },
   { href: "/admin/productos",     icon: ShoppingBag,     label: "Productos" },
+  { href: "/admin/whatsapp",      icon: MessageCircle,   label: "WhatsApp" },
+  { href: "/admin/agente",        icon: Bot,             label: "Agente IA" },
+  { href: "/admin/conversaciones", icon: MessagesSquare, label: "Conversaciones" },
+  { href: "/admin/plantillas",     icon: FileText,        label: "Plantillas" },
+  { href: "/admin/campanas",       icon: Megaphone,       label: "Campañas" },
   { href: "/admin/configuracion", icon: Settings,        label: "Configuración" },
 ];
 
@@ -34,7 +42,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-dvh w-full bg-background overflow-hidden">
 
       {/* Backdrop mobile */}
       {sidebarOpen && (
@@ -49,10 +57,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col",
-          "w-64 my-3 ml-3 p-5 neumorphic rounded-2xl",
+          "w-64 my-3 ml-3 p-4 neumorphic rounded-2xl",
           "transition-transform duration-300 ease-in-out",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "md:relative md:inset-auto md:translate-x-0 md:w-56 md:m-4 md:flex-shrink-0",
+          "md:relative md:inset-auto md:translate-x-0 md:w-52 md:my-3 md:ml-3 md:mr-0 md:flex-shrink-0 md:h-[calc(100%-1.5rem)]",
         )}
       >
         {/* Botón cerrar — solo mobile */}
@@ -65,7 +73,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </button>
 
         {/* Brand */}
-        <div className="flex items-center gap-3 mb-8 pr-8 md:pr-0">
+        <div className="flex items-center gap-3 mb-4 pr-8 md:pr-0 shrink-0">
           <div className="w-9 h-9 rounded-full neumorphic overflow-hidden relative flex-shrink-0">
             <Image alt="Admin" fill sizes="36px" className="object-cover" src="https://picsum.photos/seed/admin-avatar/72/72" />
           </div>
@@ -76,7 +84,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 flex flex-col gap-1">
+        <nav aria-label="Navegación principal" className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 -mx-1 px-1">
           {navItems.map((item) => {
             const isActive = pathname?.startsWith(item.href);
             const Icon = item.icon;
@@ -86,7 +94,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 href={item.href}
                 onClick={closeSidebar}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                  "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200",
                   isActive
                     ? "neumorphic-inset text-brand-orange font-bold"
                     : "text-gray-500 hover:text-gray-800 hover:bg-white/40",
@@ -100,7 +108,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Footer plan */}
-        <div className="mt-auto pt-4 border-t border-gray-200/50">
+        <div className="mt-2 pt-3 border-t border-gray-200/50 shrink-0">
           <div className="px-2">
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Uso del plan</p>
             <div
@@ -119,10 +127,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
 
         {/* TopBar */}
-        <header className="flex items-center justify-between px-4 md:px-6 py-4 m-4 mb-3 neumorphic rounded-2xl flex-shrink-0">
+        <header className="flex items-center justify-between px-4 md:px-5 py-3 m-3 mb-2 neumorphic rounded-2xl flex-shrink-0">
           <div className="flex items-center gap-3">
             {/* Hamburger — solo mobile */}
             <button
@@ -163,8 +171,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto px-4 pb-4">
-          <div className="neumorphic-inset rounded-2xl p-4 md:p-6 min-h-full">
+        <div className="flex-1 min-h-0 px-3 pb-8">
+          <div className="neumorphic-inset rounded-2xl p-2 md:p-3 h-full overflow-y-auto overflow-x-hidden">
             {children}
           </div>
         </div>
