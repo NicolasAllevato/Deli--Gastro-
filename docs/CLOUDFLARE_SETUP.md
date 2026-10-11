@@ -7,8 +7,8 @@
 | Bucket R2 `deli-gastro-productos` | ✅ Creado, acceso público (r2.dev) habilitado |
 | Endpoint `POST /api/upload` (Next.js → R2) | ✅ Código listo, requiere R2 API keys (ver abajo) |
 | `ProductForm.tsx` (upload real de imagen) | ✅ Migrado, usa `/api/upload` |
-| Worker `pedidos-webhook` | ✅ Código listo, **no deployado** |
-| Worker `finanzas-sync` (cron) | ✅ Código listo, **no deployado** |
+| Worker `pedidos-webhook` | ✅ Deployado el 2026-10-11 en `pedidos-webhook.frankie-400.workers.dev`, con secretos cargados y firma HMAC verificada |
+| Worker `finanzas-sync` (cron) | ✅ Deployado el 2026-10-11 (`0 * * * *`), con secretos cargados; falta ver su primera corrida horaria |
 | Migración `reports_daily` | ✅ Escrita, **no aplicada** (falta proyecto Supabase real) |
 
 ## Cuenta Cloudflare

@@ -60,9 +60,14 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
       Completar `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` en `.env.local`
       (y en Vercel). Sin esto, `/api/upload` no puede escribir a R2.
       Ver `docs/CLOUDFLARE_SETUP.md`.
-- [ ] **Deployar Workers** (`pedidos-webhook`, `finanzas-sync`): correr
-      `npx wrangler secret put ...` + `npx wrangler deploy` en cada carpeta
-      de `workers/`. Código ya listo, no deployado.
+- [x] **Workers deployados** (2026-10-11, cuenta "Proyectos OPSYN"): `pedidos-webhook` y
+      `finanzas-sync`, con `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` y `WEBHOOK_SECRET`
+      cargados. El `WEBHOOK_SECRET` está en `.env.local` y hay que dárselo a quien llame al
+      webhook (firma HMAC-SHA256 hex del body en `x-webhook-signature`); hoy no hay llamador.
+      Gotcha: subir secretos con pipe de PowerShell agrega `\r\n` al valor y rompe la firma;
+      usar Node con `input` sin salto de línea o `wrangler secret bulk`. `cf deploy` (beta) exige
+      `cloudflare.config.ts`; se despliega con `wrangler deploy` (4.136.0 pineado en cada Worker).
+      Por ver: la primera corrida horaria de `finanzas-sync` escribiendo en `reports_daily`.
 - [ ] **Leaked Password Protection** (Supabase Auth): activar en Dashboard
       → Authentication → Policies. Es config de servicio, no SQL.
 - [x] **npm audit** (2026-10-10): Next 16.2.9 → **16.4.0** (y `eslint-config-next` 16.4.0) + `npm audit fix`.

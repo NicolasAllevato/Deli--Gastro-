@@ -67,3 +67,7 @@ spec-kit/
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Workers de Cloudflare
+/workers/*/node_modules/
+/workers/*/.wrangler/
