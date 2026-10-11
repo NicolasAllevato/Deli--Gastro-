@@ -12,6 +12,8 @@ import {
   TRACKING_STEPS, formatMoney, formatOrderId, isActiveStatus, minutesSince, parseItems,
 } from "@/lib/orders";
 import type { OrderStatus } from "@/types/database";
+import { orderTopic } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 export interface TrackedOrder {
   id: string;
@@ -49,7 +51,8 @@ const STEP_ICON: Record<string, LucideIcon> = {
   Finalizados: CheckCircle2,
 };
 
-const POLL_MS = 4000;
+const DEMO_POLL_MS = 4000;
+const CLOCK_TICK_MS = 15_000;
 
 export default function OrderTracker(props: Props) {
   const [order, setOrder] = useState(props.initial);
@@ -74,15 +77,17 @@ export default function OrderTracker(props: Props) {
     }
   }, [props.initial.id]);
 
-  // Mientras el pedido siga activo, se consulta el estado cada pocos segundos.
+  const active = isActiveStatus(order.status);
+
+  // Mientras el pedido siga activo, un aviso en tiempo real dispara la consulta del estado.
+  useLiveRefresh({ topic: orderTopic(props.initial.id), refresh, demoPollMs: DEMO_POLL_MS, enabled: active });
+
+  // La cuenta regresiva del ETA solo necesita avanzar de a poco.
   useEffect(() => {
-    if (!isActiveStatus(order.status)) return;
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-      void refresh();
-    }, POLL_MS);
+    if (!active) return;
+    const timer = window.setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [order.status, refresh]);
+  }, [active]);
 
   const cancel = async () => {
     if (!confirm("¿Querés cancelar este pedido?")) return;

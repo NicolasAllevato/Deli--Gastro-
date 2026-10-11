@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Bike, CheckCircle2, CreditCard, MapPin, Phone, PackageCheck } from "lucide-react";
 import { formatMoney, formatOrderId, minutesSince, parseItems } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
+import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 interface Props {
   initialOrders: EnrichedOrder[];
   courierName: string;
 }
 
-const POLL_MS = 5000;
+const DEMO_POLL_MS = 5000;
 
 export default function CourierClient({ initialOrders, courierName }: Props) {
   const [orders, setOrders] = useState<EnrichedOrder[]>(initialOrders);
@@ -26,10 +28,7 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
     }
   }, []);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+  useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh, demoPollMs: DEMO_POLL_MS });
 
   const act = async (
     id: string,

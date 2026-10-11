@@ -7,6 +7,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { formatMoney, formatOrderId, isActiveStatus } from "@/lib/orders";
+import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
 import { COLUMNS, KanbanColumn } from "./KanbanColumn";
@@ -15,7 +17,7 @@ interface Props {
   initialOrders: EnrichedOrder[];
 }
 
-const POLL_MS = 5000;
+const DEMO_POLL_MS = 5000;
 const MAX_FINISHED_SHOWN = 10;
 
 function isToday(iso: string): boolean {
@@ -55,11 +57,9 @@ export default function TableroClient({ initialOrders }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  // Los pedidos del cliente llegan solos: se consulta la lista cada pocos segundos.
-  useEffect(() => {
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+  // Los pedidos del cliente llegan solos: un aviso en tiempo real dispara la consulta
+  // (en modo demo, sin tiempo real, se consulta cada pocos segundos).
+  useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh, demoPollMs: DEMO_POLL_MS });
 
   const stats = useMemo(() => {
     const todays = orders.filter((o) => isToday(o.created_at));

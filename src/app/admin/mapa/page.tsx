@@ -7,6 +7,8 @@ import { MapPin, Search, Bike, Clock, ClipboardCheck } from "lucide-react";
 import { formatOrderId, minutesSince } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { DeliveryZone, GeoPoint } from "@/lib/zones";
+import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 const MapComponent = dynamic(() => import("./MapComponent"), {
   ssr: false,
@@ -20,7 +22,7 @@ const MapComponent = dynamic(() => import("./MapComponent"), {
   ),
 });
 
-const POLL_MS = 5000;
+const DEMO_POLL_MS = 5000;
 const MAP_STATUSES = ["Recibidos", "En Preparación", "En Camino"] as const;
 
 const estadoIcon: Record<string, React.ReactNode> = {
@@ -61,9 +63,9 @@ export default function MapaPage() {
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh, demoPollMs: DEMO_POLL_MS });
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
