@@ -62,3 +62,8 @@ dist/
 
 # clon local de github/spec-kit (herramienta externa, repo propio)
 spec-kit/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

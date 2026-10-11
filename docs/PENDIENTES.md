@@ -32,10 +32,25 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
 - [x] Geocodificación de direcciones reales: hecha con Nominatim (`/api/geocode`); para
       producción con volumen conviene Google Geocoding o Mapbox.
 - [x] Notificaciones y asistente: ahora por WhatsApp Cloud API + OpenAI, sin n8n. Ver
-      `docs/WHATSAPP_AGENTE.md` (incluye migraciones 005–008 **sin aplicar**, variables y
-      pendientes).
-- [ ] Reemplazar polling por Supabase Realtime.
-- [ ] Tests E2E y medición de cobertura (hay tests unitarios de las piezas puras).
+      `docs/WHATSAPP_AGENTE.md` (variables y pendientes).
+- [x] Migraciones 005–009 (seguimiento de pedidos, zonas, WhatsApp, campañas y protección
+      de columnas de `clients`): aplicadas el 2026-10-10 al proyecto `Delivery`
+      (`wlznhichyivfcqwbosyi`) y verificadas (tablas, columnas, triggers y RLS). El proyecto
+      estaba pausado y se reactivó.
+- [x] Polling reemplazado por Supabase Realtime (2026-10-10). Migración `010_orders_realtime_ping.sql`
+      (aplicada): un trigger en `orders` emite un aviso **sin datos** por Broadcast (canales `orders` y
+      `order:<id>`) y las pantallas (`admin/tablero`, `admin/mapa`, `repartidor`, seguimiento del
+      cliente) refrescan desde la API con `useLiveRefresh`. El polling queda de respaldo cada 30 s;
+      en modo demo sigue siendo el rápido de antes. Probado con un suscriptor anónimo real. Falta
+      verlo en el navegador con un admin real (se necesita sesión) y migrar `admin/conversaciones`,
+      `admin/campanas` y el tablero ejecutivo, que todavía consultan por intervalo.
+- [x] Tests E2E con Playwright (2026-10-10): `npm run e2e` (9 tests, ~2 min; levanta solo el modo
+      demo en el puerto 5290). `e2e/acceso.spec.ts` cubre el guard de `src/proxy.ts` por rol y
+      `e2e/pedido-completo.spec.ts` el flujo cliente → admin → repartidor → cliente entregado.
+      Corre contra `next dev`, así que precalienta las rutas (`warmUpRoutes`); no ejercita
+      Supabase real ni Realtime (eso solo se probó con un suscriptor suelto).
+- [ ] Medición de cobertura (hay 227 tests unitarios de las piezas puras, sin reporte de porcentaje).
+- [ ] E2E que falta: reseñas y canje de puntos, cancelación del cliente, y una pasada en CI.
 - [ ] Decisiones abiertas de producto: ver `docs/FLUJO_PEDIDO.md` §8.
 
 ## Manuales (bloquean a Claude, requieren dashboard/CLI del usuario)
@@ -50,9 +65,13 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
       de `workers/`. Código ya listo, no deployado.
 - [ ] **Leaked Password Protection** (Supabase Auth): activar en Dashboard
       → Authentication → Policies. Es config de servicio, no SQL.
-- [ ] **npm audit**: 6 advisories high (post `npm install @aws-sdk/client-s3`),
-      requieren bump mayor Next.js 16.2.9 → 16.3.3+. No se hizo en este pase
-      por riesgo de romper otros cambios en curso — evaluar en un PR aparte.
+- [x] **npm audit** (2026-10-10): Next 16.2.9 → **16.4.0** (y `eslint-config-next` 16.4.0) + `npm audit fix`.
+      Pasó de 15 vulnerabilidades (1 crítica: bypass de Middleware/Proxy con Turbopack, que
+      afectaba a `src/proxy.ts`) a 5. Verificado: `tsc`, lint, 227 tests, build y el guard del
+      proxy en runtime (rutas protegidas → 307 a `/login`, APIs → 401).
+      Quedan 5 `high` solo en la cadena de lint (`eslint-config-next` → `braces`/`micromatch`/
+      `fast-glob`): dependencias de desarrollo, no entran al bundle; el único "fix" que ofrece
+      npm es bajar a `eslint-config-next@14.2.35`, así que se dejan hasta que salga un parche.
 
 ## Fuera de alcance (pertenecen a otro proyecto en la misma base Supabase)
 
