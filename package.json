@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint src",
     "test": "node --no-warnings --test \"tests/**/*.test.ts\"",
-    "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs"
+    "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1120.0",
@@ -21,7 +22,7 @@
     "clsx": "^2.1.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.14.0",
-    "next": "16.2.9",
+    "next": "16.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-leaflet": "^5.0.0",
@@ -30,12 +31,13 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.4.0",
     "playwright": "^1.59.1",
     "tailwindcss": "^4",
     "typescript": "^5"
