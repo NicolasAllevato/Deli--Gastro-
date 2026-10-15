@@ -8,6 +8,8 @@ import { numberConfig, readConfig } from "@/lib/orders-server";
 import { formatOrderId, isActiveStatus, REWARDS } from "@/lib/orders";
 import { redeemRecommendation } from "@/lib/loyalty/recommendation";
 import { AnimatedClock } from "./_components/AnimatedClock";
+import { TodayPicks } from "./_components/TodayPicks";
+import { PROMO_CONFIG_KEY, parsePromos, promosForToday } from "@/lib/promos";
 import { AddToCartButton } from "./_components/AddToCartButton";
 import { MenuSection, type MenuCategory, type MenuProduct } from "./_components/MenuSection";
 
@@ -57,6 +59,7 @@ export default async function ClienteDashboardPage() {
   const rewardTarget = nextReward?.puntosRequeridos ?? REWARDS[0]!.puntosRequeridos;
   const rewardPct = Math.min(100, Math.round((points / rewardTarget) * 100));
   const firstName = client?.name.split(" ")[0];
+  const todayPromos = promosForToday(parsePromos(config[PROMO_CONFIG_KEY]));
   const recommendation = redeemRecommendation(points, REWARDS, numberConfig(config, "puntos_por_100", 0.5));
 
   return (
@@ -179,6 +182,8 @@ export default async function ClienteDashboardPage() {
           </div>
         </Link>
       </div>
+
+      <TodayPicks promos={todayPromos} products={products} paused={paused} />
 
       <MenuSection categories={categories} products={products} paused={paused} />
     </div>

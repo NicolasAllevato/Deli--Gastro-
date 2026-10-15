@@ -455,6 +455,18 @@ export function buildSeed(): Tables {
     ] as const
   ).map(([key, value]) => ({ key, value, updated_at: ago(60 * 24 * 30) }));
 
+  // Sugerencias y promociones de ejemplo (editables en Configuración → Promos del día).
+  const productId = (name: string) => products.find((p) => p.name === name)?.id ?? null;
+  global_config.push({
+    key: "promos_del_dia",
+    value: [
+      { id: "demo-sug-1", tipo: "sugerencia", titulo: "La del chef hoy", descripcion: "Masa madre de 48 h, salsa de tomates asados y mozzarella fresca.", productId: productId("Pizza Margarita"), dias: [], activa: true },
+      { id: "demo-promo-1", tipo: "promocion", titulo: "Hoy: la Doble BBQ", descripcion: "Doble carne, panceta crocante y salsa BBQ casera. Ideal para compartir.", productId: productId("Hamburguesa Doble BBQ"), dias: [], activa: true },
+      { id: "demo-sug-2", tipo: "sugerencia", titulo: "Para cerrar", descripcion: "El volcán sale tibio, con centro líquido.", productId: productId("Volcán de Cacao"), dias: [], activa: true },
+    ],
+    updated_at: ago(60),
+  });
+
   const delivery_zones: Row[] = [
     { name: "Zona cercana", radius_km: 3, fee: 600, min_order: 0 },
     { name: "Zona extendida", radius_km: 8, fee: 1000, min_order: 8000 },

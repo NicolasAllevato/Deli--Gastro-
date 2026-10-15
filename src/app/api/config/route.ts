@@ -4,6 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import type { Json } from "@/types/database";
+import { promoListSchema } from "@/lib/promos";
 
 // Sólo estas keys pueden escribirse — evita que un PATCH inyecte filas
 // arbitrarias en `global_config`.
@@ -37,6 +38,7 @@ const configPatchSchema = z.object({
   notif_email_from: z.union([z.email(), z.literal("")]).optional(),
   notif_template: z.string().max(4000).optional(),
   niveles_lealtad: z.array(nivelSchema).max(20).optional(),
+  promos_del_dia: promoListSchema.optional(),
 }).strict();
 
 function zodErrorMessage(error: z.ZodError): string {
