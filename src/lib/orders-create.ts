@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
-import { buildItemsDesc, formatMoney, minutesSince } from "@/lib/orders";
-import { numberConfig, readConfig } from "@/lib/orders-server";
+import { buildItemsDesc, formatMoney, minutesSince, REWARDS, type Reward } from "@/lib/orders";
+import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
+import { applyReward, REDEEM_PREFIX, rewardNote } from "@/lib/rewards";
 import { loadDeliverySettings } from "@/lib/zones-server";
 import { quoteDelivery } from "@/lib/zones";
 
@@ -29,7 +30,7 @@ export interface DeliveryPoint {
 }
 
 export interface PricedOrder {
-  lines: Array<{ productId: string; name: string; qty: number; price: number }>;
+  lines: Array<{ productId: string; name: string; qty: number; price: number; categoryId: string | null }>;
   subtotal: number;
   fee: number;
   minOrder: number;
@@ -61,7 +62,7 @@ export async function priceOrder(
 
   const { data: products, error } = await db
     .from("products")
-    .select("id, name, price, is_active")
+    .select("id, name, price, is_active, category_id")
     .in("id", [...qtyByProduct.keys()]);
   if (error) return fail(500, error.message);
 
@@ -72,7 +73,7 @@ export async function priceOrder(
     if (!product || !product.is_active) return fail(400, "Un producto del carrito ya no está disponible.");
     const price = Number(product.price);
     subtotal += price * qty;
-    lines.push({ productId, name: product.name, qty, price });
+    lines.push({ productId, name: product.name, qty, price, categoryId: product.category_id ?? null });
   }
 
   if (subtotal < quote.minOrder) {
@@ -90,17 +91,59 @@ export interface NewDeliveryOrder {
   channel: OrderChannel;
   /** Quién lo crea, para la bitácora (cliente | agente). */
   actor: string;
-  /** Total que el cliente vio y aceptó: si el recálculo da otro monto, no se crea el pedido. */
+  /** Total que el cliente vio y aceptó (ya con el canje): si el recálculo da otro monto, no se crea el pedido. */
   expectedTotal?: number;
+  /** Recompensa de puntos a canjear en este pedido; los puntos se descuentan al crearlo. */
+  rewardId?: string;
+}
+
+interface AppliedReward {
+  reward: Reward;
+  discount: number;
+}
+
+/** Valida el canje contra el saldo real y el contenido del pedido, y calcula cuánto descuenta. */
+async function resolveReward(
+  db: Db,
+  clientId: string,
+  rewardId: string,
+  priced: PricedOrder,
+): Promise<Outcome<AppliedReward>> {
+  const reward = REWARDS.find((r) => r.id === rewardId);
+  if (!reward) return fail(400, "Recompensa inválida.");
+
+  const client = await getClientById(db, clientId);
+  if (!client || client.total_points < reward.puntosRequeridos) {
+    return fail(409, "No te alcanzan los puntos para este canje.");
+  }
+
+  const { data: categories } = await db.from("categories").select("id, name");
+  const nameById = new Map((categories ?? []).map((c) => [String(c.id), String(c.name)]));
+  const outcome = applyReward(
+    reward,
+    priced.lines.map((l) => ({ qty: l.qty, price: l.price, categoria: l.categoryId ? (nameById.get(l.categoryId) ?? null) : null })),
+    priced.subtotal,
+  );
+  if (!outcome.ok) return fail(400, outcome.message);
+  return { ok: true, value: { reward, discount: outcome.discount } };
 }
 
 export async function createDeliveryOrder(db: Db, input: NewDeliveryOrder): Promise<Outcome<OrderRow>> {
   const priced = await priceOrder(db, input.items, input.address);
   if (!priced.ok) return priced;
   const { lines, subtotal, fee } = priced.value;
-  if (input.expectedTotal !== undefined && subtotal + fee !== input.expectedTotal) {
+
+  let applied: AppliedReward | null = null;
+  if (input.rewardId) {
+    const resolved = await resolveReward(db, input.clientId, input.rewardId, priced.value);
+    if (!resolved.ok) return resolved;
+    applied = resolved.value;
+  }
+  const total = subtotal - (applied?.discount ?? 0) + fee;
+  if (input.expectedTotal !== undefined && total !== input.expectedTotal) {
     return fail(409, "El precio cambió desde la cotización. Hay que volver a cotizar.");
   }
+  const notes = [input.notes?.trim(), applied && rewardNote(applied.reward, applied.discount)].filter(Boolean).join(" · ");
 
   const { data: order, error } = await db
     .from("orders")
@@ -108,18 +151,23 @@ export async function createDeliveryOrder(db: Db, input: NewDeliveryOrder): Prom
       client_id: input.clientId,
       status: "Recibidos",
       items_desc: buildItemsDesc(lines),
-      total: subtotal + fee,
+      total,
       delivery_fee: fee,
       delivery_address: input.address.address,
       delivery_lat: input.address.lat,
       delivery_lng: input.address.lng,
       payment_method: input.paymentMethod,
-      notes: input.notes || null,
+      notes: notes || null,
       channel: input.channel,
     })
     .select()
     .single();
   if (error) return fail(500, error.message);
+
+  // Los puntos se cobran recién con el pedido creado y ligados a él, para poder devolverlos si se cancela.
+  if (applied) {
+    await applyPointsDelta(db, input.clientId, -applied.reward.puntosRequeridos, `${REDEEM_PREFIX}${applied.reward.nombre}`, order.id);
+  }
 
   // La bitácora no debe tumbar el pedido ya creado.
   await db.from("order_events").insert({ order_id: order.id, event: "Recibidos", actor: input.actor });
@@ -163,5 +211,6 @@ export async function cancelOrderForClient(db: Db, orderId: string, clientId: st
   if (!data) return fail(409, "El pedido ya cambió de estado y no se puede cancelar.");
 
   await db.from("order_events").insert({ order_id: order.id, event: "Cancelado", actor });
+  await refundRedeemedPoints(db, order.id);
   return { ok: true, value: data };
 }

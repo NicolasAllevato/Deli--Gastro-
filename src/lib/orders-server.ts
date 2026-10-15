@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { OrderChannel, OrderStatus } from "@/types/database";
 import { pointsForTotal, tierForPoints, type TierRule } from "@/lib/orders";
+import { REFUND_PREFIX } from "@/lib/rewards";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -117,6 +118,11 @@ export async function getClientByUserId(db: Db, userId: string) {
   return data;
 }
 
+export async function getClientById(db: Db, clientId: string) {
+  const { data } = await db.from("clients").select("id, total_points").eq("id", clientId).maybeSingle();
+  return data;
+}
+
 function tiersFromConfig(config: Record<string, unknown>): TierRule[] | undefined {
   const raw = config.niveles_lealtad;
   if (!Array.isArray(raw)) return undefined;
@@ -169,10 +175,12 @@ export async function applyPointsDelta(
 export async function awardPointsForOrder(db: Db, order: Pick<EnrichedOrder, "id" | "client_id" | "total" | "items_desc">) {
   if (!order.client_id) return 0;
 
+  // Solo cuentan las filas que suman: un canje descontado al crear el pedido también lleva `order_id`.
   const { data: existing } = await db
     .from("points_ledger")
     .select("id")
     .eq("order_id", order.id)
+    .gt("delta", 0)
     .limit(1);
   if ((existing ?? []).length > 0) return 0;
 
@@ -182,4 +190,27 @@ export async function awardPointsForOrder(db: Db, order: Pick<EnrichedOrder, "id
 
   await applyPointsDelta(db, order.client_id, points, `Pedido ${order.items_desc}`, order.id);
   return points;
+}
+
+/**
+ * Devuelve los puntos canjeados en un pedido que se canceló. Idempotente: descuenta lo ya devuelto,
+ * así una segunda cancelación (cliente y admin a la vez) no acredita dos veces.
+ */
+export async function refundRedeemedPoints(db: Db, orderId: string): Promise<number> {
+  const { data } = await db
+    .from("points_ledger")
+    .select("client_id, delta, description")
+    .eq("order_id", orderId);
+  const rows = data ?? [];
+
+  const spent = rows.filter((r) => r.delta < 0).reduce((sum, r) => sum - r.delta, 0);
+  const refunded = rows
+    .filter((r) => r.delta > 0 && String(r.description).startsWith(REFUND_PREFIX))
+    .reduce((sum, r) => sum + r.delta, 0);
+  const owed = spent - refunded;
+  const clientId = rows.find((r) => r.delta < 0)?.client_id;
+  if (owed <= 0 || !clientId) return 0;
+
+  await applyPointsDelta(db, clientId, owed, `${REFUND_PREFIX}pedido cancelado`, orderId);
+  return owed;
 }

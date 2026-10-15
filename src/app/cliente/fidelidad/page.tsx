@@ -67,6 +67,10 @@ export default async function FidelidadPage() {
           <Gift size={18} className="text-brand-orange" />
           <h3 className="font-headline font-black text-lg text-gray-800">Canjeá tus puntos</h3>
         </div>
+        <p className="text-xs text-gray-500 mb-3">
+          Elegí una recompensa y se aplica en tu carrito. Los puntos se descuentan recién al confirmar el pedido,
+          y si lo cancelás, te los devolvemos.
+        </p>
         <div className="space-y-3">
           {REWARDS.map((recompensa) => {
             const disponible = totalPuntos >= recompensa.puntosRequeridos;

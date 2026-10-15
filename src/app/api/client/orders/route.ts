@@ -20,6 +20,7 @@ const createSchema = z.object({
   }),
   paymentMethod: z.enum(PAYMENT_METHODS),
   notes: z.string().trim().max(300).optional(),
+  rewardId: z.string().min(1).max(40).optional(),
 });
 
 /** Pedidos del cliente autenticado (más recientes primero). */
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Body inválido." }, { status: 400 });
   }
-  const { items, address, paymentMethod, notes } = parsed.data;
+  const { items, address, paymentMethod, notes, rewardId } = parsed.data;
 
   const db = createAdminClient();
   const result = await createDeliveryOrder(db, {
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
     address,
     paymentMethod,
     notes,
+    rewardId,
     channel: "web",
     actor: "cliente",
   });

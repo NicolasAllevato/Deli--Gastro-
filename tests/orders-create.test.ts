@@ -130,6 +130,144 @@ describe("createDeliveryOrder", () => {
   });
 });
 
+describe("createDeliveryOrder con canje de puntos", () => {
+  // Sofía (cliente 0) tiene 180 puntos: alcanza el 10 % (100) y la bebida (150), no el postre (200).
+  const base = (demo: DemoDb, items: Array<{ productId: string; qty: number }>, rewardId?: string, expectedTotal?: number) => ({
+    clientId: clientId(demo),
+    items,
+    address: CASA,
+    paymentMethod: "Efectivo" as const,
+    channel: "web" as const,
+    actor: "cliente",
+    rewardId,
+    expectedTotal,
+  });
+  const saldo = (demo: DemoDb) => Number(demo.store.clients[0]!.total_points);
+
+  it("aplica el descuento al total, deja la nota y descuenta los puntos ligados al pedido", async () => {
+    const demo = createDemoDb();
+    const burger = productId(demo, "Hamburguesa Clásica");
+    const result = await createDeliveryOrder(demo.db, base(demo, [{ productId: burger, qty: 2 }], "descuento", 17000 - 1700 + 600));
+    assert.ok(result.ok);
+    assert.equal(result.value.total, 15900);
+    assert.equal(result.value.delivery_fee, 600);
+    assert.match(String(result.value.notes), /10% de descuento/);
+
+    assert.equal(saldo(demo), 80);
+    const mov = demo.store.points_ledger.at(-1)!;
+    assert.deepEqual([mov.order_id, mov.delta, mov.description], [result.value.id, -100, "Canje: 10% de descuento"]);
+  });
+
+  it("conserva las aclaraciones del cliente junto a la nota del canje", async () => {
+    const demo = createDemoDb();
+    const result = await createDeliveryOrder(demo.db, {
+      ...base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }], "descuento"),
+      notes: "Sin cebolla",
+    });
+    assert.ok(result.ok);
+    assert.match(String(result.value.notes), /Sin cebolla/);
+    assert.match(String(result.value.notes), /Canje de puntos/);
+  });
+
+  it("la bebida gratis descuenta la bebida con su tope", async () => {
+    const demo = createDemoDb();
+    const result = await createDeliveryOrder(
+      demo.db,
+      base(demo, [{ productId: productId(demo, "Limonada con Menta"), qty: 1 }], "bebida"),
+    );
+    assert.ok(result.ok);
+    assert.equal(result.value.total, 2600 - 2000 + 600);
+    assert.equal(saldo(demo), 30);
+  });
+
+  it("rechaza el canje si el pedido no tiene el producto y no toca los puntos", async () => {
+    const demo = createDemoDb();
+    const before = demo.store.orders.length;
+    const result = await createDeliveryOrder(
+      demo.db,
+      base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }], "bebida"),
+    );
+    assert.ok(!result.ok);
+    assert.equal(result.status, 400);
+    assert.match(result.message, /bebidas/);
+    assert.equal(demo.store.orders.length, before);
+    assert.equal(saldo(demo), 180);
+  });
+
+  it("rechaza el canje sin puntos suficientes", async () => {
+    const demo = createDemoDb();
+    const result = await createDeliveryOrder(
+      demo.db,
+      base(demo, [{ productId: productId(demo, "Volcán de Cacao"), qty: 1 }], "postre"),
+    );
+    assert.ok(!result.ok);
+    assert.equal(result.status, 409);
+    assert.match(result.message, /puntos/);
+    assert.equal(saldo(demo), 180);
+  });
+
+  it("rechaza una recompensa inexistente", async () => {
+    const demo = createDemoDb();
+    const result = await createDeliveryOrder(
+      demo.db,
+      base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }], "no-existe"),
+    );
+    assert.ok(!result.ok);
+    assert.equal(result.status, 400);
+  });
+
+  it("el total esperado incluye el descuento: si no coincide, no crea ni cobra puntos", async () => {
+    const demo = createDemoDb();
+    const before = demo.store.orders.length;
+    const result = await createDeliveryOrder(
+      demo.db,
+      base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }], "descuento", 8500 + 600),
+    );
+    assert.ok(!result.ok);
+    assert.equal(result.status, 409);
+    assert.equal(demo.store.orders.length, before);
+    assert.equal(saldo(demo), 180);
+  });
+
+  it("un pedido sin canje no cambia: mismo total y mismos puntos", async () => {
+    const demo = createDemoDb();
+    const result = await createDeliveryOrder(demo.db, base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }]));
+    assert.ok(result.ok);
+    assert.equal(result.value.total, 9100);
+    assert.equal(saldo(demo), 180);
+  });
+
+  it("cancelar el pedido devuelve los puntos una sola vez", async () => {
+    const demo = createDemoDb();
+    const created = await createDeliveryOrder(demo.db, base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }], "descuento"));
+    assert.ok(created.ok);
+    assert.equal(saldo(demo), 80);
+
+    const cancelled = await cancelOrderForClient(demo.db, created.value.id, clientId(demo), "cliente");
+    assert.ok(cancelled.ok);
+    assert.equal(saldo(demo), 180);
+
+    const devolucion = demo.store.points_ledger.at(-1)!;
+    assert.deepEqual([devolucion.order_id, devolucion.delta], [created.value.id, 100]);
+    assert.match(String(devolucion.description), /^Devolución/);
+
+    // Una segunda cancelación (o un reintento del admin) no devuelve de nuevo.
+    const { refundRedeemedPoints } = await import("../src/lib/orders-server.ts");
+    assert.equal(await refundRedeemedPoints(demo.db, created.value.id), 0);
+    assert.equal(saldo(demo), 180);
+  });
+
+  it("cancelar un pedido sin canje no mueve los puntos", async () => {
+    const demo = createDemoDb();
+    const created = await createDeliveryOrder(demo.db, base(demo, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }]));
+    assert.ok(created.ok);
+    const before = demo.store.points_ledger.length;
+    assert.ok((await cancelOrderForClient(demo.db, created.value.id, clientId(demo), "cliente")).ok);
+    assert.equal(demo.store.points_ledger.length, before);
+    assert.equal(saldo(demo), 180);
+  });
+});
+
 describe("cancelOrderForClient", () => {
   async function newOrder(demo: DemoDb) {
     const created = await createDeliveryOrder(demo.db, {

@@ -86,6 +86,18 @@ describe("awardPointsForOrder", () => {
     assert.equal(client.total_points, 105);
   });
 
+  it("acredita los puntos aunque el pedido ya tenga un canje descontado", async () => {
+    const { db, store } = createDemoDb();
+    const client = store.clients.find((c) => c.name === "María López")!; // 60 pts
+    const order = { id: crypto.randomUUID(), client_id: String(client.id), total: 9100, items_desc: "1x Hamburguesa" };
+    await applyPointsDelta(db, String(client.id), -20, "Canje: algo", order.id);
+    assert.equal(client.total_points, 40);
+
+    assert.equal(await awardPointsForOrder(db, order), 45);
+    assert.equal(client.total_points, 85);
+    assert.equal(await awardPointsForOrder(db, order), 0);
+  });
+
   it("no acredita nada en pedidos de mostrador o con puntos_por_100 en cero", async () => {
     const { db, store } = createDemoDb((s) => setConfig(s, "puntos_por_100", 0));
     const client = store.clients[0]!;

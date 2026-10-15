@@ -27,10 +27,14 @@ interface CartContextValue {
   subtotal: number;
   add: (product: CartProduct) => void;
   setQty: (productId: string, qty: number) => void;
+  /** Recompensa de puntos elegida para este pedido (se aplica y cobra al confirmarlo). */
+  rewardId: string | null;
+  setReward: (rewardId: string | null) => void;
   clear: () => void;
 }
 
 const STORAGE_KEY = "deli-gastro-cart";
+const REWARD_KEY = "deli-gastro-cart-reward";
 const MAX_QTY = 20;
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -45,14 +49,24 @@ function readStored(): CartLine[] {
   }
 }
 
+function readStoredReward(): string | null {
+  try {
+    return window.sessionStorage.getItem(REWARD_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<readonly CartLine[]>([]);
+  const [rewardId, setRewardId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   // El carrito sólo vive en esta pestaña (sessionStorage): al cerrar, se pierde.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLines(readStored());
+    setRewardId(readStoredReward());
     setHydrated(true);
   }, []);
 
@@ -64,6 +78,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
       /* sin storage: el carrito sigue funcionando en memoria */
     }
   }, [lines, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (rewardId) window.sessionStorage.setItem(REWARD_KEY, rewardId);
+      else window.sessionStorage.removeItem(REWARD_KEY);
+    } catch {
+      /* sin storage: la recompensa sigue en memoria */
+    }
+  }, [rewardId, hydrated]);
 
   const add = useCallback((product: CartProduct) => {
     setLines((prev) => {
@@ -81,7 +105,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const clear = useCallback(() => setLines([]), []);
+  const setReward = useCallback((id: string | null) => setRewardId(id), []);
+
+  const clear = useCallback(() => {
+    setLines([]);
+    setRewardId(null);
+  }, []);
 
   const value = useMemo<CartContextValue>(
     () => ({
@@ -90,9 +119,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
       subtotal: lines.reduce((sum, l) => sum + l.price * l.qty, 0),
       add,
       setQty,
+      rewardId,
+      setReward,
       clear,
     }),
-    [lines, add, setQty, clear],
+    [lines, add, setQty, rewardId, setReward, clear],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

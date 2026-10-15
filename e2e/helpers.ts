@@ -74,13 +74,13 @@ export async function warmUpRoutes(browser: Browser): Promise<void> {
 
 /**
  * Las APIs de escritura del cliente también se compilan al primer uso. Se llaman con datos que
- * el servidor rechaza (pedido inexistente, recompensa inválida) para no alterar el estado.
+ * el servidor rechaza (pedido inexistente, cuerpo vacío) para no alterar el estado.
  */
 async function warmUpClientApis(context: BrowserContext): Promise<void> {
   const timeout = COLD_ROUTE_TIMEOUT_MS;
   await context.request.patch(`/api/client/orders/${WARM_UP_ORDER_ID}`, { data: { action: "cancel" }, timeout });
   await context.request.post("/api/reviews", { data: { orderId: WARM_UP_ORDER_ID, rating: 5 }, timeout });
-  await context.request.post("/api/client/rewards", { data: { rewardId: "no-existe" }, timeout });
+  await context.request.post("/api/client/orders", { data: {}, timeout });
 }
 
 /** Vuelve a los datos de ejemplo originales para que cada archivo parta de un estado conocido. */

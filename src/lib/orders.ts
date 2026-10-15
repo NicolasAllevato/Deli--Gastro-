@@ -88,17 +88,35 @@ export function tierForPoints(points: number, tiers: readonly TierRule[] = DEFAU
   return name && TIER_NAMES.includes(name) ? name : "Bronce";
 }
 
+/** Qué hace una recompensa sobre el pedido: un porcentaje del subtotal o un producto de una categoría sin cargo. */
+export type RewardEffect =
+  | { tipo: "porcentaje"; porcentaje: number }
+  | { tipo: "producto"; categoria: string; tope?: number };
+
 export interface Reward {
   id: string;
   nombre: string;
   descripcion: string;
   puntosRequeridos: number;
+  efecto: RewardEffect;
 }
 
 export const REWARDS: readonly Reward[] = [
-  { id: "postre",    nombre: "Postre gratis",    puntosRequeridos: 200, descripcion: "Cualquier postre del menú" },
-  { id: "bebida",    nombre: "Bebida gratis",    puntosRequeridos: 150, descripcion: "Bebida de hasta $2.000" },
-  { id: "descuento", nombre: "10% de descuento", puntosRequeridos: 100, descripcion: "En tu próximo pedido" },
+  {
+    id: "postre", nombre: "Postre gratis", puntosRequeridos: 200,
+    descripcion: "Cualquier postre del menú",
+    efecto: { tipo: "producto", categoria: "Postres" },
+  },
+  {
+    id: "bebida", nombre: "Bebida gratis", puntosRequeridos: 150,
+    descripcion: "Bebida de hasta $2.000",
+    efecto: { tipo: "producto", categoria: "Bebidas", tope: 2000 },
+  },
+  {
+    id: "descuento", nombre: "10% de descuento", puntosRequeridos: 100,
+    descripcion: "En tu próximo pedido",
+    efecto: { tipo: "porcentaje", porcentaje: 10 },
+  },
 ];
 
 export const PAYMENT_METHODS = ["Efectivo", "Tarjeta", "Mercado Pago"] as const;
