@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getUserRole } from "@/lib/auth/roles";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
 import { accountByRole } from "@/lib/demo/users";
+import { DEMO_LEGAL_COOKIE, LEGAL_BUNDLE_VERSION } from "@/lib/legal/documents";
 
 const PORTAL_PREFIXES = ["/admin", "/cliente", "/repartidor"] as const;
 
@@ -22,6 +23,13 @@ function toLogin(req: NextRequest): NextResponse {
   return NextResponse.redirect(url);
 }
 
+/** Primer ingreso (o documentos nuevos): antes del portal hay que aceptar Términos y Privacidad. */
+function toLegal(req: NextRequest): NextResponse {
+  const url = new URL("/aceptar-terminos", req.url);
+  url.searchParams.set("redirectTo", req.nextUrl.pathname);
+  return NextResponse.redirect(url);
+}
+
 // Modo demo: la sesión es una cookie con el rol de ejemplo (sin Supabase).
 function demoProxy(req: NextRequest): NextResponse {
   const account = accountByRole(req.cookies.get(DEMO_COOKIE)?.value);
@@ -31,6 +39,7 @@ function demoProxy(req: NextRequest): NextResponse {
   if (portal && portal !== `/${account.role}`) {
     return NextResponse.redirect(new URL(account.home, req.url));
   }
+  if (req.cookies.get(DEMO_LEGAL_COOKIE)?.value !== LEGAL_BUNDLE_VERSION) return toLegal(req);
   return NextResponse.next();
 }
 
@@ -63,6 +72,9 @@ async function supabaseProxy(req: NextRequest): Promise<NextResponse> {
   if (portal && portal !== `/${role}`) {
     return NextResponse.redirect(new URL(HOME_BY_ROLE[role], req.url));
   }
+
+  // La marca la escribe solo el servidor (app_metadata) al aceptar los dos documentos.
+  if (user.app_metadata?.legal_version !== LEGAL_BUNDLE_VERSION) return toLegal(req);
 
   return res;
 }

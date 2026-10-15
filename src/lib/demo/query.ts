@@ -43,20 +43,21 @@ export interface QueryResult {
 
 const KNOWN_TABLES: readonly TableName[] = [
   "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
-  "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns",
+  "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
 ];
 
 /** Tablas cuya clave primaria es `key` (no `id`). */
 const KEY_TABLES: readonly TableName[] = ["global_config", "integration_secrets"];
 
 /** Tablas sin `updated_at` (solo se agregan filas). */
-const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages"];
+const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages", "legal_acceptances"];
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 const DEFAULTS: Record<TableName, () => Row> = {
+  legal_acceptances: () => ({ email: null, role: null, ip: null, user_agent: null, accepted_at: nowIso() }),
   clients: () => ({
     user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0, wa_marketing_opt_in: false,
   }),
@@ -158,10 +159,11 @@ export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
     const incoming = (Array.isArray(plan.payload) ? plan.payload : [plan.payload]) as Row[];
     const written: Row[] = [];
     for (const raw of incoming) {
-      const conflictKey = plan.action === "upsert" ? plan.onConflict || pk : pk;
+      // onConflict puede ser compuesto ("a,b,c"), como en Postgres.
+      const conflictKeys = (plan.action === "upsert" ? plan.onConflict || pk : pk).split(",").map((k) => k.trim());
       const existing =
-        plan.action === "upsert" && raw[conflictKey] !== undefined
-          ? table.find((r) => r[conflictKey] === raw[conflictKey])
+        plan.action === "upsert" && conflictKeys.every((k) => raw[k] !== undefined)
+          ? table.find((r) => conflictKeys.every((k) => r[k] === raw[k]))
           : undefined;
       if (existing) {
         Object.assign(existing, raw, { updated_at: nowIso() });

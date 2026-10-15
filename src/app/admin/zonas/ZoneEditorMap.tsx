@@ -11,7 +11,7 @@ const HOME_ICON = L.divIcon({
   className: "",
   iconSize: [28, 28],
   iconAnchor: [14, 14],
-  html: `<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:#6b7c45;color:#fff;font:800 11px sans-serif;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">L</span>`,
+  html: `<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:#7c3aed;color:#fff;font:800 11px sans-serif;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">L</span>`,
 });
 
 const VERTEX_ICON = L.divIcon({

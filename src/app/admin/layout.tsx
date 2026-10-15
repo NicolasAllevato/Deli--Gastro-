@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Bell, LogOut, Menu, X } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { Bell, Menu, X } from "lucide-react";
+import { SignOutButton } from "@/components/ui/SignOutButton";
 import { cn } from "@/lib/cn";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -13,15 +13,8 @@ import { NAV_SECTIONS, findSection, isTabActive } from "./_nav";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const activeSection = findSection(pathname);
-
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-  };
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -147,14 +140,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 GE
               </div>
             </div>
-            <button
-              onClick={handleSignOut}
-              aria-label="Cerrar sesión"
-              title="Cerrar sesión"
-              className="p-2.5 rounded-xl neumorphic-hover text-gray-500 hover:text-red-500 transition-colors"
-            >
-              <LogOut size={18} />
-            </button>
+            <SignOutButton />
           </div>
         </header>
 

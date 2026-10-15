@@ -28,7 +28,7 @@ const STATE_COLOR: Record<string, string> = {
   Recibidos: "#ef4444",
 };
 
-const HOME_ICON = dot("#6b7c45", "L");
+const HOME_ICON = dot("#7c3aed", "L");
 
 interface Props {
   orders: readonly EnrichedOrder[];

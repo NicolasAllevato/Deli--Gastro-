@@ -315,6 +315,32 @@ export interface Database {
         }
         Relationships: []
       }
+      legal_acceptances: {
+        Row: {
+          id: string
+          user_id: string
+          email: string | null
+          role: string | null
+          document: string
+          version: string
+          accepted_at: string
+          ip: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          email?: string | null
+          role?: string | null
+          document: string
+          version: string
+          accepted_at?: string
+          ip?: string | null
+          user_agent?: string | null
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
       reviews: {
         Row: {
           id: string

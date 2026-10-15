@@ -51,7 +51,7 @@ export const COLUMNS: readonly ColumnConfig[] = [
     action: {
       label: "Entregado",
       next: "Finalizados",
-      className: "bg-brand-orange text-white shadow-[0_3px_8px_rgba(107,124,69,0.3)] hover:bg-orange-600",
+      className: "bg-brand-orange text-white shadow-[0_3px_8px_rgba(124,58,237,0.3)] hover:bg-orange-600",
     },
     cancellable: true,
   },

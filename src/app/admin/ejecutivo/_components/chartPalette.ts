@@ -15,7 +15,7 @@ const LIGHT: ChartPalette = {
   text: "#0f172a",
   tooltipBg: "#ffffff",
   tooltipBorder: "#cbd5e1",
-  series: ["#4d5c2f", "#1d4ed8", "#b45309"],
+  series: ["#6d28d9", "#1d4ed8", "#b45309"],
 };
 
 const DARK: ChartPalette = {
@@ -24,7 +24,7 @@ const DARK: ChartPalette = {
   text: "#f1f5f9",
   tooltipBg: "#151e30",
   tooltipBorder: "#33435f",
-  series: ["#a3b86c", "#93c5fd", "#fcd34d"],
+  series: ["#c4b5fd", "#93c5fd", "#fcd34d"],
 };
 
 export const chartPalette = (theme: ExecTheme): ChartPalette => (theme === "dark" ? DARK : LIGHT);

@@ -49,7 +49,7 @@ export function MenuSection({ categories, products, paused }: Props) {
             className={cn(
               "shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all",
               active === chip.id
-                ? "bg-brand-orange text-white shadow-[0_3px_8px_rgba(107,124,69,0.3)]"
+                ? "bg-brand-orange text-white shadow-[0_3px_8px_rgba(124,58,237,0.3)]"
                 : "neumorphic text-gray-600 neumorphic-hover",
             )}
           >

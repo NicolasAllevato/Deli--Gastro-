@@ -4,7 +4,7 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "icon
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 font-bold tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6b7c45]/60";
+  "inline-flex items-center justify-center gap-2 font-bold tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed]/60";
 
 const VARIANT: Record<ButtonVariant, string> = {
   // Verde oliva — acción principal, contraste 4.84:1 sobre #f0f3f8 ✓ WCAG AA

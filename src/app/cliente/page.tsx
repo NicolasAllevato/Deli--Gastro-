@@ -2,10 +2,12 @@ export const dynamic = "force-dynamic";
 
 import Image from "next/image";
 import Link from "next/link";
-import { MessageSquare, Award, Clock, PauseCircle } from "lucide-react";
+import { MessageSquare, Award, PauseCircle, Lightbulb } from "lucide-react";
 import { requireClientPage } from "@/lib/auth/clientPage";
-import { readConfig } from "@/lib/orders-server";
+import { numberConfig, readConfig } from "@/lib/orders-server";
 import { formatOrderId, isActiveStatus, REWARDS } from "@/lib/orders";
+import { redeemRecommendation } from "@/lib/loyalty/recommendation";
+import { AnimatedClock } from "./_components/AnimatedClock";
 import { AddToCartButton } from "./_components/AddToCartButton";
 import { MenuSection, type MenuCategory, type MenuProduct } from "./_components/MenuSection";
 
@@ -55,6 +57,7 @@ export default async function ClienteDashboardPage() {
   const rewardTarget = nextReward?.puntosRequeridos ?? REWARDS[0]!.puntosRequeridos;
   const rewardPct = Math.min(100, Math.round((points / rewardTarget) * 100));
   const firstName = client?.name.split(" ")[0];
+  const recommendation = redeemRecommendation(points, REWARDS, numberConfig(config, "puntos_por_100", 0.5));
 
   return (
     <div className="min-h-screen pb-4">
@@ -107,7 +110,7 @@ export default async function ClienteDashboardPage() {
                   <h4 className="font-headline font-bold text-base text-gray-800 mt-0.5">{activeOrder.status}</h4>
                 </div>
                 <div className="w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center text-brand-orange">
-                  <Clock size={18} aria-hidden />
+                  <AnimatedClock />
                 </div>
               </div>
               <div className="h-2 w-full neumorphic-inset rounded-full overflow-hidden">
@@ -148,6 +151,15 @@ export default async function ClienteDashboardPage() {
                 <div className="h-full bg-brand-orange rounded-full" style={{ width: `${rewardPct}%` }} />
               </div>
             </div>
+            {recommendation && (
+              <p className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold ${recommendation.kind === "ready" ? "badge-green" : "badge-orange"}`}>
+                <Lightbulb size={15} className="shrink-0 mt-px" aria-hidden />
+                <span>
+                  {recommendation.message}
+                  {recommendation.kind === "ready" && <span className="block mt-1 font-black underline">Canjear ahora →</span>}
+                </span>
+              </p>
+            )}
           </Link>
         </div>
       </div>
@@ -156,13 +168,13 @@ export default async function ClienteDashboardPage() {
       <div className="px-5 mb-8 fade-up-3">
         <Link
           href="/cliente/chat"
-          className="neumorphic rounded-2xl p-4 flex items-center justify-between group hover:bg-[#6b7c45]/8 transition-colors duration-200"
+          className="neumorphic rounded-2xl p-4 flex items-center justify-between group hover:bg-[#7c3aed]/8 transition-colors duration-200"
         >
           <div>
             <p className="font-bold text-sm text-gray-800">Asistente Virtual</p>
             <p className="text-xs text-gray-500 mt-0.5">¿Dudas con tu pedido?</p>
           </div>
-          <div className="w-9 h-9 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-[0_4px_12px_rgba(107,124,69,0.3)] group-hover:scale-110 transition-transform duration-200">
+          <div className="w-9 h-9 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-[0_4px_12px_rgba(124,58,237,0.3)] group-hover:scale-110 transition-transform duration-200">
             <MessageSquare size={16} aria-hidden />
           </div>
         </Link>

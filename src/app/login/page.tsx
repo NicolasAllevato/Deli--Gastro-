@@ -55,7 +55,7 @@ function LoginContent() {
         {/* Logo */}
         <div className="text-center mb-10">
           <h1 className="font-headline text-4xl font-black text-gray-900">
-            Deli<span className="text-brand-orange">-</span>Gastro
+            Opsyn <span className="text-brand-orange">Dely</span>
           </h1>
           <p className="text-gray-500 text-sm mt-2">Panel de administración</p>
         </div>

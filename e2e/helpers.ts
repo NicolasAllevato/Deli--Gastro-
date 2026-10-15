@@ -1,17 +1,38 @@
 import { expect } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
+import { DEMO_LEGAL_COOKIE, LEGAL_BUNDLE_VERSION } from "../src/lib/legal/documents";
+import { essentialOnly, serializeConsentCookie } from "../src/lib/consent/consentCore";
 
 export type DemoRole = "admin" | "cliente" | "repartidor";
 
 const DEMO_PASSWORD = "demo1234";
 
-/** Abre un contexto de navegador ya autenticado con una de las cuentas del modo demo. */
-export async function loginAs(browser: Browser, role: DemoRole): Promise<{ context: BrowserContext; page: Page }> {
+interface LoginOptions {
+  /** Por defecto la cuenta ya aceptó Términos y Privacidad; false para probar el primer ingreso. */
+  acceptLegal?: boolean;
+}
+
+/**
+ * Abre un contexto de navegador ya autenticado con una de las cuentas del modo demo. También deja
+ * elegido el consentimiento de cookies, para que el banner no tape botones en los tests.
+ */
+export async function loginAs(
+  browser: Browser,
+  role: DemoRole,
+  { acceptLegal = true }: LoginOptions = {},
+): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext();
   const res = await context.request.post("/api/demo/session", {
     data: { email: `${role}@deli-gastro.com`, password: DEMO_PASSWORD },
   });
   if (!res.ok()) throw new Error(`No se pudo iniciar sesión como ${role}: ${res.status()}`);
+
+  const base = new URL(String(process.env.E2E_BASE_URL ?? `http://localhost:${process.env.E2E_PORT ?? 5290}`));
+  const consent = serializeConsentCookie(essentialOnly()).split(";")[0].split("=");
+  await context.addCookies([
+    { name: consent[0], value: consent.slice(1).join("="), domain: base.hostname, path: "/" },
+    ...(acceptLegal ? [{ name: DEMO_LEGAL_COOKIE, value: LEGAL_BUNDLE_VERSION, domain: base.hostname, path: "/" }] : []),
+  ]);
   return { context, page: await context.newPage() };
 }
 

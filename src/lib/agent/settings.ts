@@ -11,6 +11,8 @@ export const TEST_PHONE = "test-admin";
 
 export interface AgentSettings {
   active: boolean;
+  /** Recibir audios de WhatsApp y transcribirlos para entender consultas y pedidos. */
+  transcribeAudio: boolean;
   name: string;
   tone: string;
   instructions: string;
@@ -30,6 +32,7 @@ export async function loadAgentSettings(db: Db): Promise<AgentSettings> {
   const minutes = Number(config.tiempo_entrega_min);
   return {
     active: config.agente_activo === true,
+    transcribeAudio: config.agente_audios !== false,
     name: text(config.agente_nombre, "Deli", 40),
     tone: text(config.agente_tono, "cálido, cercano y breve", 200),
     instructions: text(config.agente_instrucciones, "", 1000),

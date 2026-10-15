@@ -80,6 +80,7 @@ export default function AgentePage() {
     void run(async () => {
       await request("/api/config", send("PATCH", {
         agente_activo: form.active,
+        agente_audios: form.transcribeAudio,
         agente_nombre: form.name,
         agente_tono: form.tone,
         agente_instrucciones: form.instructions,
@@ -140,6 +141,12 @@ export default function AgentePage() {
           onChange={(active) => setForm({ ...form, active })}
           label="Agente activo"
           hint="Cuando está activo, responde solo los mensajes de WhatsApp (salvo las conversaciones que vos tomes)."
+        />
+        <Switch
+          checked={form.transcribeAudio}
+          onChange={(transcribeAudio) => setForm({ ...form, transcribeAudio })}
+          label="Recibir y transcribir audios"
+          hint="Los clientes pueden mandar audios con consultas o pedidos: el agente los pasa a texto y responde. Si lo apagás, les pide que escriban."
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Nombre del negocio" value={form.businessName} maxLength={80} onChange={(e) => setForm({ ...form, businessName: e.target.value })} />

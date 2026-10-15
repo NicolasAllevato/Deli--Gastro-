@@ -25,6 +25,7 @@ const configPatchSchema = z.object({
   horario_cierre: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Horario inválido (HH:MM)").optional(),
   negocio_nombre: z.string().trim().min(1).max(80).optional(),
   agente_activo: z.boolean().optional(),
+  agente_audios: z.boolean().optional(),
   agente_nombre: z.string().trim().min(1).max(40).optional(),
   agente_tono: z.string().trim().min(1).max(200).optional(),
   agente_instrucciones: z.string().trim().max(1000).optional(),

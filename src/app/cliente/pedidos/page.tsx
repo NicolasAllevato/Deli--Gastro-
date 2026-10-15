@@ -1,9 +1,10 @@
 export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
-import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight } from "lucide-react";
+import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight, Sparkles } from "lucide-react";
 import { requireClientPage } from "@/lib/auth/clientPage";
-import { formatOrderId } from "@/lib/orders";
+import { formatOrderId, pointsForTotal } from "@/lib/orders";
+import { numberConfig, readConfig } from "@/lib/orders-server";
 
 const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> = {
   Finalizados:      { icon: <CheckCircle size={12} />, classes: "badge-green" },
@@ -19,6 +20,24 @@ function formatDate(iso: string) {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+/** Puntos del pedido: los sumados si ya se acreditaron; los que va a sumar si sigue en curso. */
+function OrderPoints({ status, earned, upcoming }: { status: string; earned?: number; upcoming: number }) {
+  if (status === "Cancelado") return null;
+  if (earned) {
+    return (
+      <p className="inline-flex items-center gap-1.5 self-start rounded-full badge-orange px-2.5 py-1 text-[11px] font-bold">
+        <Sparkles size={12} aria-hidden /> Sumaste {earned.toLocaleString("es-AR")} puntos
+      </p>
+    );
+  }
+  if (status === "Finalizados" || upcoming <= 0) return null;
+  return (
+    <p className="inline-flex items-center gap-1.5 self-start text-[11px] font-bold text-gray-500">
+      <Sparkles size={12} aria-hidden /> Vas a sumar {upcoming.toLocaleString("es-AR")} puntos al recibirlo
+    </p>
+  );
 }
 
 export default async function ClientePedidosPage() {
@@ -40,6 +59,16 @@ export default async function ClientePedidosPage() {
     ? await db.from("reviews").select("order_id").eq("client_id", client.id)
     : { data: [] };
   const reviewed = new Set((reviewRows ?? []).map((r) => r.order_id));
+
+  // Puntos acreditados por pedido (historial real) y, para los que siguen en curso, cuántos va a sumar.
+  const { data: ledger } = client
+    ? await db.from("points_ledger").select("order_id, delta").eq("client_id", client.id).gt("delta", 0)
+    : { data: [] };
+  const earned = new Map<string, number>();
+  for (const row of ledger ?? []) {
+    if (row.order_id) earned.set(row.order_id, (earned.get(row.order_id) ?? 0) + row.delta);
+  }
+  const puntosPor100 = numberConfig(await readConfig(db), "puntos_por_100", 0.5);
 
   return (
     <div className="px-4 py-6 max-w-2xl mx-auto pb-8">
@@ -70,6 +99,12 @@ export default async function ClientePedidosPage() {
 
                 <p className="text-xs text-gray-500 truncate">{pedido.items_desc}</p>
 
+                <OrderPoints
+                  status={pedido.status}
+                  earned={earned.get(pedido.id)}
+                  upcoming={pointsForTotal(Number(pedido.total), puntosPor100)}
+                />
+
                 <div className="flex items-center justify-between pt-3 border-t border-gray-200/50">
                   <span className="font-headline font-black text-brand-orange text-base">
                     ${Number(pedido.total).toLocaleString("es-AR")}
@@ -78,7 +113,7 @@ export default async function ClientePedidosPage() {
                     {pedido.status === "Finalizados" && !reviewed.has(pedido.id) && (
                       <Link
                         href={`/cliente/resenas/${pedido.id}`}
-                        className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-[#5a6838] transition-colors"
+                        className="flex items-center gap-0.5 text-[11px] font-black text-brand-orange hover:text-[#6d28d9] transition-colors"
                       >
                         Reseñar <ChevronRight size={13} />
                       </Link>

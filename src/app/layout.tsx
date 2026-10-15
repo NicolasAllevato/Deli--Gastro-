@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope, Inter } from "next/font/google";
 import "./globals.css";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { CookieNotice } from "@/components/site/CookieNotice";
 import { DEFAULT_THEME, themeInitScript } from "@/lib/theme/themeConfig";
 
 const manrope = Manrope({
@@ -17,8 +18,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Deli-Gastro Delivery",
-  description: "App Web de Control de Delivery y Gestión Operativa",
+  title: "Opsyn Dely",
+  description: "Opsyn Dely — delivery inteligente de Opsyn Soluciones: pedidos, WhatsApp con IA y fidelización.",
 };
 
 export default function RootLayout({
@@ -33,6 +34,7 @@ export default function RootLayout({
       </head>
       <body className={`${manrope.variable} ${inter.variable} antialiased`}>
         {children}
+        <CookieNotice />
         <DemoBanner />
       </body>
     </html>

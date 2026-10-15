@@ -4,7 +4,7 @@ import { Circle, Polygon, Tooltip } from "react-leaflet";
 import type { DeliveryZone } from "@/lib/zones";
 import { formatMoney } from "@/lib/orders";
 
-const PALETTE = ["#6b7c45", "#3b82f6", "#eab308", "#ef4444", "#8b5cf6", "#14b8a6"] as const;
+const PALETTE = ["#7c3aed", "#3b82f6", "#eab308", "#ef4444", "#8b5cf6", "#14b8a6"] as const;
 
 export function zoneColor(index: number): string {
   return PALETTE[index % PALETTE.length]!;

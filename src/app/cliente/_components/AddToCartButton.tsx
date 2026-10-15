@@ -51,7 +51,7 @@ export function AddToCartButton({ product, variant = "card", disabled = false }:
           type="button"
           onClick={() => setQty(product.id, qty + 1)}
           aria-label={`Agregar otra unidad de ${product.name}`}
-          className="w-8 h-8 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-[0_3px_8px_rgba(107,124,69,0.3)]"
+          className="w-8 h-8 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-[0_3px_8px_rgba(124,58,237,0.3)]"
         >
           <Plus size={14} aria-hidden />
         </button>
@@ -69,7 +69,7 @@ export function AddToCartButton({ product, variant = "card", disabled = false }:
         window.setTimeout(() => setJustAdded(false), 900);
       }}
       aria-label={`Agregar ${product.name} al carrito`}
-      className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_3px_8px_rgba(107,124,69,0.3)] hover:scale-105 active:scale-95 transition-transform disabled:opacity-50"
+      className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_3px_8px_rgba(124,58,237,0.3)] hover:scale-105 active:scale-95 transition-transform disabled:opacity-50"
     >
       {justAdded ? <Check size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
       {justAdded ? "Agregado" : "Agregar"}

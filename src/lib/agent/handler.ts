@@ -13,6 +13,7 @@ const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
 const MSG_AUDIO_FAILED = "No pude escuchar el audio. ¿Me lo escribís?";
+const MSG_AUDIO_OFF = "Por ahora no escuchamos audios por este medio. ¿Me lo escribís, así te ayudo?";
 const MSG_UNSUPPORTED = "Por ahora solo entiendo mensajes de texto y audios. ¿Me contás qué necesitás?";
 const MSG_RATE_LIMIT = "Recibí muchos mensajes tuyos seguidos y tengo que frenar un rato. Si es urgente, llamanos y te atiende una persona.";
 const MSG_ERROR = "Tuve un problema para responderte. Probá de nuevo en un momento o escribinos y te atiende una persona.";
@@ -65,6 +66,9 @@ async function textOf(db: Db, wa: WhatsAppClient, llm: AgentLlm, ctx: InboundCon
 }
 
 async function respond(db: Db, wa: WhatsAppClient, llm: AgentLlm, settings: AgentSettings, ctx: InboundContext) {
+  // Audios apagados desde el panel: no se descargan ni se transcriben (sin costo de IA).
+  if (ctx.message.content.type === "audio" && !settings.transcribeAudio) return reply(db, wa, ctx, MSG_AUDIO_OFF);
+
   let text: string | null;
   try {
     text = await textOf(db, wa, llm, ctx);

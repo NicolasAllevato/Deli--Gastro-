@@ -40,7 +40,7 @@ export function RedeemButton({ rewardId, rewardName }: Props) {
         onClick={redeem}
         disabled={busy}
         aria-label={`Canjear: ${rewardName}`}
-        className="px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(107,124,69,0.3)] hover:scale-105 transition-transform disabled:opacity-50"
+        className="px-3 py-1 rounded-full bg-brand-orange text-white text-xs font-black shadow-[0_4px_12px_rgba(124,58,237,0.3)] hover:scale-105 transition-transform disabled:opacity-50"
       >
         {busy ? "Canjeando..." : "Canjear"}
       </button>

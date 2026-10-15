@@ -50,7 +50,13 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
     ],
   },
   { label: "Zonas de entrega", icon: Hexagon, href: "/admin/zonas", tabs: [] },
-  { label: "Configuración", icon: Settings, href: "/admin/configuracion", tabs: [] },
+  {
+    label: "Configuración", icon: Settings, href: "/admin/configuracion",
+    tabs: [
+      { href: "/admin/configuracion", label: "General" },
+      { href: "/admin/legal", label: "Usuarios y documentos" },
+    ],
+  },
 ];
 
 const isWithin = (pathname: string, href: string) =>

@@ -11,9 +11,24 @@ type GlobalWithStore = typeof globalThis & { [GLOBAL_KEY]?: Tables };
 
 export function getStore(): Tables {
   const g = globalThis as GlobalWithStore;
-  if (!g[GLOBAL_KEY]) g[GLOBAL_KEY] = buildSeed();
-  return g[GLOBAL_KEY];
+  const store = g[GLOBAL_KEY];
+  if (!store) {
+    g[GLOBAL_KEY] = buildSeed();
+    return g[GLOBAL_KEY];
+  }
+  // Un store creado antes de sumar una tabla (hot-reload) no la tiene: se completa con el seed.
+  // Se revisa una vez por carga del módulo (el seed es caro de construir).
+  if (!checkedTables) {
+    checkedTables = true;
+    for (const [name, rows] of Object.entries(buildSeed())) {
+      const key = name as keyof Tables;
+      if (!store[key]) store[key] = rows;
+    }
+  }
+  return store;
 }
+
+let checkedTables = false;
 
 export function resetStore(): void {
   (globalThis as GlobalWithStore)[GLOBAL_KEY] = buildSeed();

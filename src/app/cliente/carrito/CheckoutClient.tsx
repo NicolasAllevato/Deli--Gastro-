@@ -279,7 +279,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples }: P
                 className={cn(
                   "cursor-pointer text-center px-2 py-3 rounded-xl text-xs font-bold transition-all",
                   payment === method
-                    ? "bg-brand-orange text-white shadow-[0_3px_8px_rgba(107,124,69,0.3)]"
+                    ? "bg-brand-orange text-white shadow-[0_3px_8px_rgba(124,58,237,0.3)]"
                     : "neumorphic-inset text-gray-600",
                 )}
               >

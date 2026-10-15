@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { courierDisplayName } from "@/lib/auth/courier";
 import { getUserRole } from "@/lib/auth/roles";
-import { CourierSignOut } from "./CourierSignOut";
+import { SignOutButton } from "@/components/ui/SignOutButton";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export default async function RepartidorLayout({ children }: { children: React.ReactNode }) {
@@ -24,14 +24,14 @@ export default async function RepartidorLayout({ children }: { children: React.R
             </span>
             <div>
               <h1 className="font-headline text-base font-black text-gray-900 leading-tight">
-                Deli<span className="text-brand-orange">-</span>Gastro · Reparto
+                Opsyn <span className="text-brand-orange">Dely</span> · Reparto
               </h1>
               <p className="text-[11px] text-gray-500">{courierDisplayName(user)}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle compact />
-            <CourierSignOut />
+            <SignOutButton />
           </div>
         </div>
       </header>

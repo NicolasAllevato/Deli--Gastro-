@@ -144,7 +144,7 @@ export default function OrderTracker(props: Props) {
                 <span
                   className={cn(
                     "w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all",
-                    done && "bg-brand-orange text-white shadow-[0_3px_8px_rgba(107,124,69,0.3)]",
+                    done && "bg-brand-orange text-white shadow-[0_3px_8px_rgba(124,58,237,0.3)]",
                     current && "neumorphic-inset text-brand-orange ring-2 ring-brand-orange/40 animate-pulse",
                     !done && !current && "neumorphic-inset text-gray-300",
                   )}

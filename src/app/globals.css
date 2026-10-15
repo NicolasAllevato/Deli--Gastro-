@@ -3,20 +3,20 @@
 /* ── Design Tokens ── */
 @theme {
   /* Legado: se mantiene para compatibilidad con refs existentes */
-  --color-brand-orange: #6b7c45;
+  --color-brand-orange: #7c3aed;
 
   /* Paleta nueva — Deli-Gastro Refined */
-  --color-brand-olive: #6b7c45;        /* Verde oliva primario — 4.84:1 sobre #f0f3f8 ✓ AA */
-  --color-brand-olive-hover: #5a6838;  /* Hover más oscuro — 6.8:1 ✓ AA */
+  --color-brand-olive: #7c3aed;        /* Verde oliva primario — 4.84:1 sobre #f0f3f8 ✓ AA */
+  --color-brand-olive-hover: #6d28d9;  /* Hover más oscuro — 6.8:1 ✓ AA */
   --color-brand-beige: #c9b99a;        /* Beige/arena cálido — superficies secundarias */
   --color-brand-beige-deep: #a8956d;   /* Beige profundo — texto sobre beige claro */
   --color-brand-gold: #8a6e1e;         /* Dorado oscurecido — 5.86:1 sobre #f0f3f8 ✓ AA */
   --color-brand-gold-light: #d4a832;   /* Dorado decorativo — solo iconos/acentos grandes */
-  --color-brand-green: #4bfd39;        /* Verde acento (heredado, se mantiene en badge) */
+  --color-brand-green: #22d3ee;        /* Verde acento (heredado, se mantiene en badge) */
 
   /* Primario semántico — verde oliva */
-  --color-primary: #6b7c45;
-  --color-primary-container: #5a6838;
+  --color-primary: #7c3aed;
+  --color-primary-container: #6d28d9;
   --color-on-primary-container: #ffffff;
 
   /* Superficie y fondo — más oscuros para mayor contraste neumórfico (tema claro) */
@@ -69,8 +69,8 @@
   --app-shadow-light-strong: rgba(255, 255, 255, 0.85);
   --app-card-shadow: 0 4px 14px rgba(100, 116, 139, 0.16);
   --app-scroll: rgba(163, 177, 198, 0.55);
-  --app-focus: #5a6838;
-  --app-accent-text: #4d5c2f;
+  --app-focus: #6d28d9;
+  --app-accent-text: #6d28d9;
   --app-accent-contrast: #ffffff;
   --app-good: #166534;
   --app-bad: #b91c1c;
@@ -79,22 +79,22 @@
   --app-switch-off: #e2e8f0;
   --app-chip-text: #334155;
   --app-btn-secondary: #4a3f2a;
-  --app-btn-ghost: #4a5a2a;
+  --app-btn-ghost: #5b21b6;
   --app-btn-ghost-hover: rgba(232, 237, 220, 0.6);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-background: #0b1220;
+  --color-background: #0c0a1d;
   --color-on-background: #e2e8f0;
-  --color-surface: #0b1220;
+  --color-surface: #0c0a1d;
   --color-on-surface: #f1f5f9;
   --color-on-surface-variant: #cbd5e1;
-  --color-surface-container: #111a2b;
-  --color-surface-container-low: #0f1828;
-  --color-surface-container-lowest: #0b1220;
-  --color-surface-container-highest: #1d2940;
-  --color-inset: #0f1828;
+  --color-surface-container: #141029;
+  --color-surface-container-low: #110e24;
+  --color-surface-container-lowest: #0c0a1d;
+  --color-surface-container-highest: #221b3d;
+  --color-inset: #100d22;
   --color-outline: #475569;
   --color-outline-variant: #334155;
   --color-error: #f87171;
@@ -103,11 +103,11 @@
   --color-text-disabled: #64748b;
   --color-switch-off: #334155;
 
-  --app-bg: #0b1220;
-  --app-surface: #151e30;
-  --app-inset: #0f1828;
-  --app-hover: #263552;
-  --app-glass: rgba(21, 30, 48, 0.75);
+  --app-bg: #0c0a1d;
+  --app-surface: #17132b;
+  --app-inset: #100d22;
+  --app-hover: #2a2245;
+  --app-glass: rgba(23, 19, 43, 0.78);
   --app-edge: rgba(148, 163, 184, 0.12);
   --app-border: rgba(148, 163, 184, 0.22);
   --app-text: #f1f5f9;
@@ -121,9 +121,9 @@
   --app-shadow-light-strong: rgba(255, 255, 255, 0.06);
   --app-card-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   --app-scroll: rgba(100, 116, 139, 0.55);
-  --app-focus: #a3b86c;
-  --app-accent-text: #a3b86c;
-  --app-accent-contrast: #0b1220;
+  --app-focus: #c4b5fd;
+  --app-accent-text: #c4b5fd;
+  --app-accent-contrast: #0c0a1d;
   --app-good: #4ade80;
   --app-bad: #fca5a5;
   --app-warn: #fcd34d;
@@ -131,8 +131,8 @@
   --app-switch-off: #334155;
   --app-chip-text: #e2e8f0;
   --app-btn-secondary: #e7d9b0;
-  --app-btn-ghost: #c5d69a;
-  --app-btn-ghost-hover: rgba(107, 124, 69, 0.22);
+  --app-btn-ghost: #c4b5fd;
+  --app-btn-ghost-hover: rgba(124, 58, 237, 0.22);
 }
 
 /* ── Neumorphic Base ── */
@@ -176,18 +176,18 @@ button:focus-visible {
 
 /* ── Button system ── */
 .btn-glow {
-  background: #6b7c45;
-  box-shadow: 0 6px 16px rgba(107,124,69,0.32);
+  background: #7c3aed;
+  box-shadow: 0 6px 16px rgba(124, 58, 237,0.32);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .btn-glow:hover {
-  background: #5a6838;
+  background: #6d28d9;
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(107,124,69,0.42);
+  box-shadow: 0 10px 24px rgba(124, 58, 237,0.42);
 }
 .btn-glow:active {
   transform: translateY(0);
-  box-shadow: 0 3px 8px rgba(107,124,69,0.28);
+  box-shadow: 0 3px 8px rgba(124, 58, 237,0.28);
 }
 .btn-glow:disabled {
   opacity: 0.45;
@@ -258,8 +258,8 @@ button:focus-visible {
 :root[data-theme="dark"] .bg-gray-900\/60,
 :root[data-theme="dark"] .bg-gray-900\/40 { background-color: rgba(2, 6, 23, 0.7); }
 :root[data-theme="dark"] .bg-\[\#e2e8f0\] { background-color: var(--app-switch-off); }
-:root[data-theme="dark"] .bg-\[\#e8eddc\] { background-color: rgba(107,124,69,0.28); }
-:root[data-theme="dark"] .text-\[\#2a3a18\] { color: #dfe9c4; }
+:root[data-theme="dark"] .bg-\[\#ede9fe\] { background-color: rgba(124, 58, 237,0.28); }
+:root[data-theme="dark"] .text-\[\#2e1065\] { color: #dfe9c4; }
 
 :root[data-theme="dark"] .text-gray-900,
 :root[data-theme="dark"] .text-gray-800,
@@ -317,12 +317,12 @@ button:focus-visible {
 :root[data-theme="dark"] .leaflet-popup-content-wrapper,
 :root[data-theme="dark"] .leaflet-popup-tip { background: var(--app-surface); color: var(--app-text); }
 
-/* Texto de marca: el oliva #6b7c45 da 2.95:1 sobre el fondo hundido (claro) y menos en oscuro.
+/* Texto de marca: el oliva #7c3aed da 2.95:1 sobre el fondo hundido (claro) y menos en oscuro.
    Como texto se usa el tono de acento del tema, que pasa AA en los dos. */
 .text-brand-olive,
 .text-brand-orange,
 .text-brand-olive-hover { color: var(--app-accent-text); }
-:root[data-theme="dark"] .text-\[\#5a6838\] { color: var(--app-accent-text); }
+:root[data-theme="dark"] .text-\[\#6d28d9\] { color: var(--app-accent-text); }
 :root[data-theme="dark"] .text-brand-gold { color: #e0b94d; }
 
 /* ── Scrollbar ── */
@@ -374,8 +374,8 @@ button:focus-visible {
 
 /* ── Glow & Shimmer ── */
 @keyframes glow-pulse {
-  0%,100% { box-shadow:0 0 8px rgba(107,124,69,0.22); }
-  50%     { box-shadow:0 0 20px rgba(107,124,69,0.45); }
+  0%,100% { box-shadow:0 0 8px rgba(124, 58, 237,0.22); }
+  50%     { box-shadow:0 0 20px rgba(124, 58, 237,0.45); }
 }
 @keyframes shimmer {
   0%   { background-position:-200% center; }
@@ -391,6 +391,57 @@ button:focus-visible {
   background-size: 200% auto;
   animation: shimmer 1.5s linear infinite;
 }
+
+/* ── Reloj del pedido activo: agujas girando ── */
+@keyframes clock-spin { to { transform: rotate(360deg); } }
+.clock-hand-minute,
+.clock-hand-hour { transform-origin: 12px 12px; transform-box: view-box; }
+.clock-hand-minute { animation: clock-spin 3s linear infinite; }
+.clock-hand-hour   { animation: clock-spin 36s linear infinite; }
+
+/* ── Landing: presentación animada ── */
+@keyframes logo-glow {
+  0%, 100% { box-shadow: 0 0 24px rgba(124, 58, 237, 0.35), 0 0 60px rgba(34, 211, 238, 0.12); }
+  50%      { box-shadow: 0 0 40px rgba(124, 58, 237, 0.55), 0 0 90px rgba(34, 211, 238, 0.25); }
+}
+.logo-glow { animation: logo-glow 4s ease-in-out infinite; }
+@keyframes brand-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.brand-sheen {
+  background: linear-gradient(110deg, var(--app-accent-text) 0%, #22d3ee 35%, var(--app-accent-text) 60%, #e879f9 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brand-sheen 6s ease-in-out infinite;
+}
+@keyframes word-rise {
+  from { opacity: 0; transform: translateY(0.6em); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+.word-rise { display: inline-block; animation: word-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Punto que recorre el flujo del pedido (4 pasos, ~3.6 s por vuelta) */
+@keyframes flow-run {
+  0%   { left: -10%; }
+  100% { left: 100%; }
+}
+.flow-runner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--app-accent-text), transparent);
+  animation: flow-run 3.6s linear infinite;
+}
+@keyframes flow-pulse {
+  0%, 18%, 100% { box-shadow: 7px 7px 14px var(--app-shadow-dark), -7px -7px 14px var(--app-shadow-light); transform: translateY(0); }
+  8%            { box-shadow: 0 0 0 3px var(--app-accent-text), 0 10px 28px rgba(124, 58, 237, 0.45); transform: translateY(-4px); }
+}
+.flow-step { animation: flow-pulse 3.6s ease-in-out infinite; }
 
 /* ── Reduce Motion ── */
 @media (prefers-reduced-motion: reduce) {

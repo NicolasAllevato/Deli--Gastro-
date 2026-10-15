@@ -1,14 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { readConsentFromCookieHeader } from "@/lib/consent/consentCore";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, type AppTheme } from "./themeConfig";
 
 export type { AppTheme };
 
 const EVENT = "app-theme-change";
 
+/** Tema elegido sin consentimiento de preferencias: vive solo en memoria (esta pestaña). */
+let sessionTheme: AppTheme | null = null;
+
 /** Lee el tema guardado. Sin almacenamiento disponible (modo privado, bloqueado) usa el predeterminado. */
 export function readTheme(): AppTheme {
+  if (sessionTheme) return sessionTheme;
   try {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
     return saved === "light" || saved === "dark" ? saved : DEFAULT_THEME;
@@ -35,10 +40,15 @@ export function useAppTheme(): [AppTheme, (next: AppTheme) => void] {
   }, [theme]);
 
   const setTheme = useCallback((next: AppTheme) => {
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      /* sin almacenamiento el cambio dura solo esta pestaña */
+    // Recordar el tema es una cookie de "preferencias": sin ese consentimiento solo dura esta pestaña.
+    if (readConsentFromCookieHeader(document.cookie)?.preferences) {
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        /* sin almacenamiento el cambio dura solo esta pestaña */
+      }
+    } else {
+      sessionTheme = next;
     }
     document.documentElement.dataset.theme = next;
     window.dispatchEvent(new Event(EVENT));
