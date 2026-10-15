@@ -41,7 +41,11 @@ async function syncDailyReport(env: Env): Promise<void> {
     .filter((o) => o.status !== "Cancelado")
     .reduce((sum, o) => sum + Number(o.total ?? 0), 0);
 
-  const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/reports_daily`, {
+  // `on_conflict=report_date` es obligatorio: sin él PostgREST resuelve el
+  // merge sobre la PK (`id`, aleatoria) y a partir de la 2da corrida del día
+  // el insert choca con `unique(report_date)` (409) y el reporte queda
+  // congelado con los datos de la primera hora.
+  const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/reports_daily?on_conflict=report_date`, {
     method: "POST",
     headers: {
       ...headers,

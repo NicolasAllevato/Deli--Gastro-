@@ -1,24 +1,25 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { isCronAuthorized } from "@/lib/whatsapp/cron-auth";
 import { sendDueSurveys } from "@/lib/whatsapp/notify";
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  // Sin secreto configurado el endpoint queda cerrado (falla cerrado), nunca abierto.
-  if (!secret) return false;
-  const received = Buffer.from(req.headers.get("authorization") ?? "");
-  const expected = Buffer.from(`Bearer ${secret}`);
-  return received.length === expected.length && timingSafeEqual(received, expected);
-}
+export const maxDuration = 60;
 
 /**
- * Envía las encuestas de satisfacción pendientes. Lo llama un cron (por ejemplo Vercel Cron,
- * que manda `Authorization: Bearer $CRON_SECRET`) cada 10-15 minutos.
+ * Envía las encuestas de satisfacción pendientes. Lo dispara el Worker de Cloudflare
+ * `workers/encuestas-cron` cada 15 minutos con `Authorization: Bearer $CRON_SECRET`.
+ * Sin `CRON_SECRET` configurado rechaza todo.
  */
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!isCronAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin;
-  return NextResponse.json(await sendDueSurveys(createAdminClient(), appUrl));
+  try {
+    return NextResponse.json(await sendDueSurveys(createAdminClient(), appUrl));
+  } catch (error: unknown) {
+    console.error("[cron] encuestas", error);
+    return NextResponse.json({ error: "No se pudieron procesar las encuestas." }, { status: 500 });
+  }
 }

@@ -1,0 +1,11 @@
+name = "encuestas-cron"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["*/15 * * * *"] # cada 15 minutos; la app solo envía entre las 9 y las 22 hs (Buenos Aires)
+
+# Secrets requeridos (cargar con `npx wrangler secret bulk` o `secret put`, ver README.md):
+#   BASE_URL     URL pública de la app, sin barra final (ej. https://deli-gastro.vercel.app)
+#   CRON_SECRET  el mismo valor que CRON_SECRET en la app (Vercel / .env.local)

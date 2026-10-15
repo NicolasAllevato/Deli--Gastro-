@@ -1,6 +1,62 @@
 # Pendientes — Deli-Gastro
 
-Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-cloudflare-supabase`).
+Estado al 2026-10-12, rama `feat/demo-local` (parte de `fix/security-design-cloudflare-supabase`).
+Sin push. El trabajo del 2026-10-12 (sección siguiente) está **sin commitear**; lo anterior
+está commiteado en local (último: `d2d97f9`).
+
+## Lo que queda, en orden
+
+**Necesita una decisión del usuario**
+1. **Migración `011_realtime_pings_whatsapp.sql`: escrita, SIN aplicar** al proyecto `Delivery`.
+   Hasta aplicarla, conversaciones y campañas se actualizan cada 30 s en producción (antes 5 s).
+   Antes de aplicarla conviene decidir si los tres canales (`wa_conversations`,
+   `wa_conversation:<id>`, `wa_campaigns`) pasan a ser privados: hoy son públicos como los de la
+   010, así que cualquiera con la anon key puede ver *cuándo* hay movimiento (sin datos) y
+   forzar refetch del panel. Son solo de admin, no hay motivo funcional para que sean públicos.
+2. `finanzas-sync` agrupa por día UTC: el "día" corta a las 21:00 de Argentina. Sin cambiar.
+
+**Por parte de Claude (cuando haya con qué)**
+1. Desplegar `workers/encuestas-cron` (listo, con tests): falta una URL pública https sin SSO
+   (`BASE_URL`) y un `CRON_SECRET` igual en la app y en el Worker.
+2. Probar WhatsApp y el agente con claves reales: checklist de 12 pasos en `docs/WHATSAPP_AGENTE.md`.
+3. Encuestas: los pedidos de clientes que nunca escribieron por WhatsApp se vuelven a evaluar en
+   cada corrida durante la ventana y ocupan lugar en el lote de 50. Filtrarlos por SQL.
+4. Tope global diario de gasto de IA (hoy el tope es por conversación: 12/min y 300/día).
+5. Registro de auditoría de la exportación de clientes (quién y cuándo bajó teléfonos y direcciones).
+6. Tests de los módulos de I/O sin cobertura (`whatsapp/{campaigns,inbound,pipeline}`,
+   `agent/{handler,reply,tools}`, `reports/data.ts`) y pinear por SHA las acciones del CI.
+   El CI (`.github/workflows/ci.yml`) todavía no corrió en un runner real.
+
+**Por parte del usuario (dashboard o CLI propio)**
+1. Cargar `UPLOADS_WORKER_URL` y `UPLOADS_WORKER_TOKEN` en Vercel (valores de `.env.local`).
+   Las R2 API keys ya no hacen falta.
+2. Claves reales: `OPENAI_API_KEY` y las de Meta (`WHATSAPP_ACCESS_TOKEN`,
+   `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`)
+   y aprobación de las plantillas.
+3. Activar Leaked Password Protection (último, a pedido del usuario).
+4. Decidir quién va a llamar a `pedidos-webhook` y entregarle el `WEBHOOK_SECRET` de `.env.local`.
+
+## Resuelto el 2026-10-12
+
+- **Exportación de clientes** (`GET /api/admin/clients/export`, botón en `admin/informes`): CSV con
+  datos de contacto, nivel, puntos, pedidos, cancelados, gasto, ticket promedio, primer y último
+  pedido, días de inactividad y producto más pedido. Pedidos/gasto/ticket son del período elegido;
+  primer/último pedido e inactividad son siempre históricos. Falla con error en vez de truncar.
+- **Usuarios de prueba** reales (admin, 2 clientes, repartidor) creados con la Admin API; datos en
+  `usuarios-de-prueba.txt` (raíz, ignorado por git). El repartidor que faltaba ya existe.
+- **Realtime** en conversaciones, campañas y tablero ejecutivo (este último no se actualizaba
+  solo). `src/lib/live-channel.ts` comparte un canal por topic: antes, pasar de una pantalla a otra
+  con el mismo topic dejaba a la segunda sin avisos. Verificado en navegador contra Supabase real.
+- **`finanzas-sync`** solo escribía la primera corrida de cada día (faltaba `on_conflict=report_date`).
+  Arreglado y re-desplegado; la corrida siguiente actualizó la fila.
+- **Uploads por Cloudflare**: Worker `uploads` con binding R2 (sin R2 API keys), desplegado y
+  probado de punta a punta. `/api/upload` lo usa si están sus dos variables.
+- **Encuestas**: ya no se pueden enviar dos veces por corridas solapadas, solo salen de 9 a 22 hs,
+  un error de base ya no se informa como "0 enviadas" y un pedido no queda reclamado sin encuesta.
+- **Agente**: máximo 8 herramientas por turno, tope de 12/min y 300/día por conversación (se calla
+  si no puede contar) y los errores internos ya no llegan al cliente.
+- **Tests**: 301 unitarios (98,5 % de líneas sobre lo cargado, `npm run coverage`), E2E de reseñas,
+  canje de puntos y cancelación, y CI en GitHub Actions.
 
 ## Resuelto en `feat/demo-local`
 
@@ -52,6 +108,9 @@ Estado al 2026-09-30, rama `feat/demo-local` (parte de `fix/security-design-clou
 - [ ] Medición de cobertura (hay 227 tests unitarios de las piezas puras, sin reporte de porcentaje).
 - [ ] E2E que falta: reseñas y canje de puntos, cancelación del cliente, y una pasada en CI.
 - [ ] Decisiones abiertas de producto: ver `docs/FLUJO_PEDIDO.md` §8.
+- [ ] El proyecto Supabase `Delivery` se pausa solo por inactividad. Si el MCP da timeout o
+      ECONNREFUSED: `get_project` → `INACTIVE` → `restore_project` y esperar a que responda el 5432.
+      En producción real conviene un plan que no se pause.
 
 ## Manuales (bloquean a Claude, requieren dashboard/CLI del usuario)
 
@@ -97,8 +156,9 @@ tablas de Deli-Gastro, ~21 tablas de un sistema de recetas/insumos/costos
 ## Reconciliación de schema (ya resuelta, dejar como referencia)
 
 - `supabase_schema.sql` (raíz) estaba desactualizado y ahora tiene un header
-  `⚠️ OBSOLETO`. La fuente de verdad es `supabase/migrations/` (001, 002, 003),
-  confirmada contra el schema real vía introspección REST + `list_tables`.
+  `⚠️ OBSOLETO`. La fuente de verdad es `supabase/migrations/` (001 a 010, todas
+  aplicadas al proyecto `Delivery`), confirmada contra el schema real vía
+  introspección y `list_tables`.
 - Admin (`admin@deli-gastro.com`) reparado: rol movido de `user_metadata` a
   `app_metadata` directo en `auth.users` (la Admin API de GoTrue devolvía
   "Database error finding users" al listar usuarios — posible trigger

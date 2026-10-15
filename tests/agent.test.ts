@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createOpenAI, OpenAIError } from "../src/lib/agent/openai.ts";
-import { runAgent, type AgentTool } from "../src/lib/agent/loop.ts";
+import { MAX_TOOL_CALLS_PER_TURN, runAgent, type AgentTool } from "../src/lib/agent/loop.ts";
 import type { AssistantMessage, ChatMessage, LLM } from "../src/lib/agent/types.ts";
 
 function fakeFetch(response: unknown, status = 200) {
@@ -162,7 +162,29 @@ describe("runAgent", () => {
     ]);
     const result = await runAgent({ llm, system: "sys", history: [], tools: [boom] });
     assert.equal(result.reply, "Tuve un problema");
-    assert.match(seen[1]!.find((m) => m.role === "tool")!.content, /falló la base/);
+    // El detalle interno (mensajes de la base, etc.) no le llega al modelo ni, por él, al cliente.
+    const content = seen[1]!.find((m) => m.role === "tool")!.content;
+    assert.doesNotMatch(content, /falló la base/);
+    assert.match(content, /error/i);
+  });
+
+  it("no ejecuta más herramientas por paso ni por turno que el tope, pero responde a cada llamada", async () => {
+    let runs = 0;
+    const counted: AgentTool = { ...echo, run: async () => { runs += 1; return { ok: true }; } };
+    const many = Array.from({ length: 12 }, (_, i) => call(`c${i}`, "echo", { text: "x" }));
+    const { llm, seen } = scriptedLlm([
+      { role: "assistant", content: null, tool_calls: many },
+      { role: "assistant", content: null, tool_calls: many },
+      { role: "assistant", content: "listo" },
+    ]);
+    const result = await runAgent({ llm, system: "sys", history: [], tools: [counted] });
+
+    assert.equal(result.reply, "listo");
+    assert.equal(runs, MAX_TOOL_CALLS_PER_TURN);
+    // Toda tool_call necesita su respuesta `tool`, o la API de OpenAI rechaza el siguiente mensaje.
+    const toolMsgs = seen[1]!.filter((m) => m.role === "tool");
+    assert.equal(toolMsgs.length, 12);
+    assert.match(toolMsgs.at(-1)!.content, /demasiadas/i);
   });
 
   it("corta tras el máximo de pasos y usa el mensaje de respaldo", async () => {

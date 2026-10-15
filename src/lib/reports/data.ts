@@ -1,9 +1,10 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { ReportOrder } from "./analytics.ts";
+import type { ExportClient } from "./clientExport.ts";
+import { fetchAllExact, PAGE_SIZE, type Page } from "./paginate.ts";
 
 type Db = ReturnType<typeof createAdminClient>;
 
-const PAGE_SIZE = 1000;
 const MAX_PAGES = 20;
 
 const ORDER_COLUMNS =
@@ -28,6 +29,30 @@ async function fetchAll<Row extends { created_at: string }>(
     before = rows[rows.length - 1]!.created_at;
   }
   return all;
+}
+
+const CLIENT_COLUMNS = "id, name, phone, address, tier, total_points, wa_marketing_opt_in, created_at";
+
+const asPage = <Row,>(q: unknown) => q as Page<Row>;
+
+/** Clientes con todos sus datos y todos los pedidos, para la exportación. Lanza si no entra todo. */
+export async function loadClientExportData(db: Db): Promise<{ clients: ExportClient[]; orders: ReportOrder[] }> {
+  const [clients, orders] = await Promise.all([
+    fetchAllExact<ExportClient>((upTo) => {
+      let query = db.from("clients").select(CLIENT_COLUMNS);
+      if (upTo) query = query.lte("created_at", upTo);
+      return asPage<ExportClient>(query.order("created_at", { ascending: false }).limit(PAGE_SIZE));
+    }),
+    fetchAllExact<ReportOrder>((upTo) => {
+      let query = db.from("orders").select(ORDER_COLUMNS);
+      if (upTo) query = query.lte("created_at", upTo);
+      return asPage<ReportOrder>(query.order("created_at", { ascending: false }).limit(PAGE_SIZE));
+    }),
+  ]);
+  return {
+    clients,
+    orders: orders.map((o) => ({ ...o, total: Number(o.total), delivery_fee: Number(o.delivery_fee) })),
+  };
 }
 
 export interface ReportData {

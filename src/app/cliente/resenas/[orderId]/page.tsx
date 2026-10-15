@@ -103,10 +103,11 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         {rating > 0 && rating <= 3 && (
           <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
             <div className="text-left">
-              <label className="block text-xs font-bold text-gray-500 mb-2 ml-1 uppercase tracking-widest">
+              <label htmlFor="resena-feedback" className="block text-xs font-bold text-gray-500 mb-2 ml-1 uppercase tracking-widest">
                 ¿Qué podemos mejorar?
               </label>
               <textarea
+                id="resena-feedback"
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 placeholder="Escribe tus comentarios aquí..."

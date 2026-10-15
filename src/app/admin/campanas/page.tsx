@@ -5,6 +5,8 @@ import { Megaphone } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
+import { TOPIC_WA_CAMPAIGNS } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 type Kind = "all" | "inactive" | "frequent" | "tier";
 
@@ -87,9 +89,10 @@ export default function CampanasPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadHistory();
-    const timer = window.setInterval(() => void loadHistory(), 5000);
-    return () => window.clearInterval(timer);
   }, [loadHistory]);
+
+  // Avance de envío en vivo (migración 011); en demo se consulta cada 5 s como antes.
+  useLiveRefresh({ topic: TOPIC_WA_CAMPAIGNS, refresh: loadHistory, demoPollMs: 5000 });
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);

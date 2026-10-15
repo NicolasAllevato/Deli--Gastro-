@@ -10,6 +10,7 @@
     "lint": "eslint src",
     "test": "node --no-warnings --test \"tests/**/*.test.ts\"",
     "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs",
+    "coverage": "node scripts/coverage.mjs",
     "e2e": "playwright test"
   },
   "dependencies": {

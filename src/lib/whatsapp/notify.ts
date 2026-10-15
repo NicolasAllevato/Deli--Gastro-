@@ -4,6 +4,7 @@ import { formatMoney, formatOrderId } from "@/lib/orders";
 import { loadAgentSettings } from "@/lib/agent/settings";
 import { clientFor, loadWhatsAppSettings } from "./config.ts";
 import { normalizePhone } from "./phone.ts";
+import { runSurveys, type SurveyResult } from "./surveys.ts";
 import { renderPreview, sanitizeParam, templateByName } from "./templates.ts";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -11,11 +12,6 @@ type Conversation = Database["public"]["Tables"]["wa_conversations"]["Row"];
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 
 export type OrderNotice = "created" | "En Preparación" | "En Camino" | "Finalizados";
-
-const SURVEY_MIN_DELAY_MIN = 30;
-const SURVEY_MAX_AGE_MIN = 180;
-const SURVEY_BATCH = 50;
-const MINUTE_MS = 60_000;
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || "";
 
@@ -101,44 +97,57 @@ export async function notifyOrderEvent(db: Db, orderId: string, notice: OrderNot
 
 /**
  * Manda la encuesta de satisfacción a los pedidos entregados hace entre 30 min y 3 h que
- * todavía no tienen reseña ni encuesta. Pensada para correr cada pocos minutos (cron).
+ * todavía no tienen reseña ni encuesta, entre las 9 y las 22 hs. Pensada para correr cada
+ * pocos minutos (cron de Cloudflare). La lógica de reclamo y reintento está en `surveys.ts`.
  */
-export async function sendDueSurveys(db: Db, appUrl: string, now: Date = new Date()): Promise<{ sent: number }> {
-  const from = new Date(now.getTime() - SURVEY_MAX_AGE_MIN * MINUTE_MS).toISOString();
-  const to = new Date(now.getTime() - SURVEY_MIN_DELAY_MIN * MINUTE_MS).toISOString();
+export async function sendDueSurveys(db: Db, appUrl: string, now: Date = new Date()): Promise<SurveyResult> {
+  const base = appUrl.replace(/\/$/, "");
 
-  const { data: due } = await db
-    .from("orders")
-    .select("*")
-    .eq("status", "Finalizados")
-    .is("survey_sent_at", null)
-    .gte("delivered_at", from)
-    .lte("delivered_at", to)
-    .limit(SURVEY_BATCH);
-  const orders = due ?? [];
-  if (orders.length === 0) return { sent: 0 };
-
-  const { data: reviews } = await db.from("reviews").select("order_id").in("order_id", orders.map((o) => o.id));
-  const reviewed = new Set((reviews ?? []).map((r) => r.order_id));
-
-  let sent = 0;
-  for (const order of orders) {
-    if (reviewed.has(order.id)) continue;
-    try {
-      const target = await loadTarget(db, order);
-      if (!target) continue;
-      const link = `${appUrl.replace(/\/$/, "")}/cliente/resenas/${order.id}`;
-      const ok = await sendTemplateTo(db, target.conversation, "encuesta_satisfaccion", [
-        target.name, formatOrderId(order.id), link,
-      ]);
-      if (!ok) continue;
-      await db.from("orders").update({ survey_sent_at: now.toISOString() }).eq("id", order.id);
-      sent += 1;
-    } catch (error: unknown) {
-      console.error("[whatsapp] no se pudo enviar la encuesta", order.id, error);
-    }
-  }
-  return { sent };
+  return runSurveys<OrderRow, Target>({
+    async listDue(from, to, limit) {
+      const { data, error } = await db
+        .from("orders")
+        .select("*")
+        .eq("status", "Finalizados")
+        .is("survey_sent_at", null)
+        .gte("delivered_at", from)
+        .lte("delivered_at", to)
+        .order("delivered_at", { ascending: true })
+        .limit(limit);
+      // Un error de base no es "no hay encuestas": que el cron lo vea fallar.
+      if (error) throw new Error(`No se pudieron leer los pedidos: ${error.message}`);
+      return data ?? [];
+    },
+    async reviewedIds(ids) {
+      const { data, error } = await db.from("reviews").select("order_id").in("order_id", ids);
+      if (error) throw new Error(`No se pudieron leer las reseñas: ${error.message}`);
+      return new Set((data ?? []).map((r) => r.order_id));
+    },
+    loadTarget: (order) => loadTarget(db, order),
+    async claim(orderId, nowIso) {
+      const { data, error } = await db
+        .from("orders")
+        .update({ survey_sent_at: nowIso })
+        .eq("id", orderId)
+        .is("survey_sent_at", null)
+        .select("id");
+      if (error) throw new Error(`No se pudo reclamar la encuesta: ${error.message}`);
+      return (data ?? []).length > 0;
+    },
+    async release(orderId, nowIso) {
+      const { error } = await db
+        .from("orders")
+        .update({ survey_sent_at: null })
+        .eq("id", orderId)
+        .eq("survey_sent_at", nowIso);
+      // supabase-js no lanza: sin esto un pedido quedaría reclamado sin encuesta y sin rastro.
+      if (error) throw new Error(`No se pudo liberar la encuesta: ${error.message}`);
+    },
+    send: (order, target) =>
+      sendTemplateTo(db, target.conversation, "encuesta_satisfaccion", [
+        target.name, formatOrderId(order.id), `${base}/cliente/resenas/${order.id}`,
+      ]),
+  }, now);
 }
 
 export { sendTemplateTo };

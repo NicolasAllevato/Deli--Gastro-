@@ -3,27 +3,39 @@ import type { InboundContext, InboundHandler } from "@/lib/whatsapp/inbound";
 import { clientFor, loadWhatsAppSettings } from "@/lib/whatsapp/config";
 import type { WhatsAppClient } from "@/lib/whatsapp/client";
 import { generateReply, loadAgentSettings, loadHistory, resolveLlm, type AgentLlm } from "./reply.ts";
+import { decideInboundLimit, LIMITS, type InboundDecision } from "./limits.ts";
 import type { AgentSettings } from "./settings.ts";
 
 type Db = ReturnType<typeof createAdminClient>;
 
-const MAX_MESSAGES_PER_MINUTE = 12;
 const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 const MSG_AUDIO_FAILED = "No pude escuchar el audio. ¿Me lo escribís?";
 const MSG_UNSUPPORTED = "Por ahora solo entiendo mensajes de texto y audios. ¿Me contás qué necesitás?";
+const MSG_RATE_LIMIT = "Recibí muchos mensajes tuyos seguidos y tengo que frenar un rato. Si es urgente, llamanos y te atiende una persona.";
 const MSG_ERROR = "Tuve un problema para responderte. Probá de nuevo en un momento o escribinos y te atiende una persona.";
 
-async function tooManyMessages(db: Db, conversationId: string): Promise<boolean> {
-  const since = new Date(Date.now() - MINUTE_MS).toISOString();
-  const { data } = await db
+async function inboundDecision(db: Db, conversationId: string): Promise<InboundDecision> {
+  const now = Date.now();
+  const { data, error } = await db
     .from("wa_messages")
-    .select("id")
+    .select("created_at")
     .eq("conversation_id", conversationId)
     .eq("direction", "in")
-    .gte("created_at", since);
-  return (data ?? []).length > MAX_MESSAGES_PER_MINUTE;
+    .gte("created_at", new Date(now - DAY_MS).toISOString())
+    .limit(LIMITS.perDay + 5);
+  // Sin poder contar no hay tope: se calla en vez de gastar IA sin límite.
+  if (error) {
+    console.error("[agente] no se pudo leer el tope de mensajes", error.message);
+    return "silent";
+  }
+  const times = (data ?? []).map((m) => new Date(m.created_at).getTime());
+  return decideInboundLimit({
+    lastDay: times.length,
+    lastMinute: times.filter((t) => t >= now - MINUTE_MS).length,
+  });
 }
 
 async function reply(db: Db, wa: WhatsAppClient, ctx: InboundContext, text: string, tokens: number | null = null) {
@@ -86,9 +98,12 @@ export const agentHandler: InboundHandler = async (ctx) => {
     console.error("[agente] activo pero falta configurar WhatsApp o la clave de OpenAI");
     return;
   }
-  if (await tooManyMessages(db, conversation.id)) return;
+
+  const limit = await inboundDecision(db, conversation.id);
+  if (limit === "silent") return;
 
   try {
+    if (limit === "notify") return await reply(db, wa, ctx, MSG_RATE_LIMIT);
     await respond(db, wa, llm, settings, ctx);
   } catch (error: unknown) {
     console.error("[agente] falló la respuesta", error);

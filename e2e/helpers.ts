@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 
 export type DemoRole = "admin" | "cliente" | "repartidor";
@@ -17,9 +18,18 @@ export async function loginAs(browser: Browser, role: DemoRole): Promise<{ conte
 /** Tiempo para la primera visita a una ruta: `next dev` la compila bajo demanda. */
 export const COLD_ROUTE_TIMEOUT_MS = 90_000;
 
+/** Cualquier UUID sirve: solo hace falta que Next compile la ruta dinámica. */
+const WARM_UP_ORDER_ID = "00000000-0000-4000-8000-000000000000";
+
 const ROUTES_BY_ROLE: Record<DemoRole, readonly string[]> = {
-  cliente: ["/cliente", "/cliente/carrito", "/cliente/pedidos"],
-  admin: ["/admin/tablero"],
+  cliente: [
+    "/cliente",
+    "/cliente/carrito",
+    "/cliente/pedidos",
+    "/cliente/fidelidad",
+    `/cliente/resenas/${WARM_UP_ORDER_ID}`,
+  ],
+  admin: ["/admin/tablero", "/admin/pedidos"],
   repartidor: ["/repartidor"],
 };
 
@@ -34,10 +44,22 @@ export async function warmUpRoutes(browser: Browser): Promise<void> {
       for (const route of ROUTES_BY_ROLE[role]) {
         await page.goto(route, { timeout: COLD_ROUTE_TIMEOUT_MS, waitUntil: "domcontentloaded" });
       }
+      if (role === "cliente") await warmUpClientApis(context);
     } finally {
       await context.close();
     }
   }
+}
+
+/**
+ * Las APIs de escritura del cliente también se compilan al primer uso. Se llaman con datos que
+ * el servidor rechaza (pedido inexistente, recompensa inválida) para no alterar el estado.
+ */
+async function warmUpClientApis(context: BrowserContext): Promise<void> {
+  const timeout = COLD_ROUTE_TIMEOUT_MS;
+  await context.request.patch(`/api/client/orders/${WARM_UP_ORDER_ID}`, { data: { action: "cancel" }, timeout });
+  await context.request.post("/api/reviews", { data: { orderId: WARM_UP_ORDER_ID, rating: 5 }, timeout });
+  await context.request.post("/api/client/rewards", { data: { rewardId: "no-existe" }, timeout });
 }
 
 /** Vuelve a los datos de ejemplo originales para que cada archivo parta de un estado conocido. */
@@ -49,4 +71,27 @@ export async function resetDemo(browser: Browser): Promise<void> {
   } finally {
     await context.close();
   }
+}
+
+/**
+ * Arma un pedido de delivery como cliente (primer producto del menú, dirección de ejemplo cubierta)
+ * y deja la página en el seguimiento. Devuelve el código visible (#XXXXXXXX) y el id de la URL.
+ */
+export async function crearPedidoComoCliente(page: Page): Promise<{ codigo: string; id: string }> {
+  await page.goto("/cliente");
+  await page.getByRole("button", { name: /^Agregar .+ al carrito$/ }).first().click();
+
+  await page.goto("/cliente/carrito");
+  await page.getByRole("button", { name: "Av. Corrientes 1234, CABA" }).click();
+  const confirmar = page.getByRole("button", { name: /^Confirmar pedido/ });
+  await expect(confirmar).toBeEnabled();
+  await confirmar.click();
+
+  await expect(page).toHaveURL(/\/cliente\/pedidos\/[^/]+$/, { timeout: COLD_ROUTE_TIMEOUT_MS });
+  const titulo = page.getByRole("heading", { level: 2, name: /^Pedido / });
+  await expect(titulo).toBeVisible();
+  const codigo = (await titulo.innerText()).replace(/^Pedido\s+/, "").trim();
+  const id = new URL(page.url()).pathname.split("/").pop() ?? "";
+  expect(codigo.length).toBeGreaterThan(0);
+  return { codigo, id };
 }

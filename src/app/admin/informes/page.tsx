@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Download, Send } from "lucide-react";
+import { BarChart3, Download, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatMoney } from "@/lib/orders";
 import type {
@@ -131,6 +131,13 @@ export default function InformesPage() {
           className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl neumorphic text-sm font-bold text-brand-orange"
         >
           <Download size={14} aria-hidden /> CSV
+        </a>
+        <a
+          href={`/api/admin/clients/export?range=${range}`}
+          download
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl neumorphic text-sm font-bold text-brand-orange"
+        >
+          <Users size={14} aria-hidden /> Exportar clientes
         </a>
       </div>
 

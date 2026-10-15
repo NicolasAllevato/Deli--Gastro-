@@ -1,5 +1,5 @@
 /**
- * Política de actualización de las pantallas que muestran pedidos.
+ * Política de actualización de las pantallas en vivo (pedidos y WhatsApp).
  *
  * En producción llegan avisos en tiempo real (Supabase Broadcast, ver migración 010), así que
  * la consulta periódica queda solo como respaldo por si se corta la conexión. En modo demo no
@@ -17,6 +17,19 @@ export const TOPIC_ALL_ORDERS = "orders";
 export function orderTopic(orderId: string): string {
   return `order:${orderId}`;
 }
+
+// Canales de WhatsApp (migración 011). Igual que los de pedidos: el aviso no trae datos.
+
+/** Lista de conversaciones: cualquier conversación o mensaje nuevo/actualizado. */
+export const TOPIC_WA_CONVERSATIONS = "wa_conversations";
+
+/** Hilo de una conversación: sus mensajes y su estado (toma humana). */
+export function waConversationTopic(conversationId: string): string {
+  return `wa_conversation:${conversationId}`;
+}
+
+/** Historial de campañas y su avance de envío. */
+export const TOPIC_WA_CAMPAIGNS = "wa_campaigns";
 
 export interface LivePlan {
   /** Si hay que suscribirse al canal en tiempo real. */

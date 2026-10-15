@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExecutiveSnapshot } from "@/lib/reports/executive";
 import type { ExecutiveSettings, ExecutiveSettingsPatch } from "@/lib/reports/executiveSettings";
 import type { RangeKey } from "@/lib/reports/range";
+import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 export interface ExecutiveFilters {
   range?: RangeKey | null;
@@ -25,6 +27,9 @@ export interface UseExecutiveData {
   /** Guarda un parche de ajustes; devuelve null si salió bien o el mensaje de error. */
   saveSettings: (patch: ExecutiveSettingsPatch) => Promise<string | null>;
 }
+
+/** En demo no hay tiempo real: se refresca cada 30 s. En producción, al cambiar un pedido (migración 010). */
+const DEMO_POLL_MS = 30_000;
 
 const FALLBACK_ERROR = "No se pudo cargar el tablero ejecutivo.";
 
@@ -79,6 +84,9 @@ export function useExecutiveData(filters: ExecutiveFilters = {}): UseExecutiveDa
   }, []);
 
   const refetch = useCallback(() => setReloads((n) => n + 1), []);
+
+  // Los KPIs salen de `orders`: cada pedido nuevo o actualizado recalcula el tablero.
+  useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh: refetch, demoPollMs: DEMO_POLL_MS });
 
   const saveSettings = useCallback(async (patch: ExecutiveSettingsPatch): Promise<string | null> => {
     try {

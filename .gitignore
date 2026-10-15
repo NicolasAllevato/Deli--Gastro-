@@ -71,3 +71,10 @@ spec-kit/
 # Workers de Cloudflare
 /workers/*/node_modules/
 /workers/*/.wrangler/
+# Archivos temporales de secretos para `wrangler secret bulk`
+/workers/*/secrets*.json
+/workers/*/secretos*.json
+/workers/*/.dev.vars*
+
+# Credenciales de prueba (privado)
+/usuarios-de-prueba.txt

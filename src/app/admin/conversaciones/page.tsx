@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Hand, MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { TOPIC_WA_CONVERSATIONS, waConversationTopic } from "@/lib/live-refresh";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 interface ConversationItem {
   id: string;
@@ -28,7 +30,8 @@ interface Thread {
   messages: ThreadMessage[];
 }
 
-const POLL_MS = 5000;
+/** Consulta periódica solo en modo demo; en producción llegan avisos en tiempo real (migración 011). */
+const DEMO_POLL_MS = 5000;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { cache: "no-store", ...init });
@@ -64,9 +67,13 @@ export default function ConversacionesPage() {
     }
   }, []);
 
+  // Última conversación pedida: una respuesta vieja que llega tarde no pisa a la actual.
+  const wantedRef = useRef<string | null>(null);
   const refreshThread = useCallback(async (id: string) => {
+    wantedRef.current = id;
     try {
-      setThread(await request<Thread>(`/api/whatsapp/conversations/${id}`));
+      const next = await request<Thread>(`/api/whatsapp/conversations/${id}`);
+      if (wantedRef.current === id) setThread(next);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "No se pudo cargar la conversación.");
     }
@@ -75,17 +82,23 @@ export default function ConversacionesPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshList();
-    const timer = window.setInterval(() => void refreshList(), POLL_MS);
-    return () => window.clearInterval(timer);
   }, [refreshList]);
+
+  useLiveRefresh({ topic: TOPIC_WA_CONVERSATIONS, refresh: refreshList, demoPollMs: DEMO_POLL_MS });
 
   useEffect(() => {
     if (!selected) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshThread(selected);
-    const timer = window.setInterval(() => void refreshThread(selected), POLL_MS);
-    return () => window.clearInterval(timer);
   }, [selected, refreshThread]);
+
+  const refreshSelected = useCallback(() => (selected ? refreshThread(selected) : undefined), [selected, refreshThread]);
+  useLiveRefresh({
+    topic: waConversationTopic(selected ?? "none"),
+    refresh: refreshSelected,
+    demoPollMs: DEMO_POLL_MS,
+    enabled: selected !== null,
+  });
 
   const act = async (action: () => Promise<void>) => {
     setBusy(true);

@@ -1,0 +1,13 @@
+name = "uploads"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "deli-gastro-productos"
+
+[vars]
+PUBLIC_BASE_URL = "https://pub-b8f8fba82c6049e5ae18faeec51abed0.r2.dev"
+
+# Secret requerido (no va acá; cargar con wrangler secret bulk / Node):
+#   UPLOADS_TOKEN   bearer compartido con Next (env UPLOADS_WORKER_TOKEN)

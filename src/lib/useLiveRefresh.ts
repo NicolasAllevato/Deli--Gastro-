@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createClient } from "@/utils/supabase/client";
+import { subscribeToTopic } from "@/lib/live-channel";
 import { isDemoMode } from "@/lib/demo/mode";
 import { PING_DEBOUNCE_MS, planLiveRefresh } from "@/lib/live-refresh";
 
@@ -38,26 +38,16 @@ export function useLiveRefresh({ topic, refresh, demoPollMs, enabled = true }: O
     }
 
     if (plan.subscribe) {
-      const supabase = createClient();
       let debounce: number | undefined;
-      let wasConnected = false;
-
-      const channel = supabase
-        .channel(topic)
-        .on("broadcast", { event: "changed" }, () => {
-          window.clearTimeout(debounce);
-          debounce = window.setTimeout(run, PING_DEBOUNCE_MS);
-        })
-        .subscribe((status) => {
-          if (status !== "SUBSCRIBED") return;
-          // Tras reconectar pudo haber cambios que no llegaron: se pone al día.
-          if (wasConnected) run();
-          wasConnected = true;
-        });
+      const onPing = () => {
+        window.clearTimeout(debounce);
+        debounce = window.setTimeout(run, PING_DEBOUNCE_MS);
+      };
+      const unsubscribe = subscribeToTopic(topic, onPing, run);
 
       cleanups.push(() => {
         window.clearTimeout(debounce);
-        void supabase.removeChannel(channel);
+        unsubscribe();
       });
     }
 

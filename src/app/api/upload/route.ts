@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { isDemoMode } from "@/lib/demo/mode";
+import { getUploadsWorkerConfig, uploadViaWorker } from "@/lib/storage/uploads-worker";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -75,6 +76,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ success: true, url: `data:${file.type};base64,${bytes.toString("base64")}` });
   }
 
+  // Camino preferido: Worker `uploads` con binding R2 (no necesita R2 API keys).
+  const workerConfig = getUploadsWorkerConfig();
+  if (workerConfig) {
+    try {
+      const url = await uploadViaWorker(workerConfig, await file.arrayBuffer(), file.type);
+      return NextResponse.json(uploadResponseSchema.parse({ success: true, url }));
+    } catch (error: unknown) {
+      console.error("[upload] falló el Worker de uploads", error);
+      return NextResponse.json({ error: "No se pudo subir el archivo." }, { status: 502 });
+    }
+  }
+
+  // Fallback: S3 API de R2 (requiere R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY).
   const bucketName = process.env.R2_BUCKET_NAME;
   const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
 
@@ -100,7 +114,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const payload = uploadResponseSchema.parse({ success: true, url });
     return NextResponse.json(payload);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Error desconocido subiendo el archivo.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[upload] falló la subida a R2", error);
+    return NextResponse.json({ error: "No se pudo subir el archivo." }, { status: 500 });
   }
 }

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { FALLBACK_POLL_MS, orderTopic, planLiveRefresh, TOPIC_ALL_ORDERS } from "../src/lib/live-refresh.ts";
+import {
+  FALLBACK_POLL_MS,
+  orderTopic,
+  planLiveRefresh,
+  TOPIC_ALL_ORDERS,
+  TOPIC_WA_CAMPAIGNS,
+  TOPIC_WA_CONVERSATIONS,
+  waConversationTopic,
+} from "../src/lib/live-refresh.ts";
 
 describe("planLiveRefresh", () => {
   it("en producción se suscribe y deja la consulta periódica solo como respaldo lento", () => {
@@ -27,5 +35,13 @@ describe("canales", () => {
   it("el canal general y el de un pedido coinciden con los que emite el trigger de la migración 010", () => {
     assert.equal(TOPIC_ALL_ORDERS, "orders");
     assert.equal(orderTopic("abc-123"), "order:abc-123");
+  });
+});
+
+describe("canales de WhatsApp (migración 011)", () => {
+  it("coinciden con los que emiten los triggers de wa_conversations, wa_messages y wa_campaigns", () => {
+    assert.equal(TOPIC_WA_CONVERSATIONS, "wa_conversations");
+    assert.equal(waConversationTopic("abc-123"), "wa_conversation:abc-123");
+    assert.equal(TOPIC_WA_CAMPAIGNS, "wa_campaigns");
   });
 });
