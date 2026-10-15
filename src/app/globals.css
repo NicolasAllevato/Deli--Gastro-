@@ -19,7 +19,7 @@
   --color-primary-container: #5a6838;
   --color-on-primary-container: #ffffff;
 
-  /* Superficie y fondo — más oscuros para mayor contraste neumórfico */
+  /* Superficie y fondo — más oscuros para mayor contraste neumórfico (tema claro) */
   --color-background: #dde3ed;
   --color-on-background: #1e293b;
   --color-surface: #dde3ed;
@@ -46,20 +46,109 @@
   --color-switch-off: #e2e8f0;
 }
 
+/* ── Tema global ──
+   Claro en :root; oscuro con <html data-theme="dark"> (es el predeterminado, ver layout.tsx).
+   Todo color de superficie, texto y borde sale de estas variables. */
+:root {
+  color-scheme: light;
+  --app-bg: #dde3ed;
+  --app-surface: #dde3ed;
+  --app-inset: #c8d0de;
+  --app-hover: #e2e8f0;
+  --app-glass: rgba(221, 227, 237, 0.75);
+  --app-edge: rgba(255, 255, 255, 0.55);
+  --app-border: rgba(148, 163, 184, 0.45);
+  --app-text: #1e293b;
+  --app-text-soft: #334155;
+  --app-text-muted: #475569;
+  --app-text-subtle: #64748b;
+  --app-text-faint: #94a3b8;
+  --app-shadow-dark: rgba(140, 155, 180, 0.55);
+  --app-shadow-light: rgba(255, 255, 255, 0.8);
+  --app-shadow-dark-strong: rgba(140, 155, 180, 0.6);
+  --app-shadow-light-strong: rgba(255, 255, 255, 0.85);
+  --app-card-shadow: 0 4px 14px rgba(100, 116, 139, 0.16);
+  --app-scroll: rgba(163, 177, 198, 0.55);
+  --app-focus: #5a6838;
+  --app-accent-text: #4d5c2f;
+  --app-accent-contrast: #ffffff;
+  --app-good: #166534;
+  --app-bad: #b91c1c;
+  --app-warn: #92400e;
+  --app-info: #1e40af;
+  --app-switch-off: #e2e8f0;
+  --app-chip-text: #334155;
+  --app-btn-secondary: #4a3f2a;
+  --app-btn-ghost: #4a5a2a;
+  --app-btn-ghost-hover: rgba(232, 237, 220, 0.6);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-background: #0b1220;
+  --color-on-background: #e2e8f0;
+  --color-surface: #0b1220;
+  --color-on-surface: #f1f5f9;
+  --color-on-surface-variant: #cbd5e1;
+  --color-surface-container: #111a2b;
+  --color-surface-container-low: #0f1828;
+  --color-surface-container-lowest: #0b1220;
+  --color-surface-container-highest: #1d2940;
+  --color-inset: #0f1828;
+  --color-outline: #475569;
+  --color-outline-variant: #334155;
+  --color-error: #f87171;
+  --color-text-muted: #cbd5e1;
+  --color-text-subtle: #94a3b8;
+  --color-text-disabled: #64748b;
+  --color-switch-off: #334155;
+
+  --app-bg: #0b1220;
+  --app-surface: #151e30;
+  --app-inset: #0f1828;
+  --app-hover: #263552;
+  --app-glass: rgba(21, 30, 48, 0.75);
+  --app-edge: rgba(148, 163, 184, 0.12);
+  --app-border: rgba(148, 163, 184, 0.22);
+  --app-text: #f1f5f9;
+  --app-text-soft: #e2e8f0;
+  --app-text-muted: #cbd5e1;
+  --app-text-subtle: #94a3b8;
+  --app-text-faint: #64748b;
+  --app-shadow-dark: rgba(0, 0, 0, 0.55);
+  --app-shadow-light: rgba(255, 255, 255, 0.04);
+  --app-shadow-dark-strong: rgba(0, 0, 0, 0.65);
+  --app-shadow-light-strong: rgba(255, 255, 255, 0.06);
+  --app-card-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --app-scroll: rgba(100, 116, 139, 0.55);
+  --app-focus: #a3b86c;
+  --app-accent-text: #a3b86c;
+  --app-accent-contrast: #0b1220;
+  --app-good: #4ade80;
+  --app-bad: #fca5a5;
+  --app-warn: #fcd34d;
+  --app-info: #93c5fd;
+  --app-switch-off: #334155;
+  --app-chip-text: #e2e8f0;
+  --app-btn-secondary: #e7d9b0;
+  --app-btn-ghost: #c5d69a;
+  --app-btn-ghost-hover: rgba(107, 124, 69, 0.22);
+}
+
 /* ── Neumorphic Base ── */
 @utility neumorphic {
-  background: #dde3ed;
-  box-shadow: 7px 7px 14px rgba(140,155,180,0.55), -7px -7px 14px rgba(255,255,255,0.80);
-  border: 1px solid rgba(255,255,255,0.55);
+  background: var(--app-surface);
+  box-shadow: 7px 7px 14px var(--app-shadow-dark), -7px -7px 14px var(--app-shadow-light);
+  border: 1px solid var(--app-edge);
 }
 
 @utility neumorphic-inset {
-  background: #c8d0de;
-  box-shadow: inset 5px 5px 10px rgba(140,155,180,0.55), inset -5px -5px 10px rgba(255,255,255,0.75);
+  background: var(--app-inset);
+  box-shadow: inset 5px 5px 10px var(--app-shadow-dark), inset -5px -5px 10px var(--app-shadow-light);
 }
 
 @utility glass-effect {
-  background: rgba(221,227,237,0.75);
+  background: var(--app-glass);
   backdrop-filter: blur(16px);
 }
 
@@ -68,19 +157,19 @@
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 .neumorphic-hover:hover {
-  box-shadow: 9px 9px 18px rgba(140,155,180,0.60), -9px -9px 18px rgba(255,255,255,0.85);
+  box-shadow: 9px 9px 18px var(--app-shadow-dark-strong), -9px -9px 18px var(--app-shadow-light-strong);
   transform: translateY(-2px);
 }
 .neumorphic-active:active,
 .neumorphic-hover:active {
-  box-shadow: inset 5px 5px 10px rgba(140,155,180,0.55), inset -5px -5px 10px rgba(255,255,255,0.75);
+  box-shadow: inset 5px 5px 10px var(--app-shadow-dark), inset -5px -5px 10px var(--app-shadow-light);
   transform: translateY(0);
 }
 
 /* ── Focus rings ── */
 a:focus-visible,
 button:focus-visible {
-  outline: 2px solid #5a6838;
+  outline: 2px solid var(--app-focus);
   outline-offset: 3px;
   border-radius: 12px;
 }
@@ -113,7 +202,7 @@ button:focus-visible {
 }
 .card-hover-lift:hover {
   transform: translateY(-4px);
-  box-shadow: 11px 19px 30px rgba(140,155,180,0.58), -7px -7px 16px rgba(255,255,255,0.82);
+  box-shadow: 11px 19px 30px var(--app-shadow-dark), -7px -7px 16px var(--app-shadow-light-strong);
 }
 .card-hover-lift:active {
   transform: translateY(-1px);
@@ -125,7 +214,7 @@ button:focus-visible {
 }
 .portal-card:hover {
   transform: translateY(-6px);
-  box-shadow: 10px 20px 32px rgba(163,177,198,0.45), -6px -6px 16px rgba(255,255,255,0.9);
+  box-shadow: 10px 20px 32px var(--app-shadow-dark), -6px -6px 16px var(--app-shadow-light-strong);
 }
 .portal-card:active {
   transform: translateY(-2px);
@@ -138,7 +227,7 @@ button:focus-visible {
 }
 .card-3d:hover {
   transform: translateY(-5px);
-  box-shadow: 10px 18px 28px rgba(163,177,198,0.4), -5px -5px 14px rgba(255,255,255,0.85);
+  box-shadow: 10px 18px 28px var(--app-shadow-dark), -5px -5px 14px var(--app-shadow-light-strong);
 }
 
 /* ── Status Badges — tonos apagados y elegantes ── */
@@ -152,6 +241,97 @@ button:focus-visible {
 .badge-orange { background:#f0e8d0; color:#6b4e10; border:1px solid #d4c090; }
 /* arena cálida — "Advertencia", "Revisar"         contraste texto ~5.7:1 ✓ AA */
 .badge-yellow { background:#ede8dc; color:#5c4a20; border:1px solid #cfc0a0; }
+
+:root[data-theme="dark"] .badge-green  { background: rgba(107,124,69,0.25); color:#d6e3a8; border-color: rgba(163,184,108,0.35); }
+:root[data-theme="dark"] .badge-red    { background: rgba(185,28,28,0.22); color:#fecaca; border-color: rgba(252,165,165,0.3); }
+:root[data-theme="dark"] .badge-blue   { background: rgba(59,130,246,0.2); color:#bfdbfe; border-color: rgba(147,197,253,0.3); }
+:root[data-theme="dark"] .badge-orange { background: rgba(212,168,50,0.2); color:#fde68a; border-color: rgba(253,224,71,0.3); }
+:root[data-theme="dark"] .badge-yellow { background: rgba(160,130,70,0.2); color:#e7d9b0; border-color: rgba(207,192,160,0.3); }
+
+/* ── Remapeo de utilitarios neutros de Tailwind (la app los usa en todas las pantallas) ── */
+:root[data-theme="dark"] .bg-white { background-color: var(--app-surface); }
+:root[data-theme="dark"] [class*="bg-white/"] { background-color: var(--app-glass); }
+:root[data-theme="dark"] .bg-gray-100,
+:root[data-theme="dark"] .hover\:bg-gray-100:hover { background-color: var(--app-inset); }
+:root[data-theme="dark"] .bg-gray-500 { background-color: #475569; }
+:root[data-theme="dark"] .bg-gray-900\/85,
+:root[data-theme="dark"] .bg-gray-900\/60,
+:root[data-theme="dark"] .bg-gray-900\/40 { background-color: rgba(2, 6, 23, 0.7); }
+:root[data-theme="dark"] .bg-\[\#e2e8f0\] { background-color: var(--app-switch-off); }
+:root[data-theme="dark"] .bg-\[\#e8eddc\] { background-color: rgba(107,124,69,0.28); }
+:root[data-theme="dark"] .text-\[\#2a3a18\] { color: #dfe9c4; }
+
+:root[data-theme="dark"] .text-gray-900,
+:root[data-theme="dark"] .text-gray-800,
+:root[data-theme="dark"] .hover\:text-gray-800:hover,
+:root[data-theme="dark"] .hover\:text-gray-900:hover { color: var(--app-text); }
+:root[data-theme="dark"] .text-gray-700,
+:root[data-theme="dark"] .hover\:text-gray-700:hover { color: var(--app-text-soft); }
+:root[data-theme="dark"] .text-gray-600,
+:root[data-theme="dark"] .hover\:text-gray-600:hover { color: var(--app-text-muted); }
+:root[data-theme="dark"] .text-gray-500 { color: var(--app-text-subtle); }
+:root[data-theme="dark"] .text-gray-400 { color: var(--app-text-faint); }
+:root[data-theme="dark"] .text-gray-300 { color: #64748b; }
+:root[data-theme="dark"] .placeholder-gray-500::placeholder,
+:root[data-theme="dark"] .placeholder-gray-400::placeholder { color: var(--app-text-subtle); opacity: 1; }
+
+:root[data-theme="dark"] .border-gray-100,
+:root[data-theme="dark"] .border-gray-200,
+:root[data-theme="dark"] .border-gray-300,
+:root[data-theme="dark"] .border-gray-100\/80,
+:root[data-theme="dark"] .border-gray-200\/50,
+:root[data-theme="dark"] .border-gray-200\/60,
+:root[data-theme="dark"] .ring-gray-100 { border-color: var(--app-border); }
+:root[data-theme="dark"] .divide-gray-200\/50 > :not(:last-child) { border-color: var(--app-border); }
+:root[data-theme="dark"] [class*="border-white/"] { border-color: rgba(148, 163, 184, 0.14); }
+
+/* Estados (error, éxito, aviso, info): fondos tintados translúcidos y textos más claros */
+:root[data-theme="dark"] .bg-red-50 { background-color: rgba(239, 68, 68, 0.14); }
+:root[data-theme="dark"] .bg-green-50,
+:root[data-theme="dark"] .bg-green-100 { background-color: rgba(34, 197, 94, 0.14); }
+:root[data-theme="dark"] .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.14); }
+:root[data-theme="dark"] .bg-orange-50\/50,
+:root[data-theme="dark"] .bg-orange-100 { background-color: rgba(249, 115, 22, 0.14); }
+:root[data-theme="dark"] .bg-blue-50 { background-color: rgba(59, 130, 246, 0.14); }
+:root[data-theme="dark"] .border-red-100 { border-color: rgba(248, 113, 113, 0.3); }
+:root[data-theme="dark"] .border-green-100 { border-color: rgba(74, 222, 128, 0.28); }
+:root[data-theme="dark"] .border-yellow-100,
+:root[data-theme="dark"] .border-yellow-200 { border-color: rgba(250, 204, 21, 0.28); }
+:root[data-theme="dark"] .border-blue-100 { border-color: rgba(96, 165, 250, 0.3); }
+:root[data-theme="dark"] .border-orange-300\/60 { border-color: rgba(251, 146, 60, 0.35); }
+:root[data-theme="dark"] .text-red-600,
+:root[data-theme="dark"] .text-red-700,
+:root[data-theme="dark"] .hover\:text-red-600:hover { color: #fca5a5; }
+:root[data-theme="dark"] .text-green-700 { color: #86efac; }
+:root[data-theme="dark"] .text-yellow-600,
+:root[data-theme="dark"] .text-yellow-700,
+:root[data-theme="dark"] .text-yellow-800 { color: #fde047; }
+:root[data-theme="dark"] .text-orange-700,
+:root[data-theme="dark"] .text-orange-800 { color: #fdba74; }
+:root[data-theme="dark"] .text-blue-600,
+:root[data-theme="dark"] .text-blue-700,
+:root[data-theme="dark"] .text-blue-800 { color: #93c5fd; }
+
+/* Mapa (Leaflet): los tiles claros se invierten para el tema oscuro; los popups siguen la superficie. */
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(0.92) hue-rotate(180deg) brightness(0.85) saturate(0.7); }
+:root[data-theme="dark"] .leaflet-popup-content-wrapper,
+:root[data-theme="dark"] .leaflet-popup-tip { background: var(--app-surface); color: var(--app-text); }
+
+/* Texto de marca: el oliva #6b7c45 da 2.95:1 sobre el fondo hundido (claro) y menos en oscuro.
+   Como texto se usa el tono de acento del tema, que pasa AA en los dos. */
+.text-brand-olive,
+.text-brand-orange,
+.text-brand-olive-hover { color: var(--app-accent-text); }
+:root[data-theme="dark"] .text-\[\#5a6838\] { color: var(--app-accent-text); }
+:root[data-theme="dark"] .text-brand-gold { color: #e0b94d; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background: var(--app-scroll); border-radius:10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--app-scroll); filter: brightness(1.15); }
+.custom-scrollbar::-webkit-scrollbar { width:4px; height:4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--app-scroll); border-radius:10px; }
 
 /* ── Entrance animations (page content only, not nav) ── */
 @keyframes fade-up {
@@ -207,7 +387,7 @@ button:focus-visible {
 /* Compatibilidad hacia atrás */
 .glow-orange { animation: glow-pulse 2.5s ease-in-out infinite; }
 .shimmer {
-  background: linear-gradient(90deg,#c8d0de 25%,#dde3ed 50%,#c8d0de 75%);
+  background: linear-gradient(90deg, var(--app-inset) 25%, var(--app-surface) 50%, var(--app-inset) 75%);
   background-size: 200% auto;
   animation: shimmer 1.5s linear infinite;
 }
@@ -239,50 +419,24 @@ body {
 }
 h1,h2,h3,h4,h5,h6,.headline { font-family: var(--font-headline); }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width:5px; height:5px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:rgba(163,177,198,0.55); border-radius:10px; }
-::-webkit-scrollbar-thumb:hover { background:rgba(163,177,198,0.85); }
-.custom-scrollbar::-webkit-scrollbar { width:4px; height:4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background:rgba(163,177,198,0.5); border-radius:10px; }
-
-
-/* Tablero ejecutivo: tema claro/oscuro por contenedor (sin dark: ni prefers-color-scheme) */
+/* ── Tablero ejecutivo: alias de los tokens globales (el tema lo maneja el toggle de la app) ── */
 .exec-theme {
-  --ex-bg: #eef1f6;
-  --ex-surface: #ffffff;
-  --ex-surface-2: #eef2f7;
-  --ex-border: #cbd5e1;
-  --ex-text: #0f172a;
-  --ex-muted: #475569;
-  --ex-accent: #4d5c2f;
-  --ex-accent-contrast: #ffffff;
-  --ex-good: #166534;
-  --ex-bad: #b91c1c;
-  --ex-warn: #92400e;
-  --ex-info: #1e40af;
-  --ex-hover: #e2e8f0;
-  --ex-shadow: 0 4px 14px rgba(100, 116, 139, 0.16);
+  --ex-bg: var(--app-bg);
+  --ex-surface: var(--app-surface);
+  --ex-surface-2: var(--app-inset);
+  --ex-border: var(--app-border);
+  --ex-text: var(--app-text);
+  --ex-muted: var(--app-text-muted);
+  --ex-accent: var(--app-accent-text);
+  --ex-accent-contrast: var(--app-accent-contrast);
+  --ex-good: var(--app-good);
+  --ex-bad: var(--app-bad);
+  --ex-warn: var(--app-warn);
+  --ex-info: var(--app-info);
+  --ex-hover: var(--app-hover);
+  --ex-shadow: var(--app-card-shadow);
   background: var(--ex-bg);
   color: var(--ex-text);
-}
-.exec-theme[data-theme="dark"],
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) {
-  --ex-bg: #0b1220;
-  --ex-surface: #151e30;
-  --ex-surface-2: #1d2940;
-  --ex-border: #3a4c6b;
-  --ex-text: #f1f5f9;
-  --ex-muted: #b4c0d3;
-  --ex-accent: #a3b86c;
-  --ex-accent-contrast: #0b1220;
-  --ex-good: #4ade80;
-  --ex-bad: #fca5a5;
-  --ex-warn: #fcd34d;
-  --ex-info: #93c5fd;
-  --ex-hover: #263552;
-  --ex-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 /* Página: cubre todo el área de contenido, ignorando el fondo neumórfico del layout. */
 .exec-page {
@@ -376,33 +530,8 @@ h1,h2,h3,h4,h5,h6,.headline { font-family: var(--font-headline); }
 .exec-insight {
   background: color-mix(in srgb, var(--sev) 9%, var(--ex-surface));
   border: 1px solid color-mix(in srgb, var(--sev) 35%, transparent);
-  border-left: 4px solid var(--sev);
   border-radius: 0.75rem;
 }
 
-/* Modal de ajustes: adopta el tema elegido (el portal queda fuera de .exec-theme). */
+/* Modal de ajustes: el panel usa neumorphic y los tokens globales, así que adopta el tema solo. */
 .exec-modal { background: transparent; color: inherit; }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) {
-  background: var(--ex-surface);
-  border: 1px solid var(--ex-border);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  color: var(--ex-text);
-}
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.text-gray-800, .text-gray-700) { color: var(--ex-text); }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.text-gray-600, .text-gray-500) { color: var(--ex-muted); }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.neumorphic, .neumorphic-inset) {
-  background: var(--ex-surface-2);
-  border: 1px solid var(--ex-border);
-  box-shadow: none;
-  color: var(--ex-text);
-}
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(.neumorphic-hover:hover, button.neumorphic:hover) { background: var(--ex-hover); }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) :is(input, select, textarea) {
-  background: var(--ex-surface-2);
-  color: var(--ex-text);
-  border: 1px solid var(--ex-border);
-}
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) select option { background: var(--ex-surface); color: var(--ex-text); }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) .border-gray-300 { border-color: var(--ex-border); }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) .text-red-700 { color: var(--ex-bad); }
-[role="dialog"]:has(.exec-modal[data-theme="dark"]) [role="switch"] > span:not(.bg-brand-orange) { background: var(--ex-muted); }

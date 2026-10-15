@@ -86,7 +86,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
 
       {/* Ticket interno */}
       {hasTicket && (
-        <div className="neumorphic p-5 rounded-2xl border-l-4 border-orange-400 flex gap-4 items-start bg-orange-50/50">
+        <div className="neumorphic p-5 rounded-2xl border border-orange-300/60 flex gap-4 items-start bg-orange-50/50">
           <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
           <div>
             <h3 className="font-bold text-orange-800 text-sm">Ticket de Atención Interna</h3>

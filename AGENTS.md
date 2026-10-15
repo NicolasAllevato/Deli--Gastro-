@@ -71,7 +71,7 @@ Todas las skills están en `./Skills/`. Leer el SKILL.md correspondiente antes d
 **Fuentes:** Manrope (títulos/display) + Inter (cuerpo/labels) — cargadas con `next/font` en `layout.tsx`
 
 **Reglas absolutas:**
-1. NUNCA dark mode (clases `dark:` prohibidas)
+1. Tema claro/oscuro global, **oscuro por defecto** (`<html data-theme>`, `src/lib/theme/`). Sin clases `dark:`: los colores salen de los tokens `--app-*` de `globals.css`; los neutros de Tailwind se remapean ahí. Colores nuevos → token, no hex fijo.
 2. NUNCA emojis como íconos estructurales → usar Lucide React
 3. SIEMPRE `aria-label` en botones icon-only
 4. NUNCA `<button>` anidado dentro de `<Link>`

@@ -8,6 +8,7 @@ import { Bell, LogOut, Menu, X } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { cn } from "@/lib/cn";
 import { SectionTabs } from "@/components/ui/SectionTabs";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { NAV_SECTIONS, findSection, isTabActive } from "./_nav";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -90,8 +91,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        {/* Footer plan */}
+        {/* Footer: tema y plan */}
         <div className="mt-2 pt-3 border-t border-gray-200/50 shrink-0">
+          <div className="px-2 mb-3">
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Apariencia</p>
+            <ThemeToggle />
+          </div>
           <div className="px-2">
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Uso del plan</p>
             <div

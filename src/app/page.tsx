@@ -1,9 +1,13 @@
 ﻿import Link from "next/link";
 import { ShieldAlert, UserCheck, ArrowRight, UtensilsCrossed, Bike } from "lucide-react";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-5 py-8 sm:p-8 text-center bg-background relative overflow-hidden">
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle compact />
+      </div>
 
       {/* Subtle background depth — single orb each side */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">

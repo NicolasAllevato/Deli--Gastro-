@@ -12,7 +12,6 @@ import { KpiCard } from "./_components/KpiCard";
 import { PunctualityPrepChart } from "./_components/PunctualityPrepChart";
 import { SettingsDrawer } from "./_components/SettingsDrawer";
 import { EmptyView, ErrorView, LoadingView } from "./_components/StateViews";
-import { ThemeToggle } from "./_components/ThemeToggle";
 import { ZoneChart } from "./_components/ZoneChart";
 import { useExecTheme, type ExecTheme } from "./_components/useExecTheme";
 import { useExecutiveData } from "./useExecutiveData";
@@ -42,7 +41,7 @@ export default function EjecutivoClient() {
   const [range, setRange] = useState<RangeKey | null>(null);
   const [zone, setZone] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useExecTheme();
+  const [theme] = useExecTheme();
   const { data, settings, loading, error, refetch, saveSettings } = useExecutiveData({ range, zone });
 
   const activeRange = range ?? data?.range.key ?? null;
@@ -57,7 +56,6 @@ export default function EjecutivoClient() {
           <p className="text-sm exec-muted">Indicadores clave, comparados con el período anterior.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ThemeToggle theme={theme} onChange={setTheme} />
           <button type="button" className="exec-chip" onClick={() => setSettingsOpen(true)}>
             <Settings size={15} aria-hidden="true" />
             Ajustes

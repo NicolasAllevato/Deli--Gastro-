@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { courierDisplayName } from "@/lib/auth/courier";
 import { getUserRole } from "@/lib/auth/roles";
 import { CourierSignOut } from "./CourierSignOut";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export default async function RepartidorLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -28,7 +29,10 @@ export default async function RepartidorLayout({ children }: { children: React.R
               <p className="text-[11px] text-gray-500">{courierDisplayName(user)}</p>
             </div>
           </div>
-          <CourierSignOut />
+          <div className="flex items-center gap-2">
+            <ThemeToggle compact />
+            <CourierSignOut />
+          </div>
         </div>
       </header>
       <main className="max-w-2xl mx-auto px-4 py-6 pb-16">{children}</main>

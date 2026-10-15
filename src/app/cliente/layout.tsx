@@ -4,6 +4,7 @@ import { Menu, MessageCircle } from "lucide-react";
 import { ClienteBottomNav } from "./_components/ClienteBottomNav";
 import { CartProvider } from "./_components/CartProvider";
 import { CartBar } from "./_components/CartBar";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export default function ClienteLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,8 +20,11 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
           <h1 className="font-headline text-lg font-black text-gray-900">
             Deli<span className="text-brand-orange">-</span>Gastro
           </h1>
-          <div className="w-8 h-8 rounded-full overflow-hidden relative ring-2 ring-gray-100">
-            <Image alt="Avatar" fill sizes="32px" className="object-cover" src="https://picsum.photos/seed/user-avatar/64/64" />
+          <div className="flex items-center gap-2">
+            <ThemeToggle compact />
+            <div className="w-8 h-8 rounded-full overflow-hidden relative ring-2 ring-gray-100">
+              <Image alt="Avatar" fill sizes="32px" className="object-cover" src="https://picsum.photos/seed/user-avatar/64/64" />
+            </div>
           </div>
         </div>
       </header>

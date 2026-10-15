@@ -9,14 +9,14 @@ const BASE =
 const VARIANT: Record<ButtonVariant, string> = {
   // Verde oliva — acción principal, contraste 4.84:1 sobre #f0f3f8 ✓ WCAG AA
   primary:   "rounded-full text-white btn-glow",
-  // Beige neumórfico — acción secundaria, sin agresividad visual
-  secondary: "rounded-full text-[#4a3f2a] neumorphic neumorphic-hover",
-  // Ghost — texto oliva sobre fondo transparente
-  ghost:     "rounded-full text-[#4a5a2a] hover:text-[#5a6838] hover:bg-[#e8eddc]/60",
+  // Beige neumórfico — acción secundaria; color por tema (globals.css)
+  secondary: "rounded-full text-[var(--app-btn-secondary)] neumorphic neumorphic-hover",
+  // Ghost — texto oliva sobre fondo transparente; color por tema (globals.css)
+  ghost:     "rounded-full text-[var(--app-btn-ghost)] hover:text-[var(--app-accent-text)] hover:bg-[var(--app-btn-ghost-hover)]",
   // Danger — rojo sobrio con sombra contenida
   danger:    "rounded-full text-white bg-[#c0392b] hover:bg-[#a93226] shadow-[0_4px_12px_rgba(192,57,43,0.28)]",
   // Icon — estado hover en oliva en lugar de naranja
-  icon:      "rounded-full neumorphic neumorphic-hover text-gray-500 hover:text-[#6b7c45]",
+  icon:      "rounded-full neumorphic neumorphic-hover text-gray-500 hover:text-[var(--app-accent-text)]",
 };
 
 const SIZE: Record<ButtonSize, string> = {

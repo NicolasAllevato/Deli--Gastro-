@@ -6,6 +6,7 @@ import { Eye, EyeOff, LogIn, Loader2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { isDemoMode } from "@/lib/demo/mode";
 import { DemoAccessPanel } from "@/components/demo/DemoAccessPanel";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 function LoginContent() {
   const router = useRouter();
@@ -42,6 +43,9 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center px-5">
+      <div className="fixed top-4 right-4 z-10">
+        <ThemeToggle compact />
+      </div>
       {/* Orb decorativo */}
       <div aria-hidden className="pointer-events-none fixed top-0 right-0 w-96 h-96 rounded-full bg-brand-orange/5 blur-3xl" />
       <div aria-hidden className="pointer-events-none fixed bottom-0 left-0 w-80 h-80 rounded-full bg-brand-orange/4 blur-3xl" />
