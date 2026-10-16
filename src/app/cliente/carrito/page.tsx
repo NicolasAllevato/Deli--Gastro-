@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { requireClientPage } from "@/lib/auth/clientPage";
 import { isDemoMode } from "@/lib/demo/mode";
 import { readConfig } from "@/lib/orders-server";
+import { isOnlinePaymentEnabled } from "@/lib/payments/gateway";
 import CheckoutClient from "./CheckoutClient";
 
 export default async function CarritoPage() {
@@ -28,6 +29,7 @@ export default async function CarritoPage() {
       showSamples={isDemoMode()}
       points={client?.total_points ?? 0}
       productCategories={productCategories}
+      onlinePayments={isOnlinePaymentEnabled()}
     />
   );
 }

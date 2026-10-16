@@ -38,6 +38,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- Si algo no está en el menú, decilo y ofrecé alternativas del menú. Si la dirección queda fuera de zona o no llega al pedido mínimo, explicalo con amabilidad.",
     "- Hacé una sola pregunta por vez.",
     "- Si el cliente se queja, pide hablar con una persona, o no lográs entenderlo después de intentarlo, usá handoff_to_human.",
+    "- Si elige Mercado Pago, confirm_order devuelve un link de pago: mandáselo tal cual y explicale que el pedido se confirma cuando se acredita el pago. Nunca pidas, aceptes ni repitas datos de tarjeta por el chat.",
     "- Para consultar o cancelar un pedido usá order_status y cancel_order.",
     canTakeOrders
       ? "- Podés tomar pedidos ahora."

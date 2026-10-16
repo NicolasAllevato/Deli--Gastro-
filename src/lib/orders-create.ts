@@ -3,6 +3,8 @@ import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
 import { buildItemsDesc, formatMoney, minutesSince, REWARDS, type Reward } from "@/lib/orders";
 import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
 import { applyReward, REDEEM_PREFIX, rewardNote } from "@/lib/rewards";
+import { getGateway } from "@/lib/payments/gateway";
+import { refundPaymentForOrder } from "@/lib/payments/refunds";
 import { loadDeliverySettings } from "@/lib/zones-server";
 import { quoteDelivery } from "@/lib/zones";
 
@@ -128,7 +130,26 @@ async function resolveReward(
   return { ok: true, value: { reward, discount: outcome.discount } };
 }
 
-export async function createDeliveryOrder(db: Db, input: NewDeliveryOrder): Promise<Outcome<OrderRow>> {
+/**
+ * Pedido ya cotizado y validado, listo para insertarse. Es lo que guarda una intención de pago:
+ * cuando el pago se aprueba se crea el pedido desde esta foto, sin volver a cotizar.
+ */
+export interface OrderSnapshot {
+  clientId: string;
+  itemsDesc: string;
+  total: number;
+  fee: number;
+  address: DeliveryPoint;
+  paymentMethod: PaymentMethod;
+  notes: string | null;
+  channel: OrderChannel;
+  actor: string;
+  /** Canje de puntos aplicado: se cobra al crear el pedido. */
+  reward: { id: string; nombre: string; puntos: number } | null;
+}
+
+/** Cotiza el pedido: precios, cobertura, envío y canje. No escribe nada. */
+export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Promise<Outcome<OrderSnapshot>> {
   const priced = await priceOrder(db, input.items, input.address);
   if (!priced.ok) return priced;
   const { lines, subtotal, fee } = priced.value;
@@ -145,33 +166,58 @@ export async function createDeliveryOrder(db: Db, input: NewDeliveryOrder): Prom
   }
   const notes = [input.notes?.trim(), applied && rewardNote(applied.reward, applied.discount)].filter(Boolean).join(" · ");
 
+  return {
+    ok: true,
+    value: {
+      clientId: input.clientId,
+      itemsDesc: buildItemsDesc(lines),
+      total,
+      fee,
+      address: input.address,
+      paymentMethod: input.paymentMethod,
+      notes: notes || null,
+      channel: input.channel,
+      actor: input.actor,
+      reward: applied ? { id: applied.reward.id, nombre: applied.reward.nombre, puntos: applied.reward.puntosRequeridos } : null,
+    },
+  };
+}
+
+/** Inserta el pedido de una cotización, cobra los puntos del canje y deja la bitácora. */
+export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recibidos"): Promise<Outcome<OrderRow>> {
   const { data: order, error } = await db
     .from("orders")
     .insert({
-      client_id: input.clientId,
+      client_id: snapshot.clientId,
       status: "Recibidos",
-      items_desc: buildItemsDesc(lines),
-      total,
-      delivery_fee: fee,
-      delivery_address: input.address.address,
-      delivery_lat: input.address.lat,
-      delivery_lng: input.address.lng,
-      payment_method: input.paymentMethod,
-      notes: notes || null,
-      channel: input.channel,
+      items_desc: snapshot.itemsDesc,
+      total: snapshot.total,
+      delivery_fee: snapshot.fee,
+      delivery_address: snapshot.address.address,
+      delivery_lat: snapshot.address.lat,
+      delivery_lng: snapshot.address.lng,
+      payment_method: snapshot.paymentMethod,
+      notes: snapshot.notes,
+      channel: snapshot.channel,
     })
     .select()
     .single();
   if (error) return fail(500, error.message);
 
   // Los puntos se cobran recién con el pedido creado y ligados a él, para poder devolverlos si se cancela.
-  if (applied) {
-    await applyPointsDelta(db, input.clientId, -applied.reward.puntosRequeridos, `${REDEEM_PREFIX}${applied.reward.nombre}`, order.id);
+  if (snapshot.reward) {
+    await applyPointsDelta(db, snapshot.clientId, -snapshot.reward.puntos, `${REDEEM_PREFIX}${snapshot.reward.nombre}`, order.id);
   }
 
   // La bitácora no debe tumbar el pedido ya creado.
-  await db.from("order_events").insert({ order_id: order.id, event: "Recibidos", actor: input.actor });
+  await db.from("order_events").insert({ order_id: order.id, event, actor: snapshot.actor });
   return { ok: true, value: order };
+}
+
+export async function createDeliveryOrder(db: Db, input: NewDeliveryOrder): Promise<Outcome<OrderRow>> {
+  const prepared = await prepareDeliveryOrder(db, input);
+  if (!prepared.ok) return prepared;
+  return placeOrder(db, prepared.value);
 }
 
 /** El cliente solo cancela mientras el pedido siga "Recibidos" y dentro de la ventana configurada. */
@@ -211,6 +257,30 @@ export async function cancelOrderForClient(db: Db, orderId: string, clientId: st
   if (!data) return fail(409, "El pedido ya cambió de estado y no se puede cancelar.");
 
   await db.from("order_events").insert({ order_id: order.id, event: "Cancelado", actor });
-  await refundRedeemedPoints(db, order.id);
+  await settleCancellation(db, order.id);
   return { ok: true, value: data };
+}
+
+/** Lo que corresponde devolver cuando un pedido se cancela: los puntos canjeados y, si se pagó online, el pago. */
+export async function settleCancellation(db: Db, orderId: string): Promise<void> {
+  await refundRedeemedPoints(db, orderId);
+  const refund = await refundPaymentForOrder(db, getGateway(), orderId);
+  if (refund.error) {
+    await db.from("order_events").insert({ order_id: orderId, event: "reembolso_pendiente", actor: "sistema", detail: refund.error.slice(0, 200) });
+  }
+}
+
+/** Cancelación por el sistema (pago devuelto o contracargo): no depende de la ventana del cliente. */
+export async function cancelOrderBySystem(db: Db, orderId: string, actor: string): Promise<boolean> {
+  const { data } = await db
+    .from("orders")
+    .update({ status: "Cancelado" })
+    .eq("id", orderId)
+    .in("status", ["Recibidos", "En Preparación", "En Camino"])
+    .select("id")
+    .maybeSingle();
+  if (!data) return false;
+  await db.from("order_events").insert({ order_id: orderId, event: "Cancelado", actor });
+  await refundRedeemedPoints(db, orderId);
+  return true;
 }

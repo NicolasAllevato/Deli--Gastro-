@@ -7,6 +7,8 @@ import { isAuthorizationError } from "@/lib/auth/requireRole";
 import { PAYMENT_METHODS } from "@/lib/orders";
 import { createDeliveryOrder } from "@/lib/orders-create";
 import { notifyOrderEvent } from "@/lib/whatsapp/notify";
+import { getGateway } from "@/lib/payments/gateway";
+import { startOnlinePayment } from "@/lib/payments/intents";
 
 const createSchema = z.object({
   items: z
@@ -62,16 +64,32 @@ export async function POST(req: NextRequest) {
   const { items, address, paymentMethod, notes, rewardId } = parsed.data;
 
   const db = createAdminClient();
-  const result = await createDeliveryOrder(db, {
+  const order = {
     clientId: auth.client.id,
     items,
     address,
     paymentMethod,
     notes,
     rewardId,
-    channel: "web",
+    channel: "web" as const,
     actor: "cliente",
-  });
+  };
+
+  // Con Mercado Pago el pedido todavía no existe: se abre el pago y el pedido se crea cuando se aprueba.
+  if (paymentMethod === "Mercado Pago") {
+    const gateway = getGateway();
+    if (!gateway) {
+      return NextResponse.json({ error: "El pago con Mercado Pago todavía no está habilitado." }, { status: 400 });
+    }
+    const started = await startOnlinePayment(db, gateway, order);
+    if (!started.ok) return NextResponse.json({ error: started.message }, { status: started.status });
+    return NextResponse.json(
+      { paymentUrl: started.value.url, intentId: started.value.intentId, total: started.value.total },
+      { status: 201 },
+    );
+  }
+
+  const result = await createDeliveryOrder(db, order);
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
 
   after(() => notifyOrderEvent(db, result.value.id, "created"));

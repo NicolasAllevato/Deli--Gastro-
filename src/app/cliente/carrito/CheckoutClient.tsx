@@ -22,6 +22,8 @@ interface Props {
   points: number;
   /** Nombre de la categoría de cada producto (id → nombre), para valuar el canje. */
   productCategories: Record<string, string>;
+  /** El cobro con Mercado Pago está configurado: si no, la opción no se ofrece. */
+  onlinePayments: boolean;
 }
 
 interface Place {
@@ -35,7 +37,7 @@ async function readError(res: Response, fallback: string): Promise<string> {
   return json.error ?? fallback;
 }
 
-export default function CheckoutClient({ clientAddress, paused, showSamples, points, productCategories }: Props) {
+export default function CheckoutClient({ clientAddress, paused, showSamples, points, productCategories, onlinePayments }: Props) {
   const router = useRouter();
   const { lines, subtotal, setQty, clear, rewardId, setReward } = useCart();
 
@@ -47,6 +49,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [payment, setPayment] = useState<(typeof PAYMENT_METHODS)[number]>("Tarjeta");
+  const methods = PAYMENT_METHODS.filter((m) => onlinePayments || m !== "Mercado Pago");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [placed, setPlaced] = useState(false);
@@ -112,6 +115,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
   const discount = rewardOutcome?.ok ? rewardOutcome.discount : 0;
   const rewardBlocked = rewardOutcome?.ok === false;
   const total = subtotal - discount + fee;
+  const payOnline = payment === "Mercado Pago";
   const canOrder = address !== null && covered !== null && !belowMin && !quoting && !rewardBlocked;
 
   const confirm = async () => {
@@ -130,8 +134,18 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
           rewardId: reward?.id,
         }),
       });
-      const json = (await res.json()) as { id?: string; error?: string };
-      if (!res.ok || !json.id) throw new Error(json.error ?? "No se pudo crear el pedido.");
+      const json = (await res.json()) as { id?: string; paymentUrl?: string; intentId?: string; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "No se pudo crear el pedido.");
+
+      // Mercado Pago: el pedido se crea cuando se acredita el pago. Se limpia el carrito y se va a pagar.
+      if (json.paymentUrl) {
+        setPlaced(true);
+        clear();
+        window.location.assign(json.paymentUrl);
+        return;
+      }
+
+      if (!json.id) throw new Error("No se pudo crear el pedido.");
       setPlaced(true);
       clear();
       router.push(`/cliente/pedidos/${json.id}`);
@@ -326,7 +340,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
         <fieldset>
           <legend className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-3">Forma de pago</legend>
           <div className="grid grid-cols-3 gap-2">
-            {PAYMENT_METHODS.map((method) => (
+            {methods.map((method) => (
               <label
                 key={method}
                 className={cn(
@@ -349,6 +363,12 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
             ))}
           </div>
         </fieldset>
+
+        {payOnline && (
+          <p role="note" className="text-xs text-gray-500">
+            Vas a pagar en Mercado Pago. Tu pedido se confirma y pasa a la cocina cuando se acredita el pago.
+          </p>
+        )}
 
         <div>
           <label htmlFor="notes" className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">
@@ -389,7 +409,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
         disabled={submitting || paused || !canOrder}
         className="w-full flex items-center justify-center gap-2 py-4 rounded-full btn-glow text-white font-black text-sm disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {submitting ? <><Loader2 size={16} className="animate-spin" aria-hidden /> Confirmando...</> : <>Confirmar pedido — {formatMoney(total)}</>}
+        {submitting ? <><Loader2 size={16} className="animate-spin" aria-hidden /> {payOnline ? "Abriendo el pago..." : "Confirmando..."}</> : <>{payOnline ? "Pagar con Mercado Pago" : "Confirmar pedido"} — {formatMoney(total)}</>}
       </button>
     </div>
   );

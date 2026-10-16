@@ -49,6 +49,8 @@ const ROUTES_BY_ROLE: Record<DemoRole, readonly string[]> = {
     "/cliente/pedidos",
     "/cliente/fidelidad",
     `/cliente/resenas/${WARM_UP_ORDER_ID}`,
+    `/cliente/pago/${WARM_UP_ORDER_ID}`,
+    `/demo/mercadopago/${WARM_UP_ORDER_ID}`,
   ],
   admin: ["/admin/tablero", "/admin/pedidos"],
   repartidor: ["/repartidor"],
@@ -81,6 +83,8 @@ async function warmUpClientApis(context: BrowserContext): Promise<void> {
   await context.request.patch(`/api/client/orders/${WARM_UP_ORDER_ID}`, { data: { action: "cancel" }, timeout });
   await context.request.post("/api/reviews", { data: { orderId: WARM_UP_ORDER_ID, rating: 5 }, timeout });
   await context.request.post("/api/client/orders", { data: {}, timeout });
+  await context.request.get(`/api/client/payments/${WARM_UP_ORDER_ID}`, { timeout });
+  await context.request.post(`/api/demo/payments/${WARM_UP_ORDER_ID}`, { data: { outcome: "approved" }, timeout });
 }
 
 /** Vuelve a los datos de ejemplo originales para que cada archivo parta de un estado conocido. */

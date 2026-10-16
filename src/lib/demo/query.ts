@@ -44,6 +44,7 @@ export interface QueryResult {
 const KNOWN_TABLES: readonly TableName[] = [
   "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
   "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
+  "payment_intents",
 ];
 
 /** Tablas cuya clave primaria es `key` (no `id`). */
@@ -58,6 +59,9 @@ function nowIso(): string {
 
 const DEFAULTS: Record<TableName, () => Row> = {
   legal_acceptances: () => ({ email: null, role: null, ip: null, user_agent: null, accepted_at: nowIso() }),
+  payment_intents: () => ({
+    status: "pending", mp_preference_id: null, checkout_url: null, mp_payment_id: null, order_id: null, refund_error: null,
+  }),
   clients: () => ({
     user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0, wa_marketing_opt_in: false,
   }),

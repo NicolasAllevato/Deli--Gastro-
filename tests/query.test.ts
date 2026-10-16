@@ -6,6 +6,7 @@ import type { Tables } from "../src/lib/demo/seed.ts";
 function emptyStore(): Tables {
   return {
     legal_acceptances: [],
+    payment_intents: [],
     clients: [],
     orders: [],
     points_ledger: [],

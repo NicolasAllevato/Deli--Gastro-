@@ -5,6 +5,8 @@ import { isDemoMode } from "@/lib/demo/mode";
 import { geocodeAddress, type GeocodeResult } from "@/lib/geocode";
 import { minutesSince, PAYMENT_METHODS } from "@/lib/orders";
 import { cancelOrderForClient, createDeliveryOrder, priceOrder } from "@/lib/orders-create";
+import { getGateway } from "@/lib/payments/gateway";
+import { cancelPendingIntent, latestPendingIntent, startOnlinePayment } from "@/lib/payments/intents";
 import { SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { ensureClientForConversation } from "@/lib/whatsapp/clients";
 import { loadDeliverySettings } from "@/lib/zones-server";
@@ -137,7 +139,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
           zones: delivery.zones
             .filter((z) => z.is_active)
             .map((z) => ({ name: z.name, delivery_fee: z.fee, min_order: z.min_order })),
-          payment_methods: PAYMENT_METHODS,
+          payment_methods: PAYMENT_METHODS.filter((m) => m !== "Mercado Pago" || getGateway() !== null),
         };
       },
     }),
@@ -256,16 +258,37 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
           .maybeSingle();
         if (!claimed) return { error: "Ya se está procesando tu confirmación. Esperá un momento." };
 
-        const created = await createDeliveryOrder(db, {
+        const order = {
           clientId: await ensureClientForConversation(db, conversation),
           items: draft.items,
           address: { address: draft.address, lat: draft.lat, lng: draft.lng },
           paymentMethod: args.payment_method,
           notes: args.notes,
-          channel: "whatsapp",
+          channel: "whatsapp" as const,
           actor: "agente",
           expectedTotal: draft.subtotal + draft.fee,
-        });
+        };
+
+        // Mercado Pago: no se crea el pedido, se abre el pago y se le pasa el link al cliente.
+        if (args.payment_method === "Mercado Pago") {
+          const gateway = getGateway();
+          const started = gateway
+            ? await startOnlinePayment(db, gateway, order)
+            : ({ ok: false, message: "El pago con Mercado Pago todavía no está habilitado. Ofrecé efectivo o tarjeta." } as const);
+          if (!started.ok) {
+            await db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
+            return { error: started.message };
+          }
+          return {
+            ok: true,
+            awaiting_payment: true,
+            payment_url: started.value.url,
+            total: started.value.total,
+            note: "Mandale el link de pago al cliente. El pedido se confirma y pasa a la cocina cuando se acredite el pago; el link vence en 30 minutos.",
+          };
+        }
+
+        const created = await createDeliveryOrder(db, order);
         if (!created.ok) {
           // No se creó: se devuelve el borrador para poder reintentar o recotizar.
           await db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
@@ -287,7 +310,12 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       parameters: EMPTY_SCHEMA,
       schema: z.object({}),
       run: async () => {
-        const order = await latestOrder(ctx, (await reloadConversation(ctx)).client_id);
+        const clientId = (await reloadConversation(ctx)).client_id;
+        const pending = clientId ? await latestPendingIntent(db, clientId) : null;
+        if (pending) {
+          return { found: true, awaiting_payment: true, total: Number(pending.total), payment_url: pending.checkout_url, expires_at: pending.expires_at };
+        }
+        const order = await latestOrder(ctx, clientId);
         if (!order) return { found: false };
         return {
           found: true,
@@ -308,6 +336,13 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({}),
       run: async () => {
         const conversation = await reloadConversation(ctx);
+        const pending = conversation.client_id ? await latestPendingIntent(db, conversation.client_id) : null;
+        if (pending && conversation.client_id) {
+          if (ctx.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pago no se canceló." };
+          return (await cancelPendingIntent(db, pending.id, conversation.client_id))
+            ? { ok: true, note: "Se canceló el pago pendiente. No se cobró nada." }
+            : { error: "Ese pago ya no se puede cancelar." };
+        }
         const order = await latestOrder(ctx, conversation.client_id);
         if (!order || !conversation.client_id) return { error: "No encontré un pedido para cancelar." };
         if (ctx.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pedido no se canceló." };

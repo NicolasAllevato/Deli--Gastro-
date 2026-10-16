@@ -4,6 +4,7 @@ export type OrderStatus = 'Recibidos' | 'En Preparación' | 'En Camino' | 'Final
 export type ClientTier  = 'Bronce' | 'Plata' | 'Oro' | 'Platino'
 export type PaymentMethod = 'Efectivo' | 'Tarjeta' | 'Mercado Pago'
 export type OrderChannel = 'web' | 'whatsapp' | 'mostrador'
+export type PaymentIntentStatus = 'pending' | 'approved' | 'cancelled' | 'expired' | 'refunded'
 
 export interface Database {
   public: {
@@ -339,6 +340,48 @@ export interface Database {
           user_agent?: string | null
         }
         Update: Record<string, never>
+        Relationships: []
+      }
+      payment_intents: {
+        Row: {
+          id: string
+          client_id: string
+          channel: OrderChannel
+          status: PaymentIntentStatus
+          total: number
+          snapshot: Json
+          mp_preference_id: string | null
+          checkout_url: string | null
+          mp_payment_id: string | null
+          order_id: string | null
+          expires_at: string
+          refund_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          channel: OrderChannel
+          status?: PaymentIntentStatus
+          total: number
+          snapshot: Json
+          mp_preference_id?: string | null
+          checkout_url?: string | null
+          mp_payment_id?: string | null
+          order_id?: string | null
+          expires_at: string
+          refund_error?: string | null
+        }
+        Update: {
+          status?: PaymentIntentStatus
+          mp_preference_id?: string | null
+          checkout_url?: string | null
+          mp_payment_id?: string | null
+          order_id?: string | null
+          refund_error?: string | null
+          updated_at?: string
+        }
         Relationships: []
       }
       reviews: {

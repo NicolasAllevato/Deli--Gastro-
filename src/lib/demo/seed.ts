@@ -16,7 +16,8 @@ export type TableName =
   | "wa_conversations"
   | "wa_messages"
   | "wa_campaigns"
-  | "legal_acceptances";
+  | "legal_acceptances"
+  | "payment_intents";
 
 export type Tables = Record<TableName, Row[]>;
 
@@ -503,6 +504,6 @@ export function buildSeed(): Tables {
     points_ledger, global_config, categories, products,
     reviews: [...reviews, ...extraReviews],
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
-    integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [],
+    integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [], payment_intents: [],
   };
 }

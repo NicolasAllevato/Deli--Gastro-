@@ -7,7 +7,8 @@ import { courierDisplayName } from "@/lib/auth/courier";
 import { canTransition } from "@/lib/orders";
 import { courierMayPatch, stagePatch, type StagePatch } from "@/lib/tracking";
 import { notifyOrderEvent, type OrderNotice } from "@/lib/whatsapp/notify";
-import { awardPointsForOrder, listOrders, refundRedeemedPoints } from "@/lib/orders-server";
+import { awardPointsForOrder, listOrders } from "@/lib/orders-server";
+import { settleCancellation } from "@/lib/orders-create";
 import type { OrderStatus } from "@/types/database";
 
 const VALID_STATUSES: OrderStatus[] = [
@@ -189,8 +190,8 @@ export async function PATCH(req: NextRequest) {
   const notice = patch.status && patch.status !== "Cancelado" && patch.status !== "Recibidos" ? patch.status : null;
   if (notice) after(() => notifyOrderEvent(supabase, data.id, notice as OrderNotice));
 
-  // Un pedido cancelado devuelve los puntos canjeados (idempotente).
-  if (patch.status === "Cancelado") await refundRedeemedPoints(supabase, data.id);
+  // Un pedido cancelado devuelve los puntos canjeados y, si se pagó online, el pago (idempotente).
+  if (patch.status === "Cancelado") await settleCancellation(supabase, data.id);
 
   if (patch.status === "Finalizados") {
     await awardPointsForOrder(supabase, {
