@@ -104,7 +104,24 @@ interface AppliedReward {
   discount: number;
 }
 
-/** Valida el canje contra el saldo real y el contenido del pedido, y calcula cuánto descuenta. */
+/**
+ * Puntos comprometidos en canjes con pago online todavía pendiente: se cobran al aprobarse el pago,
+ * así que mientras tanto no se pueden usar en otro pedido (si no, el mismo saldo pagaría dos canjes).
+ */
+async function reservedPoints(db: Db, clientId: string): Promise<number> {
+  const { data } = await db
+    .from("payment_intents")
+    .select("snapshot")
+    .eq("client_id", clientId)
+    .eq("status", "pending")
+    .gt("expires_at", new Date().toISOString());
+  return (data ?? []).reduce((sum, row) => {
+    const reward = (row.snapshot as { reward?: { puntos?: unknown } | null } | null)?.reward;
+    return sum + (typeof reward?.puntos === "number" ? reward.puntos : 0);
+  }, 0);
+}
+
+/** Valida el canje contra el saldo disponible (sin lo reservado) y el contenido del pedido, y calcula cuánto descuenta. */
 async function resolveReward(
   db: Db,
   clientId: string,
@@ -115,7 +132,7 @@ async function resolveReward(
   if (!reward) return fail(400, "Recompensa inválida.");
 
   const client = await getClientById(db, clientId);
-  if (!client || client.total_points < reward.puntosRequeridos) {
+  if (!client || client.total_points - (await reservedPoints(db, clientId)) < reward.puntosRequeridos) {
     return fail(409, "No te alcanzan los puntos para este canje.");
   }
 

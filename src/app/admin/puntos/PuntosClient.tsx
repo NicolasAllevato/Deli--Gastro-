@@ -169,7 +169,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                 </button>
 
                 {isOpen && (
-                  <div className="border-t border-gray-200/60 px-4 pb-4 pt-3 space-y-4 animate-in fade-in duration-150">
+                  <div className="border-t border-gray-200/60 px-4 pb-4 pt-3 space-y-4 animate-rise-in">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                       {/* Historial de puntos */}
@@ -243,7 +243,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                         </div>
 
                         {notifCliente === cliente.id && (
-                          <div className="mt-3 neumorphic-inset rounded-xl p-3 space-y-2 animate-in fade-in duration-150">
+                          <div className="mt-3 neumorphic-inset rounded-xl p-3 space-y-2 animate-rise-in">
                             <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
                               Mensaje de notificación
                             </p>

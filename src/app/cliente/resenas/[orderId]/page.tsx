@@ -101,7 +101,7 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         )}
 
         {rating > 0 && rating <= 3 && (
-          <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+          <form onSubmit={handleSubmit} className="animate-rise-in space-y-4">
             <div className="text-left">
               <label htmlFor="resena-feedback" className="block text-xs font-bold text-gray-500 mb-2 ml-1 uppercase tracking-widest">
                 ¿Qué podemos mejorar?
@@ -128,7 +128,7 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         )}
 
         {rating >= 4 && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-5">
+          <div className="animate-rise-in space-y-5">
             <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-800 text-sm">
               <p className="font-bold">¡Nos alegra que te haya gustado!</p>
               <p className="mt-1 text-blue-600">¿Nos ayudarías dejando una reseña en Google Maps?</p>

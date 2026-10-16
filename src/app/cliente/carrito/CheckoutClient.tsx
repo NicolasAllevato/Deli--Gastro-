@@ -209,7 +209,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
         <section
           aria-label="Canje de puntos"
           className={cn(
-            "rounded-2xl p-4 flex items-start gap-3 border",
+            "rounded-2xl p-4 flex items-start gap-3 border animate-pop-in",
             rewardOutcome.ok ? "badge-green border-transparent" : "bg-yellow-50 border-yellow-200 text-yellow-800",
           )}
         >
@@ -233,7 +233,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
         </section>
       )}
 
-      <ul className="space-y-3">
+      <ul className="space-y-3 stagger">
         {lines.map((line) => (
           <li key={line.id} className="neumorphic rounded-2xl p-3 flex items-center gap-3">
             <div className="w-16 h-16 rounded-xl neumorphic-inset overflow-hidden relative shrink-0 flex items-center justify-center">

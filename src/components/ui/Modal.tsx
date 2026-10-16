@@ -68,7 +68,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-gray-900/60 backdrop-blur-sm fade-in flex items-center justify-center p-4"
       onClick={closeOnBackdrop ? onClose : undefined}
     >
       <div
@@ -79,7 +79,7 @@ export function Modal({
         aria-describedby={description !== undefined ? descriptionId : undefined}
         className={cn(
           "neumorphic rounded-[2.5rem] p-8 w-full relative",
-          "animate-in fade-in zoom-in-95 duration-200",
+          "animate-pop-in",
           SIZE_CLASSES[size]
         )}
         onClick={(e) => e.stopPropagation()}

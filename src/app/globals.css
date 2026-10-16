@@ -19,20 +19,20 @@
   --color-primary-container: #6d28d9;
   --color-on-primary-container: #ffffff;
 
-  /* Superficie y fondo — más oscuros para mayor contraste neumórfico (tema claro) */
-  --color-background: #dde3ed;
-  --color-on-background: #1e293b;
-  --color-surface: #dde3ed;
-  --color-on-surface: #0f172a;
-  --color-on-surface-variant: #334155;
-  --color-surface-container: #dde3ed;
-  --color-surface-container-low: #dde3ed;
-  --color-surface-container-lowest: #dde3ed;
-  --color-surface-container-highest: #ccd4e0;
-  --color-inset: #c8d0de;
-  --color-outline: #94a3b8;
-  --color-outline-variant: #cbd5e1;
-  --color-error: #c0392b;              /* Rojo sobrio — 5.2:1 sobre #f0f3f8 ✓ AA */
+  /* Superficie y fondo — arena cálida (tema claro): fondo más oscuro que las tarjetas para dar relieve */
+  --color-background: #e4d8bf;
+  --color-on-background: #20170c;
+  --color-surface: #e4d8bf;
+  --color-on-surface: #1a1208;
+  --color-on-surface-variant: #4a3b26;
+  --color-surface-container: #e4d8bf;
+  --color-surface-container-low: #e9dec8;
+  --color-surface-container-lowest: #f2e9d6;
+  --color-surface-container-highest: #d5c6a6;
+  --color-inset: #d5c6a6;
+  --color-outline: #a8946d;
+  --color-outline-variant: #c5b48e;
+  --color-error: #b02a1e;              /* Rojo sobrio — ≥5:1 sobre la arena ✓ AA */
 
   --font-headline: var(--font-manrope, 'Manrope', sans-serif);
   --font-display: var(--font-manrope, 'Manrope', sans-serif);
@@ -40,10 +40,10 @@
   --font-label: var(--font-inter, 'Inter', sans-serif);
 
   /* Texto semántico accesible — WCAG AA sobre #f0f3f8 */
-  --color-text-muted: #475569;
-  --color-text-subtle: #64748b;
-  --color-text-disabled: #94a3b8;
-  --color-switch-off: #e2e8f0;
+  --color-text-muted: #4a3b26;
+  --color-text-subtle: #5f4f36;
+  --color-text-disabled: #8a785a;
+  --color-switch-off: #cdbd9c;
 }
 
 /* ── Tema global ──
@@ -51,36 +51,37 @@
    Todo color de superficie, texto y borde sale de estas variables. */
 :root {
   color-scheme: light;
-  --app-bg: #dde3ed;
-  --app-surface: #dde3ed;
-  --app-inset: #c8d0de;
-  --app-hover: #e2e8f0;
-  --app-glass: rgba(221, 227, 237, 0.75);
-  --app-edge: rgba(255, 255, 255, 0.55);
-  --app-border: rgba(148, 163, 184, 0.45);
-  --app-text: #1e293b;
-  --app-text-soft: #334155;
-  --app-text-muted: #475569;
-  --app-text-subtle: #64748b;
-  --app-text-faint: #94a3b8;
-  --app-shadow-dark: rgba(140, 155, 180, 0.55);
-  --app-shadow-light: rgba(255, 255, 255, 0.8);
-  --app-shadow-dark-strong: rgba(140, 155, 180, 0.6);
-  --app-shadow-light-strong: rgba(255, 255, 255, 0.85);
-  --app-card-shadow: 0 4px 14px rgba(100, 116, 139, 0.16);
-  --app-scroll: rgba(163, 177, 198, 0.55);
-  --app-focus: #6d28d9;
-  --app-accent-text: #6d28d9;
+  /* Arena cálida: fondo de página más oscuro que las tarjetas, texto marrón casi negro, bordes visibles. */
+  --app-bg: #e4d8bf;
+  --app-surface: #f2e9d6;
+  --app-inset: #d5c6a6;
+  --app-hover: #eadfc6;
+  --app-glass: rgba(242, 233, 214, 0.86);
+  --app-edge: rgba(255, 251, 240, 0.75);
+  --app-border: rgba(110, 85, 45, 0.38);
+  --app-text: #20170c;
+  --app-text-soft: #36291a;
+  --app-text-muted: #4a3b26;
+  --app-text-subtle: #5f4f36;
+  --app-text-faint: #7d6b4e;
+  --app-shadow-dark: rgba(110, 85, 45, 0.5);
+  --app-shadow-light: rgba(255, 251, 240, 0.92);
+  --app-shadow-dark-strong: rgba(110, 85, 45, 0.62);
+  --app-shadow-light-strong: rgba(255, 251, 240, 0.96);
+  --app-card-shadow: 0 4px 14px rgba(90, 65, 25, 0.24);
+  --app-scroll: rgba(140, 115, 70, 0.6);
+  --app-focus: #5b21b6;
+  --app-accent-text: #5b21b6;
   --app-accent-contrast: #ffffff;
-  --app-good: #166534;
-  --app-bad: #b91c1c;
-  --app-warn: #92400e;
-  --app-info: #1e40af;
-  --app-switch-off: #e2e8f0;
-  --app-chip-text: #334155;
+  --app-good: #14532d;
+  --app-bad: #991b1b;
+  --app-warn: #78350f;
+  --app-info: #1e3a8a;
+  --app-switch-off: #cdbd9c;
+  --app-chip-text: #36291a;
   --app-btn-secondary: #4a3f2a;
   --app-btn-ghost: #5b21b6;
-  --app-btn-ghost-hover: rgba(232, 237, 220, 0.6);
+  --app-btn-ghost-hover: rgba(124, 58, 237, 0.12);
 }
 
 :root[data-theme="dark"] {
@@ -248,41 +249,42 @@ button:focus-visible {
 :root[data-theme="dark"] .badge-orange { background: rgba(212,168,50,0.2); color:#fde68a; border-color: rgba(253,224,71,0.3); }
 :root[data-theme="dark"] .badge-yellow { background: rgba(160,130,70,0.2); color:#e7d9b0; border-color: rgba(207,192,160,0.3); }
 
-/* ── Remapeo de utilitarios neutros de Tailwind (la app los usa en todas las pantallas) ── */
-:root[data-theme="dark"] .bg-white { background-color: var(--app-surface); }
-:root[data-theme="dark"] [class*="bg-white/"] { background-color: var(--app-glass); }
-:root[data-theme="dark"] .bg-gray-100,
-:root[data-theme="dark"] .hover\:bg-gray-100:hover { background-color: var(--app-inset); }
+/* ── Remapeo de utilitarios neutros de Tailwind (la app los usa en todas las pantallas) ──
+   Valen para los dos temas: los colores salen de los tokens --app-*. */
+.bg-white { background-color: var(--app-surface); }
+[class*="bg-white/"] { background-color: var(--app-glass); }
+.bg-gray-100,
+.hover\:bg-gray-100:hover { background-color: var(--app-inset); }
 :root[data-theme="dark"] .bg-gray-500 { background-color: #475569; }
 :root[data-theme="dark"] .bg-gray-900\/85,
 :root[data-theme="dark"] .bg-gray-900\/60,
 :root[data-theme="dark"] .bg-gray-900\/40 { background-color: rgba(2, 6, 23, 0.7); }
-:root[data-theme="dark"] .bg-\[\#e2e8f0\] { background-color: var(--app-switch-off); }
+.bg-\[\#e2e8f0\] { background-color: var(--app-switch-off); }
 :root[data-theme="dark"] .bg-\[\#ede9fe\] { background-color: rgba(124, 58, 237,0.28); }
 :root[data-theme="dark"] .text-\[\#2e1065\] { color: #dfe9c4; }
 
-:root[data-theme="dark"] .text-gray-900,
-:root[data-theme="dark"] .text-gray-800,
-:root[data-theme="dark"] .hover\:text-gray-800:hover,
-:root[data-theme="dark"] .hover\:text-gray-900:hover { color: var(--app-text); }
-:root[data-theme="dark"] .text-gray-700,
-:root[data-theme="dark"] .hover\:text-gray-700:hover { color: var(--app-text-soft); }
-:root[data-theme="dark"] .text-gray-600,
-:root[data-theme="dark"] .hover\:text-gray-600:hover { color: var(--app-text-muted); }
-:root[data-theme="dark"] .text-gray-500 { color: var(--app-text-subtle); }
-:root[data-theme="dark"] .text-gray-400 { color: var(--app-text-faint); }
-:root[data-theme="dark"] .text-gray-300 { color: #64748b; }
-:root[data-theme="dark"] .placeholder-gray-500::placeholder,
-:root[data-theme="dark"] .placeholder-gray-400::placeholder { color: var(--app-text-subtle); opacity: 1; }
+.text-gray-900,
+.text-gray-800,
+.hover\:text-gray-800:hover,
+.hover\:text-gray-900:hover { color: var(--app-text); }
+.text-gray-700,
+.hover\:text-gray-700:hover { color: var(--app-text-soft); }
+.text-gray-600,
+.hover\:text-gray-600:hover { color: var(--app-text-muted); }
+.text-gray-500 { color: var(--app-text-subtle); }
+.text-gray-400 { color: var(--app-text-faint); }
+.text-gray-300 { color: #64748b; }
+.placeholder-gray-500::placeholder,
+.placeholder-gray-400::placeholder { color: var(--app-text-subtle); opacity: 1; }
 
-:root[data-theme="dark"] .border-gray-100,
-:root[data-theme="dark"] .border-gray-200,
-:root[data-theme="dark"] .border-gray-300,
-:root[data-theme="dark"] .border-gray-100\/80,
-:root[data-theme="dark"] .border-gray-200\/50,
-:root[data-theme="dark"] .border-gray-200\/60,
-:root[data-theme="dark"] .ring-gray-100 { border-color: var(--app-border); }
-:root[data-theme="dark"] .divide-gray-200\/50 > :not(:last-child) { border-color: var(--app-border); }
+.border-gray-100,
+.border-gray-200,
+.border-gray-300,
+.border-gray-100\/80,
+.border-gray-200\/50,
+.border-gray-200\/60,
+.ring-gray-100 { border-color: var(--app-border); }
+.divide-gray-200\/50 > :not(:last-child) { border-color: var(--app-border); }
 :root[data-theme="dark"] [class*="border-white/"] { border-color: rgba(148, 163, 184, 0.14); }
 
 /* Estados (error, éxito, aviso, info): fondos tintados translúcidos y textos más claros */
@@ -311,6 +313,29 @@ button:focus-visible {
 :root[data-theme="dark"] .text-blue-600,
 :root[data-theme="dark"] .text-blue-700,
 :root[data-theme="dark"] .text-blue-800 { color: #93c5fd; }
+
+/* Estados en tema claro: tintes sobre la arena en vez del blanco azulado/rosado de Tailwind */
+:root:not([data-theme="dark"]) .bg-red-50 { background-color: rgba(185, 28, 28, 0.1); }
+:root:not([data-theme="dark"]) .bg-green-50,
+:root:not([data-theme="dark"]) .bg-green-100 { background-color: rgba(22, 101, 52, 0.12); }
+:root:not([data-theme="dark"]) .bg-yellow-50 { background-color: rgba(161, 98, 7, 0.14); }
+:root:not([data-theme="dark"]) .bg-orange-50\/50,
+:root:not([data-theme="dark"]) .bg-orange-100 { background-color: rgba(194, 65, 12, 0.12); }
+:root:not([data-theme="dark"]) .bg-blue-50 { background-color: rgba(30, 64, 175, 0.1); }
+:root:not([data-theme="dark"]) .text-red-600,
+:root:not([data-theme="dark"]) .text-red-700 { color: var(--app-bad); }
+:root:not([data-theme="dark"]) .text-green-700 { color: var(--app-good); }
+:root:not([data-theme="dark"]) .text-yellow-600,
+:root:not([data-theme="dark"]) .text-yellow-700,
+:root:not([data-theme="dark"]) .text-yellow-800 { color: var(--app-warn); }
+
+/* Fondo de página en claro: un velo cálido arriba y un toque violeta de marca, fijo al scrollear */
+:root:not([data-theme="dark"]) body {
+  background-image:
+    radial-gradient(1100px 520px at 8% -8%, rgba(255, 248, 228, 0.75), transparent 62%),
+    radial-gradient(900px 480px at 100% 0%, rgba(124, 58, 237, 0.07), transparent 58%);
+  background-attachment: fixed;
+}
 
 /* Mapa (Leaflet): los tiles claros se invierten para el tema oscuro; los popups siguen la superficie. */
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(0.92) hue-rotate(180deg) brightness(0.85) saturate(0.7); }
@@ -448,6 +473,68 @@ button:focus-visible {
   8%            { box-shadow: 0 0 0 3px var(--app-accent-text), 0 10px 28px rgba(124, 58, 237, 0.45); transform: translateY(-4px); }
 }
 .flow-step { animation: flow-pulse 3.6s ease-in-out infinite; }
+
+/* ── Animaciones de interfaz ── */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(26px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes bump {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+@keyframes btn-sheen {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
+}
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@keyframes check-draw {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.animate-pop-in         { animation: pop-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-rise-in        { animation: rise-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-in-right { animation: slide-in-right 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-bump           { animation: bump 0.35s ease; }
+.animate-soft-pulse     { animation: soft-pulse 2s ease-in-out infinite; }
+
+/* Listas y grillas: cada hijo entra escalonado (hasta 12; el resto entra junto). */
+.stagger > * { animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > :nth-child(1)  { animation-delay: 0.03s; }
+.stagger > :nth-child(2)  { animation-delay: 0.07s; }
+.stagger > :nth-child(3)  { animation-delay: 0.11s; }
+.stagger > :nth-child(4)  { animation-delay: 0.15s; }
+.stagger > :nth-child(5)  { animation-delay: 0.19s; }
+.stagger > :nth-child(6)  { animation-delay: 0.23s; }
+.stagger > :nth-child(7)  { animation-delay: 0.27s; }
+.stagger > :nth-child(8)  { animation-delay: 0.31s; }
+.stagger > :nth-child(9)  { animation-delay: 0.35s; }
+.stagger > :nth-child(10) { animation-delay: 0.39s; }
+.stagger > :nth-child(11) { animation-delay: 0.43s; }
+.stagger > :nth-child(n+12) { animation-delay: 0.47s; }
+
+/* Brillo que cruza el botón principal al pasar el mouse */
+.btn-glow:hover:not(:disabled) {
+  background: linear-gradient(110deg, #6d28d9 35%, #8b5cf6 50%, #6d28d9 65%) 0 0 / 250% 100%;
+  animation: btn-sheen 0.8s ease;
+}
+
+/* Iconos y chips responden al tacto */
+.neumorphic-hover:active { transform: scale(0.985); }
+a, button { -webkit-tap-highlight-color: transparent; }
 
 /* ── Reduce Motion ── */
 @media (prefers-reduced-motion: reduce) {

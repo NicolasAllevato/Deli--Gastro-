@@ -77,7 +77,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
   };
 
   return (
-    <div className="w-full lg:w-[450px] xl:w-[500px] h-full flex-shrink-0 animate-in slide-in-from-right-8 duration-300">
+    <div className="w-full lg:w-[450px] xl:w-[500px] h-full flex-shrink-0 animate-slide-in-right">
       <div className="neumorphic h-full rounded-3xl p-6 md:p-8 flex flex-col">
         <header className="flex items-center justify-between mb-8 shrink-0">
           <h2 className="text-2xl font-headline font-black text-gray-800">

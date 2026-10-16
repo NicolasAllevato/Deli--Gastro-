@@ -117,7 +117,7 @@ export function MenuSection({ categories, products, paused }: Props) {
           )}
         </div>
       ) : (
-        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 stagger">
           {visible.map((product) => (
             <li key={product.id} className="neumorphic rounded-2xl p-3 flex gap-3 card-hover-lift">
               <div className="w-28 h-28 rounded-xl neumorphic-inset overflow-hidden relative shrink-0 flex items-center justify-center">

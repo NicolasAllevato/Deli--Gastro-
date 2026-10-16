@@ -17,7 +17,7 @@ export function CartBar() {
     <Link
       href="/cliente/carrito"
       aria-label={`Ver carrito: ${count} producto${count !== 1 ? "s" : ""}, ${formatMoney(subtotal)}`}
-      className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 w-[88%] max-w-xs flex items-center justify-between gap-3 px-5 py-3 rounded-full btn-glow text-white font-bold text-sm"
+      className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 w-[88%] max-w-xs flex items-center justify-between gap-3 px-5 py-3 rounded-full btn-glow text-white font-bold text-sm animate-rise-in"
     >
       <span className="flex items-center gap-2">
         <ShoppingBag size={16} aria-hidden />

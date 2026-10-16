@@ -71,7 +71,7 @@ export default async function FidelidadPage() {
           Elegí una recompensa y se aplica en tu carrito. Los puntos se descuentan recién al confirmar el pedido,
           y si lo cancelás, te los devolvemos.
         </p>
-        <div className="space-y-3">
+        <div className="space-y-3 stagger">
           {REWARDS.map((recompensa) => {
             const disponible = totalPuntos >= recompensa.puntosRequeridos;
             return (

@@ -178,6 +178,27 @@ describe("settlePayment · pago aprobado", () => {
     assert.deepEqual([mov.order_id, mov.delta], [result.value.order.id, -100]);
   });
 
+  it("los puntos de un canje con pago pendiente quedan reservados: no pagan otro canje", async () => {
+    const demo = createDemoDb();
+    const gw = fakeGateway();
+    await start(demo, gw, { rewardId: "descuento" }); // reserva 100 de 180
+
+    const otroOnline = await startOnlinePayment(demo.db, gw, input(demo, { rewardId: "descuento" }));
+    assert.ok(!otroOnline.ok);
+    assert.equal(otroOnline.status, 409);
+
+    const { createDeliveryOrder } = await import("../src/lib/orders-create.ts");
+    const enEfectivo = await createDeliveryOrder(demo.db, { ...input(demo, { rewardId: "descuento" }), paymentMethod: "Efectivo" });
+    assert.ok(!enEfectivo.ok);
+    assert.equal(saldo(demo), 180);
+
+    // Si el pago pendiente se cancela, la reserva se libera.
+    demo.store.payment_intents[0]!.status = "cancelled";
+    const ahora = await createDeliveryOrder(demo.db, { ...input(demo, { rewardId: "descuento" }), paymentMethod: "Efectivo" });
+    assert.ok(ahora.ok);
+    assert.equal(saldo(demo), 80);
+  });
+
   it("ignora un pago de otro monto, otra moneda o de una intención desconocida", async () => {
     const demo = createDemoDb();
     const gw = fakeGateway();
