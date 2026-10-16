@@ -4,7 +4,21 @@ Estado al 2026-10-12, rama `feat/demo-local` (parte de `fix/security-design-clou
 Sin push. El trabajo del 2026-10-12 (sección siguiente) está **sin commitear**; lo anterior
 está commiteado en local (último: `d2d97f9`).
 
-## Lo que queda, en orden
+## Actualización 2026-10-16 (rama `feat/demo-local`, 3 commits locales sin push)
+
+Hecho: migración 012 aplicada; canje de puntos → carrito (con devolución al cancelar); cobro con Mercado Pago
+(`docs/MERCADOPAGO.md`); tema claro beige y animaciones.
+
+Para la próxima sesión, en orden:
+1. Aplicar las migraciones **011** y **013** a `Delivery` (decidir antes si los canales de la 011 son privados).
+2. Probar Mercado Pago en sandbox: cargar `MP_ACCESS_TOKEN` (TEST-), `MP_WEBHOOK_SECRET` y `PUBLIC_URL`.
+3. Correr la suite E2E completa tras el tema beige y las animaciones.
+4. Revisar el modo claro en el resto de pantallas (repartidor, login, landing, ejecutivo, mapa, mobile).
+5. Coexistencia de WhatsApp y App ID/config_id de Meta.
+6. Operativos: uploads en Vercel, claves OpenAI/Meta, `encuestas-cron`, Leaked Password Protection.
+7. Mercado Pago, decisiones abiertas: cuotas, facturación AFIP, reembolsos parciales, limpieza de intenciones vencidas.
+
+## Lo que queda, en orden (estado al 2026-10-12)
 
 **Necesita una decisión del usuario**
 1. **Migración `011_realtime_pings_whatsapp.sql`: escrita, SIN aplicar** al proyecto `Delivery`.
