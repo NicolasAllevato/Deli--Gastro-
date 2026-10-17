@@ -8,6 +8,7 @@ const categorySchema = z.object({
   name: z.string().trim().min(1, "El nombre es requerido").max(80),
   description: z.string().trim().max(300).default(""),
   is_active: z.boolean().default(true),
+  points_per_100: z.number().finite().min(0).max(1000).nullable().default(null),
 });
 
 const updateSchema = categorySchema.partial().extend({ id: z.string().uuid() });

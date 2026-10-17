@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { parsePoints } from "@/lib/catalog/points";
 import { useRef, useState } from "react";
 import NextImage from "next/image";
 import { Image as ImageIcon, Tag, Loader2, Upload } from "lucide-react";
@@ -73,6 +74,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
       image_url:   imageUrl ?? "",
       category_id: fd.get("category_id") as string,
       is_active:   isActive,
+      points_per_100: parsePoints(fd.get("points_per_100")),
     });
   };
 
@@ -197,6 +199,16 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
               />
             </div>
           </div>
+
+          <Field
+            label="Puntos por cada $100 (opcional)"
+            name="points_per_100"
+            type="number"
+            step="0.1"
+            min="0"
+            placeholder="Vacío = usa los de la categoría"
+            defaultValue={editingProduct?.points_per_100 ?? undefined}
+          />
 
           <div className="mt-auto pt-4 flex gap-4">
             <Button variant="secondary" type="button" onClick={onClose} fullWidth>

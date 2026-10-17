@@ -172,7 +172,7 @@ export async function applyPointsDelta(
 }
 
 /** Acredita los puntos de un pedido entregado. Idempotente por `order_id`. */
-export async function awardPointsForOrder(db: Db, order: Pick<EnrichedOrder, "id" | "client_id" | "total" | "items_desc">) {
+export async function awardPointsForOrder(db: Db, order: Pick<EnrichedOrder, "id" | "client_id" | "total" | "items_desc"> & { points_earned?: number | null }) {
   if (!order.client_id) return 0;
 
   // Solo cuentan las filas que suman: un canje descontado al crear el pedido también lleva `order_id`.
@@ -184,8 +184,12 @@ export async function awardPointsForOrder(db: Db, order: Pick<EnrichedOrder, "id
     .limit(1);
   if ((existing ?? []).length > 0) return 0;
 
-  const config = await readConfig(db);
-  const points = pointsForTotal(order.total, numberConfig(config, "puntos_por_100", 0.5));
+  // Con detalle de platos los puntos ya se fijaron al crear el pedido; sin él (pedido de mostrador
+  // o anterior a los puntos por plato) rige la tasa global de la configuración.
+  const points =
+    typeof order.points_earned === "number"
+      ? order.points_earned
+      : pointsForTotal(order.total, numberConfig(await readConfig(db), "puntos_por_100", 0.5));
   if (points <= 0) return 0;
 
   await applyPointsDelta(db, order.client_id, points, `Pedido ${order.items_desc}`, order.id);

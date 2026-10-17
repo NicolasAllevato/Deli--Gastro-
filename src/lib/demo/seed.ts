@@ -37,11 +37,11 @@ const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOSt
 const img = (seed: string) => `https://picsum.photos/seed/${seed}/600/400`;
 
 const CATEGORIES = [
-  { name: "Hamburguesas",    description: "Hamburguesas artesanales 100% Angus" },
-  { name: "Pizzas",          description: "Pizzas estilo napolitano" },
-  { name: "Acompañamientos", description: "Papas, aros de cebolla y más" },
-  { name: "Bebidas",         description: "Gaseosas, limonadas y cervezas" },
-  { name: "Postres",         description: "Dulces para cerrar" },
+  { name: "Hamburguesas",    description: "Hamburguesas artesanales 100% Angus", points: 1 },
+  { name: "Pizzas",          description: "Pizzas estilo napolitano",            points: 1 },
+  { name: "Acompañamientos", description: "Papas, aros de cebolla y más",        points: 0.5 },
+  { name: "Bebidas",         description: "Gaseosas, limonadas y cervezas",      points: 0.25 },
+  { name: "Postres",         description: "Dulces para cerrar",                  points: 1 },
 ] as const;
 
 // [categoría, nombre, descripción, precio, seed de imagen, activo]
@@ -333,6 +333,7 @@ export function buildSeed(): Tables {
     name: c.name,
     description: c.description,
     is_active: true,
+    points_per_100: c.points,
     created_at: ago(60 * 24 * 30),
     updated_at: ago(60 * 24 * 30),
   }));
@@ -345,6 +346,7 @@ export function buildSeed(): Tables {
     price,
     image_url: img(seed),
     is_active: active,
+    points_per_100: null,
     created_at: ago(60 * 24 * 30),
     updated_at: ago(60 * 24 * 30),
   }));

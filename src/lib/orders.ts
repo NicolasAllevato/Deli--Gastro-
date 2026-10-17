@@ -60,7 +60,28 @@ export function minutesSince(iso: string, now: number = Date.now()): number {
   return Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60_000));
 }
 
-/** Puntos ganados por un pedido: `puntos_por_100` por cada $100. */
+export interface PointsLine {
+  price: number;
+  qty: number;
+  /** Puntos por cada $100 propios del plato; `null` = hereda los de su categoría. */
+  productRate: number | null;
+  /** Puntos por cada $100 de la categoría; `null` = la categoría no da puntos. */
+  categoryRate: number | null;
+}
+
+/**
+ * Puntos de un pedido por plato: si el plato tiene puntos propios (aunque sean 0) solo cuentan esos;
+ * si no, los de su categoría; si ninguno define puntos, la línea no suma.
+ */
+export function pointsForLines(lines: ReadonlyArray<PointsLine>): number {
+  const raw = lines.reduce((sum, l) => {
+    const rate = l.productRate ?? l.categoryRate ?? 0;
+    return sum + (l.price * l.qty / 100) * rate;
+  }, 0);
+  return Math.max(0, Math.floor(raw + 1e-9));
+}
+
+/** Puntos ganados por un pedido sin detalle de platos (pedidos viejos): `puntos_por_100` por cada $100. */
 export function pointsForTotal(total: number, puntosPor100: number): number {
   return Math.max(0, Math.floor((total / 100) * puntosPor100));
 }
@@ -120,3 +141,24 @@ export const REWARDS: readonly Reward[] = [
 ];
 
 export const PAYMENT_METHODS = ["Efectivo", "Tarjeta", "Mercado Pago"] as const;
+
+/** Tiempo transcurrido como `mm:ss` (o `h:mm:ss` pasada la hora). */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+export type ElapsedTone = "ok" | "warn" | "late";
+
+/** Urgencia según el tiempo que lleva el pedido en el proceso. */
+export function elapsedTone(ms: number): ElapsedTone {
+  const minutes = ms / 60_000;
+  if (minutes >= 25) return "late";
+  if (minutes >= 10) return "warn";
+  return "ok";
+}

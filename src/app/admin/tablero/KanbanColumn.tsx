@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Bike, CreditCard, Flame, History, MapPin, XCircle, type LucideIcon } from "lucide-react";
-import { formatMoney, formatOrderId, minutesSince } from "@/lib/orders";
+import { elapsedTone, formatMoney, formatOrderId } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
+import { OrderTimer } from "./OrderTimer";
 
 export interface ColumnConfig {
   status: OrderStatus;
@@ -69,6 +70,8 @@ interface Props {
   config: ColumnConfig;
   orders: readonly EnrichedOrder[];
   busyId: string | null;
+  /** Reloj compartido (ms) para los contadores de cada pedido. */
+  now: number;
   onMove: (id: string, next: OrderStatus) => void;
   /** Repartidores disponibles; vacío = no se muestra el selector. */
   couriers?: readonly string[];
@@ -77,8 +80,12 @@ interface Props {
 
 const ASSIGNABLE: readonly OrderStatus[] = ["En Preparación", "En Camino"];
 
-export function KanbanColumn({ config, orders, busyId, onMove, couriers = [], onAssign }: Props) {
+export function KanbanColumn({ config, orders, busyId, now, onMove, couriers = [], onAssign }: Props) {
   const Chip = config.chipIcon;
+  const active = config.status !== "Finalizados";
+  const lateCount = active
+    ? orders.filter((o) => elapsedTone(now - new Date(o.created_at).getTime()) === "late").length
+    : 0;
 
   return (
     <div className="w-[85vw] sm:w-[260px] lg:w-auto min-w-0 shrink-0 lg:shrink snap-start neumorphic-inset rounded-2xl p-3 flex flex-col gap-3 h-full overflow-y-auto custom-scrollbar">
@@ -87,8 +94,15 @@ export function KanbanColumn({ config, orders, busyId, onMove, couriers = [], on
           <span className={`w-3 h-3 rounded-full ${config.dot}`} aria-hidden />
           <h3 className="text-sm font-black uppercase tracking-widest text-gray-700">{config.title}</h3>
         </span>
-        <span className="neumorphic px-3 py-1 rounded-lg text-xs font-black text-gray-800">
-          {orders.length.toString().padStart(2, "0")}
+        <span className="flex items-center gap-2">
+          {lateCount > 0 && (
+            <span className="text-[10px] font-black uppercase tracking-wide text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              {lateCount} demorado{lateCount > 1 ? "s" : ""}
+            </span>
+          )}
+          <span className="neumorphic px-3 py-1 rounded-lg text-xs font-black text-gray-800">
+            {orders.length.toString().padStart(2, "0")}
+          </span>
         </span>
       </div>
 
@@ -106,14 +120,23 @@ export function KanbanColumn({ config, orders, busyId, onMove, couriers = [], on
             key={order.id}
             className={`neumorphic p-4 rounded-2xl space-y-3 transition-transform hover:-translate-y-0.5 ${done ? "opacity-75" : ""} ${busy ? "opacity-60" : ""}`}
           >
+            <div className="flex items-center justify-between gap-2">
+              <Link
+                href={`/admin/pedidos/${order.id}`}
+                className="font-headline font-bold text-sm text-gray-800 hover:text-brand-orange transition-colors"
+              >
+                {formatOrderId(order.id)}
+              </Link>
+              <OrderTimer
+                startedAt={order.created_at}
+                endedAt={done ? (order.delivered_at ?? order.updated_at) : null}
+                now={now}
+              />
+            </div>
+
             <div className="flex justify-between items-start gap-2">
               <div className="min-w-0">
-                <h4 className="font-headline font-bold text-sm text-gray-800">
-                  <Link href={`/admin/pedidos/${order.id}`} className="hover:text-brand-orange transition-colors">
-                    {formatOrderId(order.id)}
-                  </Link>
-                  <span className="font-medium text-gray-500"> · {order.client_name}</span>
-                </h4>
+                <p className="font-bold text-sm text-gray-700 truncate">{order.client_name}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{order.items_desc}</p>
               </div>
               <span className="text-sm font-black text-brand-orange shrink-0">{formatMoney(order.total)}</span>
@@ -127,12 +150,6 @@ export function KanbanColumn({ config, orders, busyId, onMove, couriers = [], on
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              {!done && (
-                <span className={`flex items-center gap-1.5 text-[11px] font-bold w-fit px-2.5 py-1 rounded-full border ${config.chip}`}>
-                  <Chip size={14} aria-hidden />
-                  hace {minutesSince(order.created_at)} min
-                </span>
-              )}
               {order.payment_method && (
                 <span className="flex items-center gap-1 text-[11px] font-bold text-gray-500">
                   <CreditCard size={12} aria-hidden />

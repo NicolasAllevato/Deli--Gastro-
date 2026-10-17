@@ -3,6 +3,8 @@ export interface Category {
   name: string;
   description: string;
   is_active: boolean;
+  /** Puntos por cada $100 de sus platos. `null` = la categoría no da puntos. */
+  points_per_100: number | null;
 }
 
 export interface Product {
@@ -14,4 +16,6 @@ export interface Product {
   /** Cadena vacía = sin categoría. */
   category_id: string;
   is_active: boolean;
+  /** Puntos por cada $100 del plato; pisa los de la categoría. `null` = hereda. */
+  points_per_100: number | null;
 }

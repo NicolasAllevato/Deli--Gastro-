@@ -62,6 +62,7 @@ export interface Database {
           delivered_at: string | null
           survey_sent_at: string | null
           channel: OrderChannel
+          points_earned: number | null
           created_at: string
           updated_at: string
         }
@@ -79,6 +80,7 @@ export interface Database {
           notes?: string | null
           courier_name?: string | null
           channel?: OrderChannel
+          points_earned?: number | null
         }
         Update: {
           status?: OrderStatus
@@ -96,6 +98,7 @@ export interface Database {
           picked_up_at?: string | null
           delivered_at?: string | null
           survey_sent_at?: string | null
+          points_earned?: number | null
         }
         Relationships: []
       }
@@ -269,6 +272,7 @@ export interface Database {
           name: string
           description: string
           is_active: boolean
+          points_per_100: number | null
           created_at: string
           updated_at: string
         }
@@ -277,11 +281,13 @@ export interface Database {
           name: string
           description?: string
           is_active?: boolean
+          points_per_100?: number | null
         }
         Update: {
           name?: string
           description?: string
           is_active?: boolean
+          points_per_100?: number | null
         }
         Relationships: []
       }
@@ -294,6 +300,7 @@ export interface Database {
           price: number
           image_url: string
           is_active: boolean
+          points_per_100: number | null
           created_at: string
           updated_at: string
         }
@@ -305,6 +312,7 @@ export interface Database {
           price: number
           image_url?: string
           is_active?: boolean
+          points_per_100?: number | null
         }
         Update: {
           category_id?: string | null
@@ -313,6 +321,7 @@ export interface Database {
           price?: number
           image_url?: string
           is_active?: boolean
+          points_per_100?: number | null
         }
         Relationships: []
       }

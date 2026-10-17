@@ -46,7 +46,7 @@ export default async function ClientePedidosPage() {
   const { data: orders } = client
     ? await db
         .from("orders")
-        .select("id, status, items_desc, total, created_at")
+        .select("id, status, items_desc, total, created_at, points_earned")
         .eq("client_id", client.id)
         .order("created_at", { ascending: false })
         .limit(50)
@@ -102,7 +102,7 @@ export default async function ClientePedidosPage() {
                 <OrderPoints
                   status={pedido.status}
                   earned={earned.get(pedido.id)}
-                  upcoming={pointsForTotal(Number(pedido.total), puntosPor100)}
+                  upcoming={pedido.points_earned ?? pointsForTotal(Number(pedido.total), puntosPor100)}
                 />
 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-200/50">

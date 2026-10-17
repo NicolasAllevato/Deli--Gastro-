@@ -24,6 +24,7 @@ const productSchema = z.object({
   image_url: imageSchema.default(""),
   category_id: categoryIdSchema.default(null),
   is_active: z.boolean().default(true),
+  points_per_100: z.number().finite().min(0).max(1000).nullable().default(null),
 });
 
 const updateSchema = productSchema.partial().extend({ id: z.string().uuid() });

@@ -199,6 +199,7 @@ export async function PATCH(req: NextRequest) {
       client_id: data.client_id,
       total: Number(data.total),
       items_desc: data.items_desc,
+      points_earned: data.points_earned,
     });
   }
 

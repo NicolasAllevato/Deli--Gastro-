@@ -34,6 +34,7 @@ export default function TableroClient({ initialOrders }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newOrderError, setNewOrderError] = useState<string | null>(null);
   const [couriers, setCouriers] = useState<string[]>([]);
+  const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -45,6 +46,12 @@ export default function TableroClient({ initialOrders }: Props) {
     } catch {
       /* sin red: se reintenta en el próximo ciclo */
     }
+  }, []);
+
+  // Reloj compartido: un solo intervalo mueve los contadores de todos los pedidos.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // La lista de repartidores casi no cambia: se pide una sola vez.
@@ -242,6 +249,7 @@ export default function TableroClient({ initialOrders }: Props) {
               config={column}
               orders={ordersFor(column.status)}
               busyId={busyId}
+              now={now}
               onMove={moveOrder}
               couriers={couriers}
               onAssign={assignCourier}

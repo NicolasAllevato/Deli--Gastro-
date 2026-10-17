@@ -25,6 +25,7 @@ function toProduct(row: Product & { category_id: string | null; price: number | 
     image_url: row.image_url,
     category_id: row.category_id ?? "",
     is_active: row.is_active,
+    points_per_100: row.points_per_100 === null ? null : Number(row.points_per_100),
   };
 }
 

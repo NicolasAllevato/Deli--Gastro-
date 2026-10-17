@@ -19,6 +19,7 @@ export default async function AdminProductosPage() {
     image_url: p.image_url,
     category_id: p.category_id ?? "",
     is_active: p.is_active,
+    points_per_100: p.points_per_100 === null ? null : Number(p.points_per_100),
   }));
 
   const initialCategories: Category[] = (categories.data ?? []).map((c) => ({
@@ -26,6 +27,7 @@ export default async function AdminProductosPage() {
     name: c.name,
     description: c.description,
     is_active: c.is_active,
+    points_per_100: c.points_per_100 === null ? null : Number(c.points_per_100),
   }));
 
   return <ProductosClient initialCategories={initialCategories} initialProducts={initialProducts} />;

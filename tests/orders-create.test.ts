@@ -335,3 +335,38 @@ describe("cancelOrderForClient", () => {
     assert.equal(result.status, 404);
   });
 });
+
+describe("puntos del pedido por plato y categoría", () => {
+  const order = (demo: DemoDb, name: string, qty: number) =>
+    createDeliveryOrder(demo.db, {
+      clientId: clientId(demo),
+      items: [{ productId: productId(demo, name), qty }],
+      address: CASA,
+      paymentMethod: "Efectivo",
+      channel: "web",
+      actor: "cliente",
+    });
+
+  it("toma los puntos de la categoría cuando el plato no tiene propios", async () => {
+    const demo = createDemoDb();
+    const result = await order(demo, "Hamburguesa Clásica", 2);
+    assert.ok(result.ok);
+    assert.equal(result.value.points_earned, 170); // 17000 / 100 * 1 (Hamburguesas)
+  });
+
+  it("si el plato tiene puntos exclusivos, solo cuentan esos", async () => {
+    const demo = createDemoDb();
+    demo.store.products.find((p) => p.name === "Hamburguesa Clásica")!.points_per_100 = 3;
+    const result = await order(demo, "Hamburguesa Clásica", 1);
+    assert.ok(result.ok);
+    assert.equal(result.value.points_earned, 255); // 8500 / 100 * 3
+  });
+
+  it("sin puntos en plato ni categoría el pedido no suma", async () => {
+    const demo = createDemoDb();
+    demo.store.categories.forEach((c) => { c.points_per_100 = null; });
+    const result = await order(demo, "Hamburguesa Clásica", 1);
+    assert.ok(result.ok);
+    assert.equal(result.value.points_earned, 0);
+  });
+});

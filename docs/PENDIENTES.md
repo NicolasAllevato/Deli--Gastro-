@@ -10,7 +10,7 @@ Hecho: migración 012 aplicada; canje de puntos → carrito (con devolución al 
 (`docs/MERCADOPAGO.md`); tema claro beige y animaciones.
 
 Para la próxima sesión, en orden:
-1. Aplicar las migraciones **011** y **013** a `Delivery` (decidir antes si los canales de la 011 son privados).
+1. ~~Migración 013~~ APLICADA 2026-10-16. Queda la **011** (decidir si los canales son privados).
 2. Probar Mercado Pago en sandbox: cargar `MP_ACCESS_TOKEN` (TEST-), `MP_WEBHOOK_SECRET` y `PUBLIC_URL`.
 3. Correr la suite E2E completa tras el tema beige y las animaciones.
 4. Revisar el modo claro en el resto de pantallas (repartidor, login, landing, ejecutivo, mapa, mobile).

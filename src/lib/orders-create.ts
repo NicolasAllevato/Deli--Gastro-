@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
-import { buildItemsDesc, formatMoney, minutesSince, REWARDS, type Reward } from "@/lib/orders";
+import { buildItemsDesc, formatMoney, minutesSince, pointsForLines, REWARDS, type Reward } from "@/lib/orders";
 import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
 import { applyReward, REDEEM_PREFIX, rewardNote } from "@/lib/rewards";
 import { getGateway } from "@/lib/payments/gateway";
@@ -32,7 +32,17 @@ export interface DeliveryPoint {
 }
 
 export interface PricedOrder {
-  lines: Array<{ productId: string; name: string; qty: number; price: number; categoryId: string | null }>;
+  lines: Array<{
+    productId: string;
+    name: string;
+    qty: number;
+    price: number;
+    categoryId: string | null;
+    /** Puntos por $100 propios del plato (`null` = hereda los de la categoría). */
+    productRate: number | null;
+    /** Puntos por $100 de la categoría (`null` = no da puntos). */
+    categoryRate: number | null;
+  }>;
   subtotal: number;
   fee: number;
   minOrder: number;
@@ -64,9 +74,16 @@ export async function priceOrder(
 
   const { data: products, error } = await db
     .from("products")
-    .select("id, name, price, is_active, category_id")
+    .select("id, name, price, is_active, category_id, points_per_100")
     .in("id", [...qtyByProduct.keys()]);
   if (error) return fail(500, error.message);
+
+  const categoryIds = [...new Set((products ?? []).flatMap((p) => (p.category_id ? [p.category_id] : [])))];
+  const { data: categoryRows, error: categoryError } = categoryIds.length
+    ? await db.from("categories").select("id, points_per_100").in("id", categoryIds)
+    : { data: [], error: null };
+  if (categoryError) return fail(500, categoryError.message);
+  const categoryRate = new Map((categoryRows ?? []).map((c) => [c.id, c.points_per_100 === null ? null : Number(c.points_per_100)]));
 
   const lines: PricedOrder["lines"] = [];
   let subtotal = 0;
@@ -75,7 +92,15 @@ export async function priceOrder(
     if (!product || !product.is_active) return fail(400, "Un producto del carrito ya no está disponible.");
     const price = Number(product.price);
     subtotal += price * qty;
-    lines.push({ productId, name: product.name, qty, price, categoryId: product.category_id ?? null });
+    lines.push({
+      productId,
+      name: product.name,
+      qty,
+      price,
+      categoryId: product.category_id ?? null,
+      productRate: product.points_per_100 === null ? null : Number(product.points_per_100),
+      categoryRate: (product.category_id && categoryRate.get(product.category_id)) || null,
+    });
   }
 
   if (subtotal < quote.minOrder) {
@@ -156,6 +181,8 @@ export interface OrderSnapshot {
   itemsDesc: string;
   total: number;
   fee: number;
+  /** Puntos que suma el pedido al entregarse, según los puntos de cada plato y categoría. */
+  pointsEarned?: number;
   address: DeliveryPoint;
   paymentMethod: PaymentMethod;
   notes: string | null;
@@ -190,6 +217,7 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
       itemsDesc: buildItemsDesc(lines),
       total,
       fee,
+      pointsEarned: pointsForLines(lines),
       address: input.address,
       paymentMethod: input.paymentMethod,
       notes: notes || null,
@@ -216,6 +244,7 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
       payment_method: snapshot.paymentMethod,
       notes: snapshot.notes,
       channel: snapshot.channel,
+      points_earned: snapshot.pointsEarned ?? null,
     })
     .select()
     .single();

@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import {
   NEXT_STATUSES,
   buildItemsDesc,
+  elapsedTone,
+  formatElapsed,
   canTransition,
   formatOrderId,
   isActiveStatus,
   minutesSince,
   parseItems,
+  pointsForLines,
   pointsForTotal,
   tierForPoints,
 } from "../src/lib/orders.ts";
@@ -104,5 +107,54 @@ describe("helpers de presentación", () => {
     const now = Date.parse("2026-01-01T12:10:00Z");
     assert.equal(minutesSince("2026-01-01T12:00:00Z", now), 10);
     assert.equal(minutesSince("2026-01-01T12:30:00Z", now), 0);
+  });
+});
+
+describe("contador de tiempo del pedido", () => {
+  it("formatElapsed muestra mm:ss y suma horas cuando corresponde", () => {
+    assert.equal(formatElapsed(0), "00:00");
+    assert.equal(formatElapsed(65_000), "01:05");
+    assert.equal(formatElapsed(59 * 60_000 + 59_000), "59:59");
+    assert.equal(formatElapsed(3_725_000), "1:02:05");
+  });
+
+  it("formatElapsed no devuelve negativos", () => {
+    assert.equal(formatElapsed(-5_000), "00:00");
+  });
+
+  it("elapsedTone sube de ok a warn y late según los minutos", () => {
+    assert.equal(elapsedTone(9 * 60_000 + 59_000), "ok");
+    assert.equal(elapsedTone(10 * 60_000), "warn");
+    assert.equal(elapsedTone(24 * 60_000), "warn");
+    assert.equal(elapsedTone(25 * 60_000), "late");
+  });
+});
+
+describe("puntos por plato y por categoría", () => {
+  it("el plato con puntos propios ignora los de su categoría", () => {
+    const points = pointsForLines([
+      { price: 10000, qty: 1, productRate: 3, categoryRate: 1 },
+    ]);
+    assert.equal(points, 300); // 10000 / 100 * 3
+  });
+
+  it("sin puntos propios usa los de la categoría", () => {
+    assert.equal(pointsForLines([{ price: 8000, qty: 2, productRate: null, categoryRate: 0.5 }]), 80);
+  });
+
+  it("sin puntos en plato ni categoría no suma", () => {
+    assert.equal(pointsForLines([{ price: 8000, qty: 1, productRate: null, categoryRate: null }]), 0);
+  });
+
+  it("un plato con 0 propio no suma aunque la categoría sí", () => {
+    assert.equal(pointsForLines([{ price: 8000, qty: 1, productRate: 0, categoryRate: 2 }]), 0);
+  });
+
+  it("suma todas las líneas y redondea hacia abajo una sola vez", () => {
+    const points = pointsForLines([
+      { price: 950, qty: 1, productRate: null, categoryRate: 1 }, // 9.5
+      { price: 950, qty: 1, productRate: null, categoryRate: 1 }, // 9.5
+    ]);
+    assert.equal(points, 19);
   });
 });

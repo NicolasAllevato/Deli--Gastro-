@@ -1,5 +1,6 @@
 "use client";
 
+import { parsePoints } from "@/lib/catalog/points";
 import { useState } from "react";
 import type { Category } from "@/types/catalog";
 import { Modal } from "@/components/ui/Modal";
@@ -24,6 +25,7 @@ export function CategoryFormModal({ editingCategory, onClose, onSubmit }: Props)
       name:        fd.get("name") as string,
       description: fd.get("description") as string,
       is_active:   isActive,
+      points_per_100: parsePoints(fd.get("points_per_100")),
     });
   };
 
@@ -59,6 +61,15 @@ export function CategoryFormModal({ editingCategory, onClose, onSubmit }: Props)
           rows={3}
           placeholder="Descripción de la categoría"
           defaultValue={editingCategory?.description}
+        />
+        <Field
+          label="Puntos por cada $100"
+          name="points_per_100"
+          type="number"
+          step="0.1"
+          min="0"
+          placeholder="Vacío = esta categoría no da puntos"
+          defaultValue={editingCategory?.points_per_100 ?? undefined}
         />
         <div className="neumorphic-inset rounded-xl px-4 py-3.5">
           <Switch
