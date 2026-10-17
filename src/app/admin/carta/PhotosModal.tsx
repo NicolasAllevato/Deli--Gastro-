@@ -51,7 +51,7 @@ export function PhotosModal({ open, onClose, products, categories, onUpdated }: 
 
   const setOne = (id: string, s: Status | null) =>
     setStatus((prev) => {
-      const { [id]: _omit, ...rest } = prev;
+      const rest = Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id));
       return s ? { ...rest, [id]: s } : rest;
     });
 

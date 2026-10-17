@@ -38,3 +38,10 @@ npx wrangler tail    # ver las corridas reales
 
 Respuesta esperada de la app: `{"sent":N,"skipped":N,"failed":0,"outsideWindow":false}`.
 Fuera de 9-22 hs: `outsideWindow: true` y `sent: 0`.
+
+## Resumen diario
+
+Cada corrida también llama a `GET {BASE_URL}/api/cron/daily-summary`. La app envía el resumen del día por mail
+y WhatsApp una sola vez, pasada la hora de cierre configurada en Configuración → Notificaciones. Necesita
+`RESEND_API_KEY` y el remitente (`notif_email_from` o `RESUMEN_EMAIL_FROM`) en la app para los mails, y la
+plantilla `resumen_diario` aprobada por Meta (Plantillas) para WhatsApp.

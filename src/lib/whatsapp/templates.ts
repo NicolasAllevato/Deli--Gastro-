@@ -61,6 +61,15 @@ export const TEMPLATES: readonly TemplateDef[] = [
     purpose: "Se envía un rato después de la entrega, a quien todavía no dejó reseña.",
   },
   {
+    name: "resumen_diario",
+    label: "Resumen del día (para el equipo)",
+    category: "UTILITY",
+    language: "es_AR",
+    body: "¡Hola {{1}}! Resumen de {{2}} del {{3}}: {{4}} pedidos ({{5}}). Ventas: {{6}}. Ticket promedio: {{7}}. El detalle completo te llegó por mail.",
+    example: ["Ana", "Pizzería", "16/10/2026", "42", "38 entregados y 2 cancelados", "$310.500", "$7.800"],
+    purpose: "Se envía al cerrar el día a las personas habilitadas en Notificaciones.",
+  },
+  {
     name: "promocion",
     label: "Promoción",
     category: "MARKETING",

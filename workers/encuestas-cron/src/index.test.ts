@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { surveysUrl, triggerSurveys } from "./index.ts";
+import { dailySummaryUrl, surveysUrl, triggerDailySummary, triggerSurveys } from "./index.ts";
 
 describe("surveysUrl", () => {
   it("normaliza la barra final", () => {
@@ -38,5 +38,24 @@ describe("triggerSurveys", () => {
     const fetchImpl = (async () => { called = true; return new Response("{}"); }) as unknown as typeof fetch;
     await assert.rejects(() => triggerSurveys({ ...env, CRON_SECRET: "" }, fetchImpl), /CRON_SECRET/);
     assert.equal(called, false);
+  });
+});
+
+describe("resumen diario", () => {
+  const env = { BASE_URL: "https://app.example.com/", CRON_SECRET: "s3cret" };
+
+  it("arma la URL del endpoint del resumen", () => {
+    assert.equal(dailySummaryUrl(env.BASE_URL), "https://app.example.com/api/cron/daily-summary");
+  });
+
+  it("llama al endpoint del resumen con el Bearer", async () => {
+    let seen: { url: string; auth: string | null } | null = null;
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen = { url, auth: new Headers(init.headers).get("authorization") };
+      return new Response(JSON.stringify({ sent: false }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    assert.deepEqual(await triggerDailySummary(env, fetchImpl), { sent: false });
+    assert.deepEqual(seen, { url: "https://app.example.com/api/cron/daily-summary", auth: "Bearer s3cret" });
   });
 });
