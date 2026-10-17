@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -p 5178 --turbo",
     "demo": "node scripts/demo.mjs",
+    "demo:rapido": "node scripts/demo.mjs --rapido",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",

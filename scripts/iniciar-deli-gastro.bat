@@ -20,10 +20,10 @@ if %errorlevel%==0 (
   exit /b 0
 )
 
-rem Abre el navegador cuando el servidor responde (maximo ~60 s)
-start "" /min powershell -NoProfile -WindowStyle Hidden -Command "for($i=0;$i -lt 60;$i++){try{Invoke-WebRequest -UseBasicParsing http://localhost:%PORT% -TimeoutSec 2 | Out-Null; Start-Process 'http://localhost:%PORT%/login'; break}catch{Start-Sleep 1}}"
+rem Abre el navegador cuando el servidor responde (maximo ~5 min: la primera compilacion tarda)
+start "" /min powershell -NoProfile -WindowStyle Hidden -Command "for($i=0;$i -lt 300;$i++){try{Invoke-WebRequest -UseBasicParsing http://localhost:%PORT% -TimeoutSec 2 | Out-Null; Start-Process 'http://localhost:%PORT%/login'; break}catch{Start-Sleep 1}}"
 
-call npm run demo
+call npm run demo:rapido
 echo.
 echo El servidor se detuvo.
 pause

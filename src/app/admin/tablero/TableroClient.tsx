@@ -11,7 +11,8 @@ import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
-import { COLUMNS, KanbanColumn } from "./KanbanColumn";
+import { cn } from "@/lib/cn";
+import { COLUMNS, KanbanColumn, countLate } from "./KanbanColumn";
 
 interface Props {
   initialOrders: EnrichedOrder[];
@@ -35,6 +36,7 @@ export default function TableroClient({ initialOrders }: Props) {
   const [newOrderError, setNewOrderError] = useState<string | null>(null);
   const [couriers, setCouriers] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const [mobileStatus, setMobileStatus] = useState<OrderStatus>("Recibidos");
   const busyRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -193,44 +195,44 @@ export default function TableroClient({ initialOrders }: Props) {
   };
 
   return (
-    <section className="p-2 md:p-3 gap-4 min-h-full h-full flex flex-col">
+    <section className="p-1 md:p-3 gap-3 md:gap-4 flex flex-col">
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
-        <div className="card-3d px-4 py-3 neumorphic rounded-2xl flex items-center justify-between group fade-up-1">
+      <div className="grid grid-cols-3 gap-2 md:gap-3 shrink-0">
+        <div className="card-3d px-2.5 py-2 md:px-4 md:py-3 neumorphic rounded-2xl flex items-center justify-between gap-2 min-w-0 group fade-up-1">
           <div>
-            <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-1">Ventas Hoy</p>
-            <h3 className="text-xl font-headline font-black text-gray-800">{formatMoney(stats.ventasHoy)}</h3>
+            <p className="text-gray-500 text-[9px] md:text-[11px] font-bold uppercase tracking-wider md:tracking-widest mb-1 truncate">Ventas Hoy</p>
+            <h3 className="text-sm sm:text-base md:text-xl font-headline font-black text-gray-800 truncate">{formatMoney(stats.ventasHoy)}</h3>
           </div>
-          <div className="w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center text-brand-orange shrink-0 group-hover:scale-110 transition-transform duration-300">
+          <div className="hidden sm:flex w-10 h-10 rounded-full neumorphic-inset items-center justify-center text-brand-orange shrink-0 group-hover:scale-110 transition-transform duration-300">
             <Wallet size={20} aria-hidden />
           </div>
         </div>
-        <div className="card-3d px-4 py-3 neumorphic rounded-2xl flex items-center justify-between group fade-up-2">
+        <div className="card-3d px-2.5 py-2 md:px-4 md:py-3 neumorphic rounded-2xl flex items-center justify-between gap-2 min-w-0 group fade-up-2">
           <div>
-            <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-1">Pedidos Activos</p>
-            <h3 className="text-xl font-headline font-black text-gray-800">{stats.activos}</h3>
+            <p className="text-gray-500 text-[9px] md:text-[11px] font-bold uppercase tracking-wider md:tracking-widest mb-1 truncate">Pedidos Activos</p>
+            <h3 className="text-sm sm:text-base md:text-xl font-headline font-black text-gray-800 truncate">{stats.activos}</h3>
           </div>
-          <div className="w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center text-brand-green shrink-0 group-hover:scale-110 transition-transform duration-300">
+          <div className="hidden sm:flex w-10 h-10 rounded-full neumorphic-inset items-center justify-center text-brand-green shrink-0 group-hover:scale-110 transition-transform duration-300">
             <UtensilsCrossed size={20} aria-hidden />
           </div>
         </div>
-        <div className="card-3d px-4 py-3 neumorphic rounded-2xl flex items-center justify-between group fade-up-3">
+        <div className="card-3d px-2.5 py-2 md:px-4 md:py-3 neumorphic rounded-2xl flex items-center justify-between gap-2 min-w-0 group fade-up-3">
           <div>
-            <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-1">Promedio Entrega</p>
-            <h3 className="text-xl font-headline font-black text-gray-800">
+            <p className="text-gray-500 text-[9px] md:text-[11px] font-bold uppercase tracking-wider md:tracking-widest mb-1 truncate">Promedio Entrega</p>
+            <h3 className="text-sm sm:text-base md:text-xl font-headline font-black text-gray-800 truncate">
               {stats.avgMinutes === null ? "—" : `${stats.avgMinutes} min`}
             </h3>
           </div>
-          <div className="w-10 h-10 rounded-full neumorphic-inset flex items-center justify-center text-gray-600 shrink-0 group-hover:scale-110 transition-transform duration-300">
+          <div className="hidden sm:flex w-10 h-10 rounded-full neumorphic-inset items-center justify-center text-gray-600 shrink-0 group-hover:scale-110 transition-transform duration-300">
             <Timer size={20} aria-hidden />
           </div>
         </div>
       </div>
 
       {/* Kanban */}
-      <div className="flex flex-col gap-3 flex-1 min-h-[28rem]">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2 shrink-0">
-          <h2 className="font-headline font-bold text-lg text-gray-800 tracking-tight">Órdenes en tiempo real</h2>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 px-1 shrink-0">
+          <h2 className="font-headline font-bold text-base md:text-lg text-gray-800 tracking-tight">Órdenes en tiempo real</h2>
           <div className="flex gap-3">
             <Button size="sm" onClick={() => setIsNewOrderModalOpen(true)}>+ Nuevo Pedido</Button>
           </div>
@@ -242,7 +244,38 @@ export default function TableroClient({ initialOrders }: Props) {
           </p>
         )}
 
-        <div className="flex lg:grid lg:grid-cols-4 gap-3 overflow-x-auto lg:overflow-x-visible overflow-y-hidden flex-1 min-h-0 items-stretch snap-x snap-mandatory lg:snap-none px-1 pb-2">
+        {/* Celular y tablet: una etapa por vez, elegida con estas pestañas. */}
+        <div role="tablist" aria-label="Etapas del pedido" className="lg:hidden grid grid-cols-4 gap-1.5 shrink-0">
+          {COLUMNS.map((column) => {
+            const selected = column.status === mobileStatus;
+            const count = ordersFor(column.status).length;
+            const late = countLate(column.status, ordersFor(column.status), now);
+            return (
+              <button
+                key={column.status}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setMobileStatus(column.status)}
+                className={cn(
+                  "relative flex flex-col items-center gap-0.5 rounded-xl border-t-4 px-1 py-2 text-[10px] sm:text-xs font-black uppercase tracking-wide transition-colors",
+                  column.accentTop,
+                  selected
+                    ? "bg-[var(--app-surface)] text-gray-800 shadow-[var(--app-card-shadow)]"
+                    : "neumorphic-inset text-gray-500",
+                )}
+              >
+                <span className="truncate max-w-full">{column.title}</span>
+                <span className="text-base sm:text-lg leading-none">{count}</span>
+                {late > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500" aria-label={`${late} demorados`} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 lg:h-[calc(100dvh-18rem)] lg:min-h-[26rem]">
           {COLUMNS.map((column) => (
             <KanbanColumn
               key={column.status}
@@ -253,6 +286,10 @@ export default function TableroClient({ initialOrders }: Props) {
               onMove={moveOrder}
               couriers={couriers}
               onAssign={assignCourier}
+              className={cn(
+                "max-h-[calc(100dvh-20rem)] min-h-[16rem] lg:max-h-none lg:min-h-0",
+                column.status === mobileStatus ? "flex" : "hidden lg:flex",
+              )}
             />
           ))}
         </div>

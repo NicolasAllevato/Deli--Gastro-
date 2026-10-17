@@ -40,7 +40,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Si el proyecto está en OneDrive/red, definir NEXT_DEV_DIST_DIR en .env.local
   // para redirigir la caché de Turbopack a una carpeta local y evitar lentitud.
-  ...(process.env.NEXT_DEV_DIST_DIR ? { distDir: process.env.NEXT_DEV_DIST_DIR } : {}),
+  // NEXT_DIST_DIR lo usa `npm run demo:rapido` para no pisar la caché de `next dev`.
+  ...(process.env.NEXT_DIST_DIR || process.env.NEXT_DEV_DIST_DIR
+    ? { distDir: process.env.NEXT_DIST_DIR || process.env.NEXT_DEV_DIST_DIR }
+    : {}),
+  // Raíz fija: sin esto Next sube hasta el Escritorio por un package-lock.json ajeno.
+  turbopack: { root: process.cwd() },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "picsum.photos" },

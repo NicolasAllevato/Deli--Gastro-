@@ -78,3 +78,6 @@ spec-kit/
 
 # Credenciales de prueba (privado)
 /usuarios-de-prueba.txt
+
+# compilación de npm run demo:rapido
+/.next-demo/
