@@ -4,6 +4,7 @@ import { use, useState } from "react";
 import { Star, Send, ExternalLink, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { buttonClasses } from "@/lib/buttonClasses";
+import { formatOrderId } from "@/lib/orders";
 
 export default function ResenaPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = use(params);
@@ -66,7 +67,7 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         </Link>
         <div>
           <h1 className="font-headline font-black text-xl text-gray-800 tracking-tight">Calificá tu pedido</h1>
-          <p className="text-gray-500 text-xs mt-0.5">Pedido #{orderId}</p>
+          <p className="text-gray-500 text-xs mt-0.5">Pedido {formatOrderId(orderId)}</p>
         </div>
       </div>
 
@@ -100,12 +101,13 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         )}
 
         {rating > 0 && rating <= 3 && (
-          <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+          <form onSubmit={handleSubmit} className="animate-rise-in space-y-4">
             <div className="text-left">
-              <label className="block text-xs font-bold text-gray-500 mb-2 ml-1 uppercase tracking-widest">
+              <label htmlFor="resena-feedback" className="block text-xs font-bold text-gray-500 mb-2 ml-1 uppercase tracking-widest">
                 ¿Qué podemos mejorar?
               </label>
               <textarea
+                id="resena-feedback"
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 placeholder="Escribe tus comentarios aquí..."
@@ -126,7 +128,7 @@ export default function ResenaPage({ params }: { params: Promise<{ orderId: stri
         )}
 
         {rating >= 4 && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-5">
+          <div className="animate-rise-in space-y-5">
             <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-800 text-sm">
               <p className="font-bold">¡Nos alegra que te haya gustado!</p>
               <p className="mt-1 text-blue-600">¿Nos ayudarías dejando una reseña en Google Maps?</p>

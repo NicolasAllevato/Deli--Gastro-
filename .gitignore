@@ -57,3 +57,27 @@ dist/
 .venv/
 
 .vercel
+
+.vercel
+
+# clon local de github/spec-kit (herramienta externa, repo propio)
+spec-kit/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+
+# Workers de Cloudflare
+/workers/*/node_modules/
+/workers/*/.wrangler/
+# Archivos temporales de secretos para `wrangler secret bulk`
+/workers/*/secrets*.json
+/workers/*/secretos*.json
+/workers/*/.dev.vars*
+
+# Credenciales de prueba (privado)
+/usuarios-de-prueba.txt
+
+# compilación de npm run demo:rapido
+/.next-demo/

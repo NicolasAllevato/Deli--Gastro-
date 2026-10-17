@@ -45,16 +45,18 @@ export default function PerfilPage() {
         return;
       }
 
-      const [{ data: client }, { count }] = await Promise.all([
-        supabase
-          .from("clients")
-          .select("name, phone, address, total_points, created_at")
-          .eq("user_id", user.id)
-          .single(),
-        supabase
-          .from("orders")
-          .select("id", { count: "exact", head: true }),
-      ]);
+      const { data: client } = await supabase
+        .from("clients")
+        .select("id, name, phone, address, total_points, created_at")
+        .eq("user_id", user.id)
+        .single();
+
+      const { count } = client
+        ? await supabase
+            .from("orders")
+            .select("id", { count: "exact", head: true })
+            .eq("client_id", client.id)
+        : { count: 0 };
 
       setPerfil({
         nombre: client?.name ?? user.email?.split("@")[0] ?? "—",
@@ -81,7 +83,7 @@ export default function PerfilPage() {
     <div className="px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       <div>
         <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Mi Perfil</h2>
-        <p className="text-gray-500 text-sm font-medium mt-1">Tu cuenta en Deli-Gastro</p>
+        <p className="text-gray-500 text-sm font-medium mt-1">Tu cuenta en Opsyn Dely</p>
       </div>
 
       {/* Avatar y resumen */}

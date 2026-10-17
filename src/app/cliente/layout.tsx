@@ -2,9 +2,15 @@
 import Image from "next/image";
 import { Menu, MessageCircle } from "lucide-react";
 import { ClienteBottomNav } from "./_components/ClienteBottomNav";
+import { CartProvider } from "./_components/CartProvider";
+import { CartBar } from "./_components/CartBar";
+import { Copyright } from "@/components/Copyright";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { SignOutButton } from "@/components/ui/SignOutButton";
 
 export default function ClienteLayout({ children }: { children: React.ReactNode }) {
   return (
+    <CartProvider>
     <div className="bg-surface text-on-surface font-body min-h-screen">
 
       {/* TopBar */}
@@ -14,10 +20,14 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
             <Menu size={20} />
           </button>
           <h1 className="font-headline text-lg font-black text-gray-900">
-            Deli<span className="text-brand-orange">-</span>Gastro
+            Opsyn <span className="text-brand-orange">Dely</span>
           </h1>
-          <div className="w-8 h-8 rounded-full overflow-hidden relative ring-2 ring-gray-100">
-            <Image alt="Avatar" fill sizes="32px" className="object-cover" src="https://picsum.photos/seed/user-avatar/64/64" />
+          <div className="flex items-center gap-2">
+            <ThemeToggle compact />
+            <SignOutButton compact />
+            <div className="w-8 h-8 rounded-full overflow-hidden relative ring-2 ring-gray-100">
+              <Image alt="Avatar" fill sizes="32px" className="object-cover" src="https://picsum.photos/seed/user-avatar/64/64" />
+            </div>
           </div>
         </div>
       </header>
@@ -26,6 +36,7 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
       <main className="pb-28">
         <div className="max-w-2xl mx-auto">
           {children}
+          <Copyright className="mt-8 px-4" />
         </div>
       </main>
 
@@ -33,12 +44,14 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
       <Link
         href="/cliente/chat"
         aria-label="Asistente virtual"
-        className="fixed bottom-20 right-5 w-12 h-12 bg-white/90 backdrop-blur-md rounded-full shadow-[0_4px_16px_rgba(163,177,198,0.35)] border border-white/50 flex items-center justify-center z-40 hover:scale-110 active:scale-95 transition-transform duration-200"
+        className="fixed bottom-20 right-5 w-12 h-12 bg-white/90 backdrop-blur-md rounded-full shadow-[var(--app-card-shadow)] border border-white/50 flex items-center justify-center z-40 hover:scale-110 active:scale-95 transition-transform duration-200"
       >
         <MessageCircle size={20} className="text-brand-orange" />
       </Link>
 
+      <CartBar />
       <ClienteBottomNav />
     </div>
+    </CartProvider>
   );
 }

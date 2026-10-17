@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { createAdminClient } from "@/utils/supabase/admin";
 import PuntosClient, { type ClientePuntos } from "./PuntosClient";
+import PuntosCatalogo, { type CategoriaPuntos, type ProductoPuntos } from "./PuntosCatalogo";
 import type { ClientTier } from "@/types/database";
 
 function formatDate(iso: string) {
@@ -15,7 +16,7 @@ function formatDate(iso: string) {
 export default async function AdminPuntosPage() {
   const supabase = createAdminClient();
 
-  const [{ data: clients }, { data: ledger }] = await Promise.all([
+  const [{ data: clients }, { data: ledger }, { data: categories }, { data: products }] = await Promise.all([
     supabase
       .from("clients")
       .select("id, name, total_points, tier")
@@ -25,7 +26,23 @@ export default async function AdminPuntosPage() {
       .select("id, client_id, delta, description, created_at")
       .order("created_at", { ascending: false })
       .limit(500),
+    supabase.from("categories").select("id, name, points_per_100").order("name"),
+    supabase.from("products").select("id, name, price, category_id, points_per_100").order("name"),
   ]);
+
+  const toRate = (v: number | string | null) => (v === null ? null : Number(v));
+  const categorias: CategoriaPuntos[] = (categories ?? []).map((c) => ({
+    id: c.id,
+    nombre: c.name,
+    puntosPor100: toRate(c.points_per_100),
+  }));
+  const productos: ProductoPuntos[] = (products ?? []).map((p) => ({
+    id: p.id,
+    nombre: p.name,
+    precio: Number(p.price),
+    categoriaId: p.category_id ?? null,
+    puntosPor100: toRate(p.points_per_100),
+  }));
 
   const ledgerMap: Record<string, typeof ledger> = {};
   for (const entry of ledger ?? []) {
@@ -46,5 +63,10 @@ export default async function AdminPuntosPage() {
     })),
   }));
 
-  return <PuntosClient clientes={clientes} />;
+  return (
+    <div className="space-y-5">
+      <PuntosCatalogo categorias={categorias} productos={productos} />
+      <PuntosClient clientes={clientes} />
+    </div>
+  );
 }

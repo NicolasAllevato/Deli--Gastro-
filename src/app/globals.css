@@ -3,36 +3,36 @@
 /* ── Design Tokens ── */
 @theme {
   /* Legado: se mantiene para compatibilidad con refs existentes */
-  --color-brand-orange: #6b7c45;
+  --color-brand-orange: #7c3aed;
 
   /* Paleta nueva — Deli-Gastro Refined */
-  --color-brand-olive: #6b7c45;        /* Verde oliva primario — 4.84:1 sobre #f0f3f8 ✓ AA */
-  --color-brand-olive-hover: #5a6838;  /* Hover más oscuro — 6.8:1 ✓ AA */
+  --color-brand-olive: #7c3aed;        /* Verde oliva primario — 4.84:1 sobre #f0f3f8 ✓ AA */
+  --color-brand-olive-hover: #6d28d9;  /* Hover más oscuro — 6.8:1 ✓ AA */
   --color-brand-beige: #c9b99a;        /* Beige/arena cálido — superficies secundarias */
   --color-brand-beige-deep: #a8956d;   /* Beige profundo — texto sobre beige claro */
   --color-brand-gold: #8a6e1e;         /* Dorado oscurecido — 5.86:1 sobre #f0f3f8 ✓ AA */
   --color-brand-gold-light: #d4a832;   /* Dorado decorativo — solo iconos/acentos grandes */
-  --color-brand-green: #4bfd39;        /* Verde acento (heredado, se mantiene en badge) */
+  --color-brand-green: #22d3ee;        /* Verde acento (heredado, se mantiene en badge) */
 
   /* Primario semántico — verde oliva */
-  --color-primary: #6b7c45;
-  --color-primary-container: #5a6838;
+  --color-primary: #7c3aed;
+  --color-primary-container: #6d28d9;
   --color-on-primary-container: #ffffff;
 
-  /* Superficie y fondo — más oscuros para mayor contraste neumórfico */
-  --color-background: #dde3ed;
-  --color-on-background: #1e293b;
-  --color-surface: #dde3ed;
-  --color-on-surface: #0f172a;
-  --color-on-surface-variant: #334155;
-  --color-surface-container: #dde3ed;
-  --color-surface-container-low: #dde3ed;
-  --color-surface-container-lowest: #dde3ed;
-  --color-surface-container-highest: #ccd4e0;
-  --color-inset: #c8d0de;
-  --color-outline: #94a3b8;
-  --color-outline-variant: #cbd5e1;
-  --color-error: #c0392b;              /* Rojo sobrio — 5.2:1 sobre #f0f3f8 ✓ AA */
+  /* Superficie y fondo — arena cálida (tema claro): fondo más oscuro que las tarjetas para dar relieve */
+  --color-background: #e4d8bf;
+  --color-on-background: #20170c;
+  --color-surface: #e4d8bf;
+  --color-on-surface: #1a1208;
+  --color-on-surface-variant: #4a3b26;
+  --color-surface-container: #e4d8bf;
+  --color-surface-container-low: #e9dec8;
+  --color-surface-container-lowest: #f2e9d6;
+  --color-surface-container-highest: #d5c6a6;
+  --color-inset: #d5c6a6;
+  --color-outline: #a8946d;
+  --color-outline-variant: #c5b48e;
+  --color-error: #b02a1e;              /* Rojo sobrio — ≥5:1 sobre la arena ✓ AA */
 
   --font-headline: var(--font-manrope, 'Manrope', sans-serif);
   --font-display: var(--font-manrope, 'Manrope', sans-serif);
@@ -40,26 +40,116 @@
   --font-label: var(--font-inter, 'Inter', sans-serif);
 
   /* Texto semántico accesible — WCAG AA sobre #f0f3f8 */
-  --color-text-muted: #475569;
-  --color-text-subtle: #64748b;
-  --color-text-disabled: #94a3b8;
-  --color-switch-off: #e2e8f0;
+  --color-text-muted: #4a3b26;
+  --color-text-subtle: #5f4f36;
+  --color-text-disabled: #8a785a;
+  --color-switch-off: #cdbd9c;
+}
+
+/* ── Tema global ──
+   Claro en :root; oscuro con <html data-theme="dark"> (es el predeterminado, ver layout.tsx).
+   Todo color de superficie, texto y borde sale de estas variables. */
+:root {
+  color-scheme: light;
+  /* Arena cálida: fondo de página más oscuro que las tarjetas, texto marrón casi negro, bordes visibles. */
+  --app-bg: #e4d8bf;
+  --app-surface: #f2e9d6;
+  --app-inset: #d5c6a6;
+  --app-hover: #eadfc6;
+  --app-glass: rgba(242, 233, 214, 0.86);
+  --app-edge: rgba(255, 251, 240, 0.75);
+  --app-border: rgba(110, 85, 45, 0.38);
+  --app-text: #20170c;
+  --app-text-soft: #36291a;
+  --app-text-muted: #4a3b26;
+  --app-text-subtle: #5f4f36;
+  --app-text-faint: #7d6b4e;
+  --app-shadow-dark: rgba(110, 85, 45, 0.5);
+  --app-shadow-light: rgba(255, 251, 240, 0.92);
+  --app-shadow-dark-strong: rgba(110, 85, 45, 0.62);
+  --app-shadow-light-strong: rgba(255, 251, 240, 0.96);
+  --app-card-shadow: 0 4px 14px rgba(90, 65, 25, 0.24);
+  --app-scroll: rgba(140, 115, 70, 0.6);
+  --app-focus: #5b21b6;
+  --app-accent-text: #5b21b6;
+  --app-accent-contrast: #ffffff;
+  --app-good: #14532d;
+  --app-bad: #991b1b;
+  --app-warn: #78350f;
+  --app-info: #1e3a8a;
+  --app-switch-off: #cdbd9c;
+  --app-chip-text: #36291a;
+  --app-btn-secondary: #4a3f2a;
+  --app-btn-ghost: #5b21b6;
+  --app-btn-ghost-hover: rgba(124, 58, 237, 0.12);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-background: #0c0a1d;
+  --color-on-background: #e2e8f0;
+  --color-surface: #0c0a1d;
+  --color-on-surface: #f1f5f9;
+  --color-on-surface-variant: #cbd5e1;
+  --color-surface-container: #141029;
+  --color-surface-container-low: #110e24;
+  --color-surface-container-lowest: #0c0a1d;
+  --color-surface-container-highest: #221b3d;
+  --color-inset: #100d22;
+  --color-outline: #475569;
+  --color-outline-variant: #334155;
+  --color-error: #f87171;
+  --color-text-muted: #cbd5e1;
+  --color-text-subtle: #94a3b8;
+  --color-text-disabled: #64748b;
+  --color-switch-off: #334155;
+
+  --app-bg: #0c0a1d;
+  --app-surface: #17132b;
+  --app-inset: #100d22;
+  --app-hover: #2a2245;
+  --app-glass: rgba(23, 19, 43, 0.78);
+  --app-edge: rgba(148, 163, 184, 0.12);
+  --app-border: rgba(148, 163, 184, 0.22);
+  --app-text: #f1f5f9;
+  --app-text-soft: #e2e8f0;
+  --app-text-muted: #cbd5e1;
+  --app-text-subtle: #94a3b8;
+  --app-text-faint: #64748b;
+  --app-shadow-dark: rgba(0, 0, 0, 0.55);
+  --app-shadow-light: rgba(255, 255, 255, 0.04);
+  --app-shadow-dark-strong: rgba(0, 0, 0, 0.65);
+  --app-shadow-light-strong: rgba(255, 255, 255, 0.06);
+  --app-card-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --app-scroll: rgba(100, 116, 139, 0.55);
+  --app-focus: #c4b5fd;
+  --app-accent-text: #c4b5fd;
+  --app-accent-contrast: #0c0a1d;
+  --app-good: #4ade80;
+  --app-bad: #fca5a5;
+  --app-warn: #fcd34d;
+  --app-info: #93c5fd;
+  --app-switch-off: #334155;
+  --app-chip-text: #e2e8f0;
+  --app-btn-secondary: #e7d9b0;
+  --app-btn-ghost: #c4b5fd;
+  --app-btn-ghost-hover: rgba(124, 58, 237, 0.22);
 }
 
 /* ── Neumorphic Base ── */
 @utility neumorphic {
-  background: #dde3ed;
-  box-shadow: 7px 7px 14px rgba(140,155,180,0.55), -7px -7px 14px rgba(255,255,255,0.80);
-  border: 1px solid rgba(255,255,255,0.55);
+  background: var(--app-surface);
+  box-shadow: 7px 7px 14px var(--app-shadow-dark), -7px -7px 14px var(--app-shadow-light);
+  border: 1px solid var(--app-edge);
 }
 
 @utility neumorphic-inset {
-  background: #c8d0de;
-  box-shadow: inset 5px 5px 10px rgba(140,155,180,0.55), inset -5px -5px 10px rgba(255,255,255,0.75);
+  background: var(--app-inset);
+  box-shadow: inset 5px 5px 10px var(--app-shadow-dark), inset -5px -5px 10px var(--app-shadow-light);
 }
 
 @utility glass-effect {
-  background: rgba(221,227,237,0.75);
+  background: var(--app-glass);
   backdrop-filter: blur(16px);
 }
 
@@ -68,37 +158,37 @@
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 .neumorphic-hover:hover {
-  box-shadow: 9px 9px 18px rgba(140,155,180,0.60), -9px -9px 18px rgba(255,255,255,0.85);
+  box-shadow: 9px 9px 18px var(--app-shadow-dark-strong), -9px -9px 18px var(--app-shadow-light-strong);
   transform: translateY(-2px);
 }
 .neumorphic-active:active,
 .neumorphic-hover:active {
-  box-shadow: inset 5px 5px 10px rgba(140,155,180,0.55), inset -5px -5px 10px rgba(255,255,255,0.75);
+  box-shadow: inset 5px 5px 10px var(--app-shadow-dark), inset -5px -5px 10px var(--app-shadow-light);
   transform: translateY(0);
 }
 
 /* ── Focus rings ── */
 a:focus-visible,
 button:focus-visible {
-  outline: 2px solid #5a6838;
+  outline: 2px solid var(--app-focus);
   outline-offset: 3px;
   border-radius: 12px;
 }
 
 /* ── Button system ── */
 .btn-glow {
-  background: #6b7c45;
-  box-shadow: 0 6px 16px rgba(107,124,69,0.32);
+  background: #7c3aed;
+  box-shadow: 0 6px 16px rgba(124, 58, 237,0.32);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .btn-glow:hover {
-  background: #5a6838;
+  background: #6d28d9;
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(107,124,69,0.42);
+  box-shadow: 0 10px 24px rgba(124, 58, 237,0.42);
 }
 .btn-glow:active {
   transform: translateY(0);
-  box-shadow: 0 3px 8px rgba(107,124,69,0.28);
+  box-shadow: 0 3px 8px rgba(124, 58, 237,0.28);
 }
 .btn-glow:disabled {
   opacity: 0.45;
@@ -113,7 +203,7 @@ button:focus-visible {
 }
 .card-hover-lift:hover {
   transform: translateY(-4px);
-  box-shadow: 11px 19px 30px rgba(140,155,180,0.58), -7px -7px 16px rgba(255,255,255,0.82);
+  box-shadow: 11px 19px 30px var(--app-shadow-dark), -7px -7px 16px var(--app-shadow-light-strong);
 }
 .card-hover-lift:active {
   transform: translateY(-1px);
@@ -125,7 +215,7 @@ button:focus-visible {
 }
 .portal-card:hover {
   transform: translateY(-6px);
-  box-shadow: 10px 20px 32px rgba(163,177,198,0.45), -6px -6px 16px rgba(255,255,255,0.9);
+  box-shadow: 10px 20px 32px var(--app-shadow-dark), -6px -6px 16px var(--app-shadow-light-strong);
 }
 .portal-card:active {
   transform: translateY(-2px);
@@ -138,7 +228,7 @@ button:focus-visible {
 }
 .card-3d:hover {
   transform: translateY(-5px);
-  box-shadow: 10px 18px 28px rgba(163,177,198,0.4), -5px -5px 14px rgba(255,255,255,0.85);
+  box-shadow: 10px 18px 28px var(--app-shadow-dark), -5px -5px 14px var(--app-shadow-light-strong);
 }
 
 /* ── Status Badges — tonos apagados y elegantes ── */
@@ -152,6 +242,121 @@ button:focus-visible {
 .badge-orange { background:#f0e8d0; color:#6b4e10; border:1px solid #d4c090; }
 /* arena cálida — "Advertencia", "Revisar"         contraste texto ~5.7:1 ✓ AA */
 .badge-yellow { background:#ede8dc; color:#5c4a20; border:1px solid #cfc0a0; }
+
+:root[data-theme="dark"] .badge-green  { background: rgba(107,124,69,0.25); color:#d6e3a8; border-color: rgba(163,184,108,0.35); }
+:root[data-theme="dark"] .badge-red    { background: rgba(185,28,28,0.22); color:#fecaca; border-color: rgba(252,165,165,0.3); }
+:root[data-theme="dark"] .badge-blue   { background: rgba(59,130,246,0.2); color:#bfdbfe; border-color: rgba(147,197,253,0.3); }
+:root[data-theme="dark"] .badge-orange { background: rgba(212,168,50,0.2); color:#fde68a; border-color: rgba(253,224,71,0.3); }
+:root[data-theme="dark"] .badge-yellow { background: rgba(160,130,70,0.2); color:#e7d9b0; border-color: rgba(207,192,160,0.3); }
+
+/* ── Remapeo de utilitarios neutros de Tailwind (la app los usa en todas las pantallas) ──
+   Valen para los dos temas: los colores salen de los tokens --app-*. */
+.bg-white { background-color: var(--app-surface); }
+[class*="bg-white/"] { background-color: var(--app-glass); }
+.bg-gray-100,
+.hover\:bg-gray-100:hover { background-color: var(--app-inset); }
+:root[data-theme="dark"] .bg-gray-500 { background-color: #475569; }
+:root[data-theme="dark"] .bg-gray-900\/85,
+:root[data-theme="dark"] .bg-gray-900\/60,
+:root[data-theme="dark"] .bg-gray-900\/40 { background-color: rgba(2, 6, 23, 0.7); }
+.bg-\[\#e2e8f0\] { background-color: var(--app-switch-off); }
+:root[data-theme="dark"] .bg-\[\#ede9fe\] { background-color: rgba(124, 58, 237,0.28); }
+:root[data-theme="dark"] .text-\[\#2e1065\] { color: #dfe9c4; }
+
+.text-gray-900,
+.text-gray-800,
+.hover\:text-gray-800:hover,
+.hover\:text-gray-900:hover { color: var(--app-text); }
+.text-gray-700,
+.hover\:text-gray-700:hover { color: var(--app-text-soft); }
+.text-gray-600,
+.hover\:text-gray-600:hover { color: var(--app-text-muted); }
+.text-gray-500 { color: var(--app-text-subtle); }
+.text-gray-400 { color: var(--app-text-faint); }
+.text-gray-300 { color: #64748b; }
+.placeholder-gray-500::placeholder,
+.placeholder-gray-400::placeholder { color: var(--app-text-subtle); opacity: 1; }
+
+.border-gray-100,
+.border-gray-200,
+.border-gray-300,
+.border-gray-100\/80,
+.border-gray-200\/50,
+.border-gray-200\/60,
+.ring-gray-100 { border-color: var(--app-border); }
+.divide-gray-200\/50 > :not(:last-child) { border-color: var(--app-border); }
+:root[data-theme="dark"] [class*="border-white/"] { border-color: rgba(148, 163, 184, 0.14); }
+
+/* Estados (error, éxito, aviso, info): fondos tintados translúcidos y textos más claros */
+:root[data-theme="dark"] .bg-red-50 { background-color: rgba(239, 68, 68, 0.14); }
+:root[data-theme="dark"] .bg-green-50,
+:root[data-theme="dark"] .bg-green-100 { background-color: rgba(34, 197, 94, 0.14); }
+:root[data-theme="dark"] .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.14); }
+:root[data-theme="dark"] .bg-orange-50\/50,
+:root[data-theme="dark"] .bg-orange-100 { background-color: rgba(249, 115, 22, 0.14); }
+:root[data-theme="dark"] .bg-blue-50 { background-color: rgba(59, 130, 246, 0.14); }
+:root[data-theme="dark"] .border-red-100 { border-color: rgba(248, 113, 113, 0.3); }
+:root[data-theme="dark"] .border-green-100 { border-color: rgba(74, 222, 128, 0.28); }
+:root[data-theme="dark"] .border-yellow-100,
+:root[data-theme="dark"] .border-yellow-200 { border-color: rgba(250, 204, 21, 0.28); }
+:root[data-theme="dark"] .border-blue-100 { border-color: rgba(96, 165, 250, 0.3); }
+:root[data-theme="dark"] .border-orange-300\/60 { border-color: rgba(251, 146, 60, 0.35); }
+:root[data-theme="dark"] .text-red-600,
+:root[data-theme="dark"] .text-red-700,
+:root[data-theme="dark"] .hover\:text-red-600:hover { color: #fca5a5; }
+:root[data-theme="dark"] .text-green-700 { color: #86efac; }
+:root[data-theme="dark"] .text-yellow-600,
+:root[data-theme="dark"] .text-yellow-700,
+:root[data-theme="dark"] .text-yellow-800 { color: #fde047; }
+:root[data-theme="dark"] .text-orange-700,
+:root[data-theme="dark"] .text-orange-800 { color: #fdba74; }
+:root[data-theme="dark"] .text-blue-600,
+:root[data-theme="dark"] .text-blue-700,
+:root[data-theme="dark"] .text-blue-800 { color: #93c5fd; }
+
+/* Estados en tema claro: tintes sobre la arena en vez del blanco azulado/rosado de Tailwind */
+:root:not([data-theme="dark"]) .bg-red-50 { background-color: rgba(185, 28, 28, 0.1); }
+:root:not([data-theme="dark"]) .bg-green-50,
+:root:not([data-theme="dark"]) .bg-green-100 { background-color: rgba(22, 101, 52, 0.12); }
+:root:not([data-theme="dark"]) .bg-yellow-50 { background-color: rgba(161, 98, 7, 0.14); }
+:root:not([data-theme="dark"]) .bg-orange-50\/50,
+:root:not([data-theme="dark"]) .bg-orange-100 { background-color: rgba(194, 65, 12, 0.12); }
+:root:not([data-theme="dark"]) .bg-blue-50 { background-color: rgba(30, 64, 175, 0.1); }
+:root:not([data-theme="dark"]) .text-red-600,
+:root:not([data-theme="dark"]) .text-red-700 { color: var(--app-bad); }
+:root:not([data-theme="dark"]) .text-green-700 { color: var(--app-good); }
+:root:not([data-theme="dark"]) .text-yellow-600,
+:root:not([data-theme="dark"]) .text-yellow-700,
+:root:not([data-theme="dark"]) .text-yellow-800 { color: var(--app-warn); }
+
+/* Fondo de página en claro: un velo cálido arriba y un toque violeta de marca, fijo al scrollear */
+:root:not([data-theme="dark"]) body {
+  background-image:
+    radial-gradient(1100px 520px at 8% -8%, rgba(255, 248, 228, 0.75), transparent 62%),
+    radial-gradient(900px 480px at 100% 0%, rgba(124, 58, 237, 0.07), transparent 58%);
+  background-attachment: fixed;
+}
+
+/* Mapa (Leaflet): los tiles claros se invierten para el tema oscuro; los popups siguen la superficie. */
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(0.92) hue-rotate(180deg) brightness(0.85) saturate(0.7); }
+:root[data-theme="dark"] .leaflet-popup-content-wrapper,
+:root[data-theme="dark"] .leaflet-popup-tip { background: var(--app-surface); color: var(--app-text); }
+
+/* Texto de marca: el oliva #7c3aed da 2.95:1 sobre el fondo hundido (claro) y menos en oscuro.
+   Como texto se usa el tono de acento del tema, que pasa AA en los dos. */
+.text-brand-olive,
+.text-brand-orange,
+.text-brand-olive-hover { color: var(--app-accent-text); }
+:root[data-theme="dark"] .text-\[\#6d28d9\] { color: var(--app-accent-text); }
+:root[data-theme="dark"] .text-brand-gold { color: #e0b94d; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background: var(--app-scroll); border-radius:10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--app-scroll); filter: brightness(1.15); }
+.custom-scrollbar::-webkit-scrollbar { width:4px; height:4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--app-scroll); border-radius:10px; }
 
 /* ── Entrance animations (page content only, not nav) ── */
 @keyframes fade-up {
@@ -194,8 +399,8 @@ button:focus-visible {
 
 /* ── Glow & Shimmer ── */
 @keyframes glow-pulse {
-  0%,100% { box-shadow:0 0 8px rgba(107,124,69,0.22); }
-  50%     { box-shadow:0 0 20px rgba(107,124,69,0.45); }
+  0%,100% { box-shadow:0 0 8px rgba(124, 58, 237,0.22); }
+  50%     { box-shadow:0 0 20px rgba(124, 58, 237,0.45); }
 }
 @keyframes shimmer {
   0%   { background-position:-200% center; }
@@ -207,10 +412,129 @@ button:focus-visible {
 /* Compatibilidad hacia atrás */
 .glow-orange { animation: glow-pulse 2.5s ease-in-out infinite; }
 .shimmer {
-  background: linear-gradient(90deg,#c8d0de 25%,#dde3ed 50%,#c8d0de 75%);
+  background: linear-gradient(90deg, var(--app-inset) 25%, var(--app-surface) 50%, var(--app-inset) 75%);
   background-size: 200% auto;
   animation: shimmer 1.5s linear infinite;
 }
+
+/* ── Promo del día (cliente): banner con los colores del logo ── */
+.promo-banner {
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 45%, #0e7490 100%);
+  box-shadow: 0 10px 28px rgba(124, 58, 237, 0.35);
+}
+
+/* ── Reloj del pedido activo: agujas girando ── */
+@keyframes clock-spin { to { transform: rotate(360deg); } }
+.clock-hand-minute,
+.clock-hand-hour { transform-origin: 12px 12px; transform-box: view-box; }
+.clock-hand-minute { animation: clock-spin 3s linear infinite; }
+.clock-hand-hour   { animation: clock-spin 36s linear infinite; }
+
+/* ── Landing: presentación animada ── */
+@keyframes logo-glow {
+  0%, 100% { box-shadow: 0 0 24px rgba(124, 58, 237, 0.35), 0 0 60px rgba(34, 211, 238, 0.12); }
+  50%      { box-shadow: 0 0 40px rgba(124, 58, 237, 0.55), 0 0 90px rgba(34, 211, 238, 0.25); }
+}
+.logo-glow { animation: logo-glow 4s ease-in-out infinite; }
+@keyframes brand-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.brand-sheen {
+  background: linear-gradient(110deg, var(--app-accent-text) 0%, #22d3ee 35%, var(--app-accent-text) 60%, #e879f9 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brand-sheen 6s ease-in-out infinite;
+}
+@keyframes word-rise {
+  from { opacity: 0; transform: translateY(0.6em); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+.word-rise { display: inline-block; animation: word-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Punto que recorre el flujo del pedido (4 pasos, ~3.6 s por vuelta) */
+@keyframes flow-run {
+  0%   { left: -10%; }
+  100% { left: 100%; }
+}
+.flow-runner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--app-accent-text), transparent);
+  animation: flow-run 3.6s linear infinite;
+}
+@keyframes flow-pulse {
+  0%, 18%, 100% { box-shadow: 7px 7px 14px var(--app-shadow-dark), -7px -7px 14px var(--app-shadow-light); transform: translateY(0); }
+  8%            { box-shadow: 0 0 0 3px var(--app-accent-text), 0 10px 28px rgba(124, 58, 237, 0.45); transform: translateY(-4px); }
+}
+.flow-step { animation: flow-pulse 3.6s ease-in-out infinite; }
+
+/* ── Animaciones de interfaz ── */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(26px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes bump {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+@keyframes btn-sheen {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
+}
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@keyframes check-draw {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.animate-pop-in         { animation: pop-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-rise-in        { animation: rise-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-in-right { animation: slide-in-right 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-bump           { animation: bump 0.35s ease; }
+.animate-soft-pulse     { animation: soft-pulse 2s ease-in-out infinite; }
+
+/* Listas y grillas: cada hijo entra escalonado (hasta 12; el resto entra junto). */
+.stagger > * { animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > :nth-child(1)  { animation-delay: 0.03s; }
+.stagger > :nth-child(2)  { animation-delay: 0.07s; }
+.stagger > :nth-child(3)  { animation-delay: 0.11s; }
+.stagger > :nth-child(4)  { animation-delay: 0.15s; }
+.stagger > :nth-child(5)  { animation-delay: 0.19s; }
+.stagger > :nth-child(6)  { animation-delay: 0.23s; }
+.stagger > :nth-child(7)  { animation-delay: 0.27s; }
+.stagger > :nth-child(8)  { animation-delay: 0.31s; }
+.stagger > :nth-child(9)  { animation-delay: 0.35s; }
+.stagger > :nth-child(10) { animation-delay: 0.39s; }
+.stagger > :nth-child(11) { animation-delay: 0.43s; }
+.stagger > :nth-child(n+12) { animation-delay: 0.47s; }
+
+/* Brillo que cruza el botón principal al pasar el mouse */
+.btn-glow:hover:not(:disabled) {
+  background: linear-gradient(110deg, #6d28d9 35%, #8b5cf6 50%, #6d28d9 65%) 0 0 / 250% 100%;
+  animation: btn-sheen 0.8s ease;
+}
+
+/* Iconos y chips responden al tacto */
+.neumorphic-hover:active { transform: scale(0.985); }
+a, button { -webkit-tap-highlight-color: transparent; }
 
 /* ── Reduce Motion ── */
 @media (prefers-reduced-motion: reduce) {
@@ -222,6 +546,17 @@ button:focus-visible {
 }
 
 /* ── Base ── */
+/* Escala general al 90%: todo lo definido en rem (Tailwind) se reduce en proporción. */
+html {
+  font-size: 90%;
+  -webkit-text-size-adjust: 100%;
+}
+/* `clip` y no `hidden`: con hidden el body pasa a ser un contenedor de scroll que nunca se
+   desplaza, y eso anula todos los `position: sticky` (cabeceras, buscador del menú). */
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
 body {
   font-family: var(--font-body);
   background-color: var(--color-background);
@@ -230,10 +565,119 @@ body {
 }
 h1,h2,h3,h4,h5,h6,.headline { font-family: var(--font-headline); }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width:5px; height:5px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:rgba(163,177,198,0.55); border-radius:10px; }
-::-webkit-scrollbar-thumb:hover { background:rgba(163,177,198,0.85); }
-.custom-scrollbar::-webkit-scrollbar { width:4px; height:4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background:rgba(163,177,198,0.5); border-radius:10px; }
+/* ── Tablero ejecutivo: alias de los tokens globales (el tema lo maneja el toggle de la app) ── */
+.exec-theme {
+  --ex-bg: var(--app-bg);
+  --ex-surface: var(--app-surface);
+  --ex-surface-2: var(--app-inset);
+  --ex-border: var(--app-border);
+  --ex-text: var(--app-text);
+  --ex-muted: var(--app-text-muted);
+  --ex-accent: var(--app-accent-text);
+  --ex-accent-contrast: var(--app-accent-contrast);
+  --ex-good: var(--app-good);
+  --ex-bad: var(--app-bad);
+  --ex-warn: var(--app-warn);
+  --ex-info: var(--app-info);
+  --ex-hover: var(--app-hover);
+  --ex-shadow: var(--app-card-shadow);
+  background: var(--ex-bg);
+  color: var(--ex-text);
+}
+/* Página: cubre todo el área de contenido, ignorando el fondo neumórfico del layout. */
+.exec-page {
+  margin: -0.5rem;
+  min-height: calc(100% + 1rem);
+  border-radius: 1rem;
+}
+@media (min-width: 768px) {
+  .exec-page { margin: -0.75rem; min-height: calc(100% + 1.5rem); }
+}
+.exec-card {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  border-radius: 1rem;
+  box-shadow: var(--ex-shadow);
+  color: var(--ex-text);
+  min-width: 0;
+}
+.exec-muted { color: var(--ex-muted); }
+.exec-skeleton {
+  background: linear-gradient(90deg, var(--ex-surface-2) 25%, var(--ex-surface) 50%, var(--ex-surface-2) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  border: 1px solid var(--ex-border);
+  border-radius: 1rem;
+}
+.exec-chip {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  color: var(--ex-text);
+  border-radius: 9999px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  box-shadow: var(--ex-shadow);
+  transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+}
+.exec-chip:hover { background: var(--ex-hover); border-color: var(--ex-accent); }
+.exec-chip:active { transform: translateY(1px); }
+.exec-chip[aria-pressed="true"] {
+  background: var(--ex-accent);
+  border-color: var(--ex-accent);
+  color: var(--ex-accent-contrast);
+}
+.exec-chip[aria-pressed="true"]:hover { filter: brightness(1.08); }
+.exec-theme a:focus-visible,
+.exec-theme button:focus-visible,
+.exec-theme select:focus-visible {
+  outline: 2px solid var(--ex-accent);
+  outline-offset: 2px;
+}
+.exec-theme select {
+  background: var(--ex-surface);
+  color: var(--ex-text);
+  border: 1px solid var(--ex-border);
+  border-radius: 9999px;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  max-width: 100%;
+  box-shadow: var(--ex-shadow);
+  cursor: pointer;
+}
+.exec-theme select:hover { border-color: var(--ex-accent); }
+.exec-theme select option { background: var(--ex-surface); color: var(--ex-text); }
+.exec-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.15rem 0.55rem 0.15rem 0.4rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.exec-copilot {
+  background:
+    linear-gradient(var(--ex-surface), var(--ex-surface)) padding-box,
+    linear-gradient(135deg, #7c9a3a, #3b82f6 55%, #a855f7) border-box;
+  border: 1.5px solid transparent;
+  border-radius: 1rem;
+  box-shadow: var(--ex-shadow);
+  color: var(--ex-text);
+  min-width: 0;
+}
+.exec-insight {
+  background: color-mix(in srgb, var(--sev) 9%, var(--ex-surface));
+  border: 1px solid color-mix(in srgb, var(--sev) 35%, transparent);
+  border-radius: 0.75rem;
+}
+
+/* Modal de ajustes: el panel usa neumorphic y los tokens globales, así que adopta el tema solo. */
+.exec-modal { background: transparent; color: inherit; }

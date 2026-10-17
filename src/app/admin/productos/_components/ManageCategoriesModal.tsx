@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { Plus, Tag, Edit2, Trash2 } from "lucide-react";
-import type { Category, Product } from "@/fixtures/productos";
+import type { Category, Product } from "@/types/catalog";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";

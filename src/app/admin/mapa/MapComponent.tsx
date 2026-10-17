@@ -1,23 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockEntregas } from "@/fixtures/orders";
+import { RESTAURANT_LOCATION } from "@/lib/restaurant";
+import { formatOrderId } from "@/lib/orders";
+import { ZoneLayers } from "@/components/zones/ZoneLayers";
+import type { DeliveryZone, GeoPoint } from "@/lib/zones";
+import type { EnrichedOrder } from "@/lib/orders-server";
 
-// Fix para el icono de Leaflet en Next.js
-const customIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
+// Marcadores como divIcon: no dependen de imágenes externas (la CSP del proyecto
+// sólo permite imágenes propias y tiles de OpenStreetMap).
+function dot(color: string, label?: string) {
+  return L.divIcon({
+    className: "",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+    html: `<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:${color};color:#fff;font:800 11px sans-serif;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${label ?? ""}</span>`,
+  });
+}
 
-export default function MapComponent() {
+const STATE_COLOR: Record<string, string> = {
+  "En Camino": "#3b82f6",
+  "En Preparación": "#eab308",
+  Recibidos: "#ef4444",
+};
+
+const HOME_ICON = dot("#7c3aed", "L");
+
+interface Props {
+  orders: readonly EnrichedOrder[];
+  zones?: readonly DeliveryZone[];
+  /** Ubicación del local (configurable); por defecto la fija del proyecto. */
+  local?: GeoPoint;
+}
+
+export default function MapComponent({ orders, zones = [], local = RESTAURANT_LOCATION }: Props) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -27,25 +47,46 @@ export default function MapComponent() {
 
   if (!mounted) return null;
 
-  const centro: [number, number] = [-34.6050, -58.3750];
+  const located = orders.filter((o) => o.delivery_lat !== null && o.delivery_lng !== null);
 
   return (
     <div className="w-full h-full rounded-2xl overflow-hidden shadow-[inset_5px_5px_10px_#d1d5db,inset_-5px_-5px_10px_#ffffff]">
-      <MapContainer center={centro} zoom={14} scrollWheelZoom={true} className="w-full h-[300px] z-0">
+      <MapContainer center={[local.lat, local.lng]} zoom={13} scrollWheelZoom className="w-full h-[360px] z-0">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {mockEntregas.map((entrega) => (
-          <Marker key={entrega.id} position={[entrega.lat, entrega.lng]} icon={customIcon}>
-            <Popup>
-              <div className="text-sm">
-                <p className="font-bold text-gray-800">{entrega.cliente}</p>
-                <p className="text-gray-600">Estado: {entrega.estado}</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+
+        <ZoneLayers zones={zones} />
+
+        <Marker position={[local.lat, local.lng]} icon={HOME_ICON}>
+          <Popup><p className="font-bold text-sm">{RESTAURANT_LOCATION.name} (local)</p></Popup>
+        </Marker>
+
+        {located.map((order) => {
+          const position: [number, number] = [order.delivery_lat!, order.delivery_lng!];
+          const color = STATE_COLOR[order.status] ?? "#6b7280";
+          return (
+            <span key={order.id}>
+              {order.status === "En Camino" && (
+                <Polyline
+                  positions={[[local.lat, local.lng], position]}
+                  pathOptions={{ color, weight: 3, dashArray: "6 8", opacity: 0.7 }}
+                />
+              )}
+              <Marker position={position} icon={dot(color)}>
+                <Popup>
+                  <div className="text-sm space-y-0.5">
+                    <p className="font-bold text-gray-800">{order.client_name} · {formatOrderId(order.id)}</p>
+                    <p className="text-gray-600">{order.status}</p>
+                    {order.delivery_address && <p className="text-gray-500">{order.delivery_address}</p>}
+                    {order.courier_name && <p className="text-gray-500">Repartidor: {order.courier_name}</p>}
+                  </div>
+                </Popup>
+              </Marker>
+            </span>
+          );
+        })}
       </MapContainer>
     </div>
   );

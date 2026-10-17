@@ -58,7 +58,7 @@ export function Switch({
         className={[
           "absolute top-1 w-4 h-4 rounded-full transition-all duration-300",
           checked
-            ? "left-7 bg-brand-orange shadow-[0_2px_6px_rgba(107,124,69,0.4)]"
+            ? "left-7 bg-brand-orange shadow-[0_2px_6px_rgba(124,58,237,0.4)]"
             : "left-1 neumorphic bg-[#e2e8f0]",
         ].join(" ")}
       />

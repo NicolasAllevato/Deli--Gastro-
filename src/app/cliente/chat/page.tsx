@@ -14,7 +14,7 @@ type Message = {
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
-    { id: crypto.randomUUID(), text: "¡Hola! Soy tu asistente de Deli-Gastro. ¿En qué te puedo ayudar hoy? (Ej: '¿Dónde está mi pedido?' o 'Quiero ver el menú')", sender: "bot" },
+    { id: crypto.randomUUID(), text: "¡Hola! Soy tu asistente de Opsyn Dely. ¿En qué te puedo ayudar hoy? (Ej: '¿Dónde está mi pedido?' o 'Quiero ver el menú')", sender: "bot" },
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -103,7 +103,7 @@ export default function ChatPage() {
 
                 <div className={`px-4 py-3 rounded-2xl text-sm ${
                   msg.sender === "user"
-                    ? "bg-[#e8eddc] text-[#2a3a18] rounded-tr-none"
+                    ? "bg-[#ede9fe] text-[#2e1065] rounded-tr-none"
                     : msg.isError
                       ? "bg-red-50 text-red-700 rounded-tl-none"
                       : "neumorphic-inset text-gray-700 rounded-tl-none"
@@ -122,9 +122,9 @@ export default function ChatPage() {
                 </div>
                 <div className="px-4 py-3 rounded-2xl neumorphic-inset rounded-tl-none">
                   <div className="flex gap-1" aria-hidden>
-                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" />
-                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: "0.2s" }} />
-                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: "0.4s" }} />
+                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-pulse" />
+                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-pulse" style={{ animationDelay: "0.2s" }} />
+                    <span className="w-2 h-2 bg-gray-500 rounded-full motion-safe:animate-pulse" style={{ animationDelay: "0.4s" }} />
                   </div>
                 </div>
               </div>

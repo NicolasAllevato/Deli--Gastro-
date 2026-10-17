@@ -4,15 +4,19 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, LogIn, Loader2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
+import { isDemoMode } from "@/lib/demo/mode";
+import { DemoAccessPanel } from "@/components/demo/DemoAccessPanel";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Copyright } from "@/components/Copyright";
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Validar que redirectTo sea una ruta interna para evitar open redirect
-  const raw = searchParams.get("redirectTo") ?? "/admin/tablero";
+  const raw = searchParams.get("redirectTo") ?? "/admin/ejecutivo";
   const redirectTo = raw.startsWith("/") && !raw.startsWith("//") && !raw.includes("://")
     ? raw
-    : "/admin/tablero";
+    : "/admin/ejecutivo";
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +44,9 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center px-5">
+      <div className="fixed top-4 right-4 z-10">
+        <ThemeToggle compact />
+      </div>
       {/* Orb decorativo */}
       <div aria-hidden className="pointer-events-none fixed top-0 right-0 w-96 h-96 rounded-full bg-brand-orange/5 blur-3xl" />
       <div aria-hidden className="pointer-events-none fixed bottom-0 left-0 w-80 h-80 rounded-full bg-brand-orange/4 blur-3xl" />
@@ -49,11 +56,22 @@ function LoginContent() {
         {/* Logo */}
         <div className="text-center mb-10">
           <h1 className="font-headline text-4xl font-black text-gray-900">
-            Deli<span className="text-brand-orange">-</span>Gastro
+            Opsyn <span className="text-brand-orange">Dely</span>
           </h1>
           <p className="text-gray-500 text-sm mt-2">Panel de administración</p>
         </div>
 
+        {isDemoMode() ? (
+          <div className="neumorphic rounded-3xl p-6 sm:p-8 space-y-6">
+            <div>
+              <h2 className="font-headline font-black text-xl text-gray-800">Modo demostración</h2>
+              <p className="text-gray-500 text-xs mt-1">
+                Elegí un rol para recorrer la plataforma con datos de ejemplo. No se guarda nada.
+              </p>
+            </div>
+            <DemoAccessPanel />
+          </div>
+        ) : (
         <div className="neumorphic rounded-3xl p-6 sm:p-8 space-y-6">
           <div>
             <h2 className="font-headline font-black text-xl text-gray-800">Iniciá sesión</h2>
@@ -125,6 +143,9 @@ function LoginContent() {
             </button>
           </form>
         </div>
+        )}
+
+        <Copyright className="mt-6" />
 
       </div>
     </div>

@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { z } from "zod";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 
-// Acciones permitidas y sus campos de datos aceptados
-const ALLOWED_ACTIONS = new Set(["new_order", "status_update", "create_ticket"]);
-
+// Acciones permitidas y sus campos de datos aceptados.
+// Sólo el portal admin dispara acciones de dispatch (ver src/utils/api.ts /
+// TableroClient.tsx), por lo que este endpoint exige rol "admin".
 const ACTION_DATA_FIELDS: Record<string, string[]> = {
   new_order:     ["orderId", "items", "price", "customerName", "timestamp"],
   status_update: ["orderId", "newStatus", "timestamp"],
   create_ticket: ["orderId", "description", "timestamp"],
 };
+
+const dispatchSchema = z.object({
+  action: z.enum(["new_order", "status_update", "create_ticket"]),
+  data: z.record(z.string(), z.unknown()).optional().default({}),
+});
 
 function filterData(action: string, data: Record<string, unknown>): Record<string, unknown> {
   const allowed = ACTION_DATA_FIELDS[action] ?? [];
@@ -17,12 +23,8 @@ function filterData(action: string, data: Record<string, unknown>): Record<strin
 }
 
 export async function POST(req: Request) {
-  // Autenticación requerida
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireRole("admin");
+  if (isAuthorizationError(auth)) return auth.error;
 
   // Rate limiting estricto para el endpoint más sensible
   if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
@@ -30,12 +32,18 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as { action?: string; data?: Record<string, unknown> };
-    const { action, data = {} } = body;
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Body inválido." }, { status: 400 });
+    }
 
-    if (!action || typeof action !== "string" || !ALLOWED_ACTIONS.has(action)) {
+    const parsed = dispatchSchema.safeParse(rawBody);
+    if (!parsed.success) {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
+    const { action, data } = parsed.data;
 
     const webhookUrl = process.env.N8N_DISPATCHER_URL;
     if (!webhookUrl) {

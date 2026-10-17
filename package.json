@@ -4,33 +4,43 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 5178 --turbo",
+    "demo": "node scripts/demo.mjs",
+    "demo:rapido": "node scripts/demo.mjs --rapido",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs"
+    "test": "node --no-warnings --test \"tests/**/*.test.ts\"",
+    "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs",
+    "coverage": "node scripts/coverage.mjs",
+    "e2e": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1120.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.1",
     "@types/leaflet": "^1.9.21",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.14.0",
-    "next": "16.2.9",
+    "next": "16.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-leaflet": "^5.0.0",
-    "tailwind-merge": "^3.6.0"
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.4.0",
     "playwright": "^1.59.1",
     "tailwindcss": "^4",
     "typescript": "^5"

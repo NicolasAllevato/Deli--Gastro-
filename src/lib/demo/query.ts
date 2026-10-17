@@ -1,0 +1,202 @@
+import type { Row, TableName, Tables } from "@/lib/demo/seed";
+
+/**
+ * Motor de consultas mínimo, compatible con el subconjunto de la API de
+ * supabase-js que usa esta app (select/insert/update/upsert/delete + filtros).
+ * Un `QueryPlan` es serializable: el navegador lo envía a /api/demo/query y el
+ * servidor lo ejecuta contra el store.
+ */
+
+export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike" | "not";
+
+export interface Filter {
+  op: FilterOp;
+  column: string;
+  value: unknown;
+}
+
+export interface QueryPlan {
+  table: TableName;
+  action: "select" | "insert" | "update" | "upsert" | "delete";
+  columns: string;
+  filters: Filter[];
+  order: Array<{ column: string; ascending: boolean }>;
+  limit: number | null;
+  payload: unknown;
+  onConflict: string;
+  returning: boolean;
+  count: boolean;
+  head: boolean;
+  single: "none" | "single" | "maybe";
+}
+
+export interface QueryError {
+  message: string;
+  code: string;
+}
+
+export interface QueryResult {
+  data: unknown;
+  error: QueryError | null;
+  count: number | null;
+}
+
+const KNOWN_TABLES: readonly TableName[] = [
+  "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
+  "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
+  "payment_intents",
+];
+
+/** Tablas cuya clave primaria es `key` (no `id`). */
+const KEY_TABLES: readonly TableName[] = ["global_config", "integration_secrets"];
+
+/** Tablas sin `updated_at` (solo se agregan filas). */
+const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages", "legal_acceptances"];
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+const DEFAULTS: Record<TableName, () => Row> = {
+  legal_acceptances: () => ({ email: null, role: null, ip: null, user_agent: null, accepted_at: nowIso() }),
+  payment_intents: () => ({
+    status: "pending", mp_preference_id: null, checkout_url: null, mp_payment_id: null, order_id: null, refund_error: null,
+  }),
+  clients: () => ({
+    user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0, wa_marketing_opt_in: false,
+  }),
+  orders: () => ({
+    client_id: null, status: "Recibidos", delivery_fee: 0, delivery_address: null,
+    delivery_lat: null, delivery_lng: null, payment_method: null, notes: null, courier_name: null,
+    channel: "web", accepted_at: null, ready_at: null, picked_up_at: null, delivered_at: null,
+    survey_sent_at: null,
+  }),
+  points_ledger: () => ({ order_id: null }),
+  global_config: () => ({}),
+  categories: () => ({ description: "", is_active: true }),
+  products: () => ({ category_id: null, description: "", image_url: "", is_active: true }),
+  reviews: () => ({ feedback: null }),
+  order_events: () => ({ actor: null, detail: null }),
+  delivery_zones: () => ({ fee: 0, min_order: 0, sort_order: 0, is_active: true }),
+  integration_secrets: () => ({}),
+  wa_conversations: () => ({
+    client_id: null, contact_name: null, state: {}, human_takeover: false, last_inbound_at: null,
+  }),
+  wa_messages: () => ({ wamid: null, body: null, status: null, tokens: null }),
+  wa_campaigns: () => ({ status: "sending", recipients: 0, sent: 0, failed: 0, finished_at: null }),
+};
+
+function compare(a: unknown, b: unknown): number {
+  if (a === b) return 0;
+  if (a === null || a === undefined) return -1;
+  if (b === null || b === undefined) return 1;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a) < String(b) ? -1 : 1;
+}
+
+function matches(row: Row, f: Filter): boolean {
+  const v = row[f.column];
+  switch (f.op) {
+    case "eq": return v === f.value;
+    case "neq": return v !== f.value;
+    case "gt": return compare(v, f.value) > 0;
+    case "gte": return compare(v, f.value) >= 0;
+    case "lt": return compare(v, f.value) < 0;
+    case "lte": return compare(v, f.value) <= 0;
+    case "in": return Array.isArray(f.value) && f.value.includes(v);
+    case "is": return v === f.value || (f.value === null && v === undefined);
+    case "not": {
+      // `value` lleva el filtro negado: { op, value }.
+      const inner = f.value as { op: FilterOp; value: unknown };
+      return !matches(row, { op: inner.op, column: f.column, value: inner.value });
+    }
+    case "ilike": {
+      const pattern = String(f.value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*");
+      return new RegExp(`^${pattern}$`, "i").test(String(v ?? ""));
+    }
+  }
+}
+
+function project(row: Row, columns: string): Row {
+  const cols = columns.trim();
+  if (cols === "" || cols === "*") return { ...row };
+  const out: Row = {};
+  for (const raw of cols.split(",")) {
+    const col = raw.trim();
+    if (col in row) out[col] = row[col];
+  }
+  return out;
+}
+
+function fail(message: string, code = "DEMO"): QueryResult {
+  return { data: null, error: { message, code }, count: null };
+}
+
+function finalize(plan: QueryPlan, rows: Row[], count: number | null): QueryResult {
+  if (plan.head) return { data: null, error: null, count };
+  const projected = rows.map((r) => project(r, plan.columns));
+  if (plan.single === "none") return { data: projected, error: null, count };
+  if (projected.length === 1) return { data: projected[0], error: null, count };
+  if (projected.length === 0 && plan.single === "maybe") return { data: null, error: null, count };
+  return fail("JSON object requested, multiple (or no) rows returned", "PGRST116");
+}
+
+export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
+  if (!KNOWN_TABLES.includes(plan.table)) return fail(`Tabla desconocida: ${plan.table}`, "42P01");
+  const table = store[plan.table];
+  const keyed = KEY_TABLES.includes(plan.table);
+  const pk = keyed ? "key" : "id";
+
+  const filtered = () => table.filter((row) => plan.filters.every((f) => matches(row, f)));
+
+  if (plan.action === "select") {
+    const rows = filtered();
+    const total = rows.length;
+    for (const o of [...plan.order].reverse()) {
+      rows.sort((a, b) => (o.ascending ? 1 : -1) * compare(a[o.column], b[o.column]));
+    }
+    const limited = plan.limit === null ? rows : rows.slice(0, plan.limit);
+    return finalize(plan, structuredClone(limited), plan.count ? total : null);
+  }
+
+  if (plan.action === "insert" || plan.action === "upsert") {
+    const incoming = (Array.isArray(plan.payload) ? plan.payload : [plan.payload]) as Row[];
+    const written: Row[] = [];
+    for (const raw of incoming) {
+      // onConflict puede ser compuesto ("a,b,c"), como en Postgres.
+      const conflictKeys = (plan.action === "upsert" ? plan.onConflict || pk : pk).split(",").map((k) => k.trim());
+      const existing =
+        plan.action === "upsert" && conflictKeys.every((k) => raw[k] !== undefined)
+          ? table.find((r) => conflictKeys.every((k) => r[k] === raw[k]))
+          : undefined;
+      if (existing) {
+        Object.assign(existing, raw, { updated_at: nowIso() });
+        written.push(existing);
+        continue;
+      }
+      const stamp = nowIso();
+      const row: Row = {
+        ...(keyed ? {} : { id: crypto.randomUUID() }),
+        ...DEFAULTS[plan.table](),
+        ...raw,
+        created_at: raw.created_at ?? stamp,
+        ...(APPEND_ONLY.includes(plan.table) ? {} : { updated_at: stamp }),
+      };
+      table.push(row);
+      written.push(row);
+    }
+    return finalize(plan, plan.returning ? structuredClone(written) : [], null);
+  }
+
+  if (plan.action === "update") {
+    const rows = filtered();
+    for (const row of rows) Object.assign(row, plan.payload as Row, { updated_at: nowIso() });
+    return finalize(plan, plan.returning ? structuredClone(rows) : [], null);
+  }
+
+  // delete
+  const doomed = new Set(filtered());
+  const removed = table.filter((r) => doomed.has(r));
+  store[plan.table] = table.filter((r) => !doomed.has(r));
+  return finalize(plan, plan.returning ? structuredClone(removed) : [], null);
+}

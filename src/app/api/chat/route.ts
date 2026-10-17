@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createClient } from "@/utils/supabase/server";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { isDemoMode } from "@/lib/demo/mode";
+import { buildDemoReply } from "@/lib/demo/chatbot";
 
 const MAX_MESSAGE_LENGTH = 2000;
+
+const chatSchema = z.object({
+  message: z.string().trim().min(1, "Message is required").max(MAX_MESSAGE_LENGTH, "Message too long"),
+  clientId: z.string().max(100).optional(),
+});
 
 function isValidN8nReply(data: unknown): data is { reply: string } {
   return (
@@ -26,19 +34,18 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { message, clientId } = await req.json() as { message?: string; clientId?: string };
-
-    if (!message || typeof message !== "string") {
-      return NextResponse.json({ error: "Message is required" }, { status: 400 });
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Body inválido." }, { status: 400 });
     }
 
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return NextResponse.json({ error: "Message too long" }, { status: 400 });
+    const parsed = chatSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid body" }, { status: 400 });
     }
-
-    if (clientId !== undefined && (typeof clientId !== "string" || clientId.length > 100)) {
-      return NextResponse.json({ error: "Invalid clientId" }, { status: 400 });
-    }
+    const { message } = parsed.data;
 
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL_CHATBOT;
 
@@ -73,6 +80,10 @@ export async function POST(req: Request) {
       } finally {
         clearTimeout(timeoutId);
       }
+    }
+
+    if (isDemoMode()) {
+      return NextResponse.json({ reply: await buildDemoReply(user.id, message) });
     }
 
     return NextResponse.json({ reply: "Hola, soy el asistente virtual de Deli-Gastro. (Conectá n8n para activarme)" });

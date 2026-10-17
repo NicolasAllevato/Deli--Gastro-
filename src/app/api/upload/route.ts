@@ -1,0 +1,120 @@
+import { NextResponse } from "next/server";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { z } from "zod";
+import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
+import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { isDemoMode } from "@/lib/demo/mode";
+import { getUploadsWorkerConfig, uploadViaWorker } from "@/lib/storage/uploads-worker";
+
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
+const uploadResponseSchema = z.object({
+  success: z.literal(true),
+  url: z.string().url(),
+});
+export type UploadResponse = z.infer<typeof uploadResponseSchema>;
+
+function getR2Client(): S3Client {
+  const accountEndpoint = process.env.R2_ENDPOINT;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  if (!accountEndpoint || !accessKeyId || !secretAccessKey) {
+    throw new Error(
+      "R2 no configurado: falta R2_ENDPOINT, R2_ACCESS_KEY_ID o R2_SECRET_ACCESS_KEY en las variables de entorno.",
+    );
+  }
+
+  return new S3Client({
+    region: "auto",
+    endpoint: accountEndpoint,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
+
+function extensionFor(mimeType: string): string {
+  const subtype = mimeType.split("/")[1];
+  return subtype === "jpeg" ? "jpg" : subtype;
+}
+
+export async function POST(request: Request): Promise<NextResponse> {
+  if (!(await rateLimit(getClientIp(request), 20, 60_000))) {
+    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+  }
+
+  const auth = await requireRole("admin");
+  if (isAuthorizationError(auth)) return auth.error;
+
+  let file: File;
+  try {
+    const formData = await request.formData();
+    const candidate = formData.get("file");
+    if (!(candidate instanceof File)) {
+      return NextResponse.json({ error: "Archivo requerido." }, { status: 400 });
+    }
+    file = candidate;
+  } catch {
+    return NextResponse.json({ error: "No se pudo leer el formulario." }, { status: 400 });
+  }
+
+  if (!ALLOWED_TYPES.includes(file.type as (typeof ALLOWED_TYPES)[number])) {
+    return NextResponse.json(
+      { error: "Tipo de archivo no permitido. Usá JPG, PNG o WEBP." },
+      { status: 400 },
+    );
+  }
+
+  if (file.size > MAX_SIZE_BYTES) {
+    return NextResponse.json({ error: "El archivo supera el límite de 5MB." }, { status: 400 });
+  }
+
+  // Modo demo: no se sube a R2. La imagen vuelve como data URL y vive sólo en
+  // el producto en memoria.
+  if (isDemoMode()) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    return NextResponse.json({ success: true, url: `data:${file.type};base64,${bytes.toString("base64")}` });
+  }
+
+  // Camino preferido: Worker `uploads` con binding R2 (no necesita R2 API keys).
+  const workerConfig = getUploadsWorkerConfig();
+  if (workerConfig) {
+    try {
+      const url = await uploadViaWorker(workerConfig, await file.arrayBuffer(), file.type);
+      return NextResponse.json(uploadResponseSchema.parse({ success: true, url }));
+    } catch (error: unknown) {
+      console.error("[upload] falló el Worker de uploads", error);
+      return NextResponse.json({ error: "No se pudo subir el archivo." }, { status: 502 });
+    }
+  }
+
+  // Fallback: S3 API de R2 (requiere R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY).
+  const bucketName = process.env.R2_BUCKET_NAME;
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
+
+  if (!bucketName || !publicBaseUrl) {
+    return NextResponse.json({ error: "R2 no configurado en el servidor." }, { status: 500 });
+  }
+
+  try {
+    const key = `productos/${crypto.randomUUID()}.${extensionFor(file.type)}`;
+    const arrayBuffer = await file.arrayBuffer();
+
+    const client = getR2Client();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: new Uint8Array(arrayBuffer),
+        ContentType: file.type,
+      }),
+    );
+
+    const url = `${publicBaseUrl.replace(/\/$/, "")}/${key}`;
+    const payload = uploadResponseSchema.parse({ success: true, url });
+    return NextResponse.json(payload);
+  } catch (error: unknown) {
+    console.error("[upload] falló la subida a R2", error);
+    return NextResponse.json({ error: "No se pudo subir el archivo." }, { status: 500 });
+  }
+}

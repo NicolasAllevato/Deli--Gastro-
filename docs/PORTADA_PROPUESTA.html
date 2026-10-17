@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Propuesta Deli-Gastro - OPSYN</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0D0326 0%, #170a35 50%, #0D0326 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #9434D4, #5A1CA1, #2D89AD, #79FFFF);
+            padding: 60px 40px;
+            text-align: center;
+            color: white;
+        }
+
+        .logo-section {
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            width: 120px;
+            height: auto;
+            margin: 0 auto 30px;
+            display: block;
+            filter: drop-shadow(0 4px 15px rgba(148, 52, 212, 0.4));
+        }
+
+        .company-name {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .company-tagline {
+            font-size: 14px;
+            font-weight: 300;
+            letter-spacing: 1px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 60px 40px;
+            text-align: center;
+        }
+
+        .proposal-title {
+            font-size: 42px;
+            font-weight: 700;
+            color: #0D0326;
+            margin-bottom: 15px;
+            line-height: 1.2;
+        }
+
+        .proposal-subtitle {
+            font-size: 20px;
+            color: #666;
+            margin-bottom: 40px;
+            font-weight: 300;
+        }
+
+        .divider {
+            width: 80px;
+            height: 3px;
+            background: linear-gradient(90deg, #9434D4, #79FFFF);
+            margin: 40px auto;
+        }
+
+        .details {
+            margin: 50px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .detail-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            font-size: 16px;
+        }
+
+        .detail-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #9434D4, #79FFFF);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .detail-text {
+            color: #333;
+        }
+
+        .detail-text a {
+            color: #9434D4;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s ease;
+        }
+
+        .detail-text a:hover {
+            color: #79FFFF;
+        }
+
+        .footer {
+            background: #f8f8f8;
+            padding: 40px;
+            text-align: center;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .date {
+            color: #999;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .footer-text {
+            color: #666;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .footer-text strong {
+            color: #1a0033;
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                padding: 40px 30px;
+            }
+
+            .content {
+                padding: 40px 30px;
+            }
+
+            .proposal-title {
+                font-size: 32px;
+            }
+
+            .proposal-subtitle {
+                font-size: 16px;
+            }
+
+            .detail-item {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo-section">
+                <svg class="logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Triángulo principal -->
+                    <polygon points="100,20 180,160 20,160" fill="none" stroke="url(#gradient)" stroke-width="3"/>
+
+                    <!-- Leones/Figuras -->
+                    <circle cx="100" cy="100" r="35" fill="none" stroke="url(#gradient)" stroke-width="2"/>
+                    <circle cx="70" cy="70" r="20" fill="none" stroke="url(#gradient)" stroke-width="1.5"/>
+                    <circle cx="130" cy="70" r="20" fill="none" stroke="url(#gradient)" stroke-width="1.5"/>
+
+                    <!-- Gradiente -->
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#9434D4;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#79FFFF;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="company-name">OPSYN</div>
+                <div class="company-tagline">somos una idea, somos un proyecto, somos la solución para vos</div>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <h1 class="proposal-title">Propuesta Integral<br>Deli-Gastro</h1>
+            <p class="proposal-subtitle">Plataforma de Operación + IA + Analytics</p>
+
+            <div class="divider"></div>
+
+            <div class="details">
+                <div class="detail-item">
+                    <div class="detail-icon">✉</div>
+                    <div class="detail-text">
+                        <a href="mailto:opsyn.soluciones@gmail.com">opsyn.soluciones@gmail.com</a>
+                    </div>
+                </div>
+
+                <div class="detail-item">
+                    <div class="detail-icon">📱</div>
+                    <div class="detail-text">
+                        <a href="tel:+541156194690">+54 9 1156194690</a>
+                    </div>
+                </div>
+
+                <div class="detail-item">
+                    <div class="detail-icon">🌐</div>
+                    <div class="detail-text">
+                        <strong>Buenos Aires, Argentina</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="date">Propuesta Personalizada - Octubre 2026</div>
+            <div class="footer-text">
+                <strong>Solución integral para delivery y operaciones:</strong><br>
+                3 Portales sincronizados • IA automática • Analytics incluido • Landing page + Web de pedidos
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,7 +1,11 @@
 <!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
 <!-- END:nextjs-agent-rules -->
 
 ---
@@ -67,7 +71,7 @@ Todas las skills están en `./Skills/`. Leer el SKILL.md correspondiente antes d
 **Fuentes:** Manrope (títulos/display) + Inter (cuerpo/labels) — cargadas con `next/font` en `layout.tsx`
 
 **Reglas absolutas:**
-1. NUNCA dark mode (clases `dark:` prohibidas)
+1. Tema claro/oscuro global, **oscuro por defecto** (`<html data-theme>`, `src/lib/theme/`). Sin clases `dark:`: los colores salen de los tokens `--app-*` de `globals.css`; los neutros de Tailwind se remapean ahí. Colores nuevos → token, no hex fijo.
 2. NUNCA emojis como íconos estructurales → usar Lucide React
 3. SIEMPRE `aria-label` en botones icon-only
 4. NUNCA `<button>` anidado dentro de `<Link>`

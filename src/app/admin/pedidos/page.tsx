@@ -1,11 +1,14 @@
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { listOrders } from "@/lib/orders-server";
+import { formatMoney, formatOrderId } from "@/lib/orders";
 import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/lib/buttonClasses";
 import { cn } from "@/lib/cn";
+import type { OrderStatus } from "@/types/database";
 
 const STATUS_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"> = {
   Finalizados:      "green",
@@ -15,27 +18,30 @@ const STATUS_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"
   "En Camino":      "orange",
 };
 
-function formatId(uuid: string) {
-  return `#${uuid.slice(0, 8).toUpperCase()}`;
-}
+const FILTERS: ReadonlyArray<{ label: string; value: OrderStatus | "todos" }> = [
+  { label: "Todos", value: "todos" },
+  { label: "Recibidos", value: "Recibidos" },
+  { label: "En preparación", value: "En Preparación" },
+  { label: "En camino", value: "En Camino" },
+  { label: "Finalizados", value: "Finalizados" },
+  { label: "Cancelados", value: "Cancelado" },
+];
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("es-AR", {
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("es-AR", {
     day: "2-digit",
     month: "2-digit",
-    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
-export default async function PedidosPage() {
-  const supabase = createAdminClient();
-  const { data: orders } = await supabase
-    .from("orders")
-    .select("id, client_id, status, items_desc, total, created_at")
-    .order("created_at", { ascending: false })
-    .limit(200);
+export default async function PedidosPage({ searchParams }: { searchParams: Promise<{ estado?: string }> }) {
+  const { estado } = await searchParams;
+  const filter = FILTERS.find((f) => f.value === estado)?.value ?? "todos";
 
-  const pedidos = orders ?? [];
+  const all = await listOrders(createAdminClient(), { limit: 200 });
+  const pedidos = filter === "todos" ? all : all.filter((o) => o.status === filter);
 
   return (
     <div className="space-y-6">
@@ -50,11 +56,29 @@ export default async function PedidosPage() {
         </div>
       </div>
 
+      <nav aria-label="Filtrar por estado" className="flex flex-wrap gap-2">
+        {FILTERS.map((f) => (
+          <Link
+            key={f.value}
+            href={f.value === "todos" ? "/admin/pedidos" : `/admin/pedidos?estado=${encodeURIComponent(f.value)}`}
+            aria-current={filter === f.value ? "page" : undefined}
+            className={cn(
+              "px-4 py-2 rounded-full text-xs font-bold transition-all",
+              filter === f.value
+                ? "bg-brand-orange text-white shadow-[0_3px_8px_rgba(124,58,237,0.3)]"
+                : "neumorphic text-gray-600 neumorphic-hover",
+            )}
+          >
+            {f.label}
+          </Link>
+        ))}
+      </nav>
+
       {pedidos.length === 0 ? (
         <div className="neumorphic rounded-2xl p-10 text-center">
-          <p className="text-gray-500 text-sm font-medium">No hay pedidos aún</p>
+          <p className="text-gray-500 text-sm font-medium">No hay pedidos para mostrar</p>
           <p className="text-gray-400 text-xs mt-1">
-            Los pedidos creados desde el tablero aparecerán aquí.
+            Los pedidos de los clientes y los creados desde el tablero aparecerán aquí.
           </p>
         </div>
       ) : (
@@ -79,21 +103,19 @@ export default async function PedidosPage() {
                     className="border-b border-gray-100 hover:bg-white/30 transition-colors"
                   >
                     <td className="px-5 py-4 font-bold text-sm font-mono text-gray-700">
-                      {formatId(pedido.id)}
+                      {formatOrderId(pedido.id)}
                     </td>
-                    <td className="px-5 py-4 text-sm text-gray-500">
-                      {formatDate(pedido.created_at)}
+                    <td className="px-5 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {formatDateTime(pedido.created_at)}
                     </td>
                     <td className="px-5 py-4 text-sm font-medium text-gray-600">
-                      {pedido.client_id
-                        ? pedido.client_id.slice(0, 8).toUpperCase()
-                        : "Anónimo"}
+                      {pedido.client_name}
                     </td>
-                    <td className="px-5 py-4 text-sm text-gray-600 max-w-[220px] truncate">
+                    <td className="px-5 py-4 text-sm text-gray-600 max-w-[260px] truncate">
                       {pedido.items_desc}
                     </td>
                     <td className="px-5 py-4 text-sm font-bold text-brand-orange">
-                      ${Number(pedido.total).toLocaleString("es-AR")}
+                      {formatMoney(pedido.total)}
                     </td>
                     <td className="px-5 py-4">
                       <Badge tone={STATUS_TONE[pedido.status] ?? "blue"}>

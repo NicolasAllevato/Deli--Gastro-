@@ -426,7 +426,7 @@ export default function ConfiguracionPage() {
           role="tabpanel"
           id={`tabpanel-${activeTab}`}
           aria-labelledby={`tab-${activeTab}`}
-          className="neumorphic rounded-2xl p-5 animate-in fade-in duration-150"
+          className="neumorphic rounded-2xl p-5 animate-rise-in"
         >
           {activeTab === "general" && (
             <TabGeneral config={config} onChange={handleChange} />

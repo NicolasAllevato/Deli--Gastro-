@@ -1,0 +1,15 @@
+{
+  "name": "encuestas-cron",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev --test-scheduled",
+    "typecheck": "tsc --noEmit",
+    "test": "node --no-warnings --test src/*.test.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260921.1",
+    "typescript": "^5.7.0",
+    "wrangler": "4.136.0"
+  }
+}

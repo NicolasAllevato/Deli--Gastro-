@@ -1,58 +1,91 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { createClient } from "@/utils/supabase/server";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { requireRole, requireAnyRole, isAuthorizationError } from "@/lib/auth/requireRole";
+import { courierDisplayName } from "@/lib/auth/courier";
+import { canTransition } from "@/lib/orders";
+import { courierMayPatch, stagePatch, type StagePatch } from "@/lib/tracking";
+import { notifyOrderEvent, type OrderNotice } from "@/lib/whatsapp/notify";
+import { awardPointsForOrder, listOrders } from "@/lib/orders-server";
+import { settleCancellation } from "@/lib/orders-create";
 import type { OrderStatus } from "@/types/database";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
 ];
 
-async function requireAuth(): Promise<NextResponse | null> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
-  return null;
+// Esta API es la del personal (admin y repartidor). Los pedidos que hace un
+// cliente desde su portal viven en /api/client/orders, donde se valida la
+// propiedad del pedido contra `clients.user_id` y los precios se recalculan
+// en el servidor.
+
+const createOrderSchema = z.object({
+  items_desc: z.string().trim().min(1, "items_desc es requerido").max(2000),
+  total: z.number().finite().nonnegative(),
+  client_id: z.string().uuid().nullish(),
+});
+
+const updateOrderSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(VALID_STATUSES as [OrderStatus, ...OrderStatus[]]).optional(),
+    courier_name: z.string().trim().min(1).max(60).nullable().optional(),
+    picked_up: z.literal(true).optional(),
+  })
+  .refine((v) => v.status !== undefined || v.courier_name !== undefined || v.picked_up === true, {
+    message: "Indicá status, courier_name o picked_up",
+  });
+
+function zodErrorMessage(error: z.ZodError): string {
+  return error.issues.map((issue) => issue.message).join("; ");
 }
 
 export async function GET(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 200, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const denied = await requireAuth();
-  if (denied) return denied;
+
+  const auth = await requireAnyRole(["admin", "repartidor"]);
+  if (isAuthorizationError(auth)) return auth.error;
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .select("id, client_id, status, items_desc, total, created_at")
-    .neq("status", "Cancelado")
-    .order("created_at", { ascending: false })
-    .limit(100);
+  // El repartidor sólo ve lo que tiene que entregar.
+  const orders =
+    auth.role === "repartidor"
+      ? await listOrders(supabase, { statuses: ["En Camino"] })
+      : await listOrders(supabase, { excludeCancelled: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json(orders);
 }
 
 export async function POST(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 10, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const denied = await requireAuth();
-  if (denied) return denied;
 
-  const body = await req.json() as { items_desc?: string; total?: number; client_id?: string };
+  const auth = await requireRole("admin");
+  if (isAuthorizationError(auth)) return auth.error;
 
-  if (!body.items_desc || body.total == null) {
-    return NextResponse.json({ error: "items_desc y total son requeridos" }, { status: 400 });
+  let rawBody: unknown;
+  try {
+    rawBody = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Body inválido." }, { status: 400 });
   }
+
+  const parsed = createOrderSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
+  }
+  const body = parsed.data;
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
     .insert({
       items_desc: body.items_desc,
-      total: Number(body.total),
+      total: body.total,
       client_id: body.client_id ?? null,
     })
     .select()
@@ -63,26 +96,112 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
+  if (!(await rateLimit(getClientIp(req), 60, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const denied = await requireAuth();
-  if (denied) return denied;
 
-  const body = await req.json() as { id?: string; status?: OrderStatus };
+  const auth = await requireAnyRole(["admin", "repartidor"]);
+  if (isAuthorizationError(auth)) return auth.error;
 
-  if (!body.id || !body.status || !VALID_STATUSES.includes(body.status)) {
-    return NextResponse.json({ error: "id y status válido son requeridos" }, { status: 400 });
+  let rawBody: unknown;
+  try {
+    rawBody = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Body inválido." }, { status: 400 });
   }
 
+  const parsed = updateOrderSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
+  }
+  const body = parsed.data;
+
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  const { data: current, error: readError } = await supabase
     .from("orders")
-    .update({ status: body.status })
+    .select("*")
     .eq("id", body.id)
-    .select()
-    .single();
+    .maybeSingle();
+
+  if (readError) return NextResponse.json({ error: readError.message }, { status: 500 });
+  if (!current) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 });
+
+  const courierName = courierDisplayName(auth.user);
+
+  if (auth.role === "repartidor") {
+    if (!courierMayPatch(current, courierName, body)) {
+      return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
+    }
+  } else {
+    if (body.status !== undefined && !canTransition(current.status, body.status)) {
+      return NextResponse.json(
+        { error: `Transición inválida: ${current.status} → ${body.status}` },
+        { status: 409 },
+      );
+    }
+    const assignable = current.status === "En Preparación" || current.status === "En Camino";
+    if ((body.courier_name !== undefined || body.picked_up) && !assignable) {
+      return NextResponse.json(
+        { error: "Solo se asigna repartidor a pedidos en preparación o en camino." },
+        { status: 409 },
+      );
+    }
+  }
+  if (body.picked_up && current.status !== "En Camino") {
+    return NextResponse.json({ error: "El pedido todavía no está en camino." }, { status: 409 });
+  }
+
+  const patch: { status?: OrderStatus; courier_name?: string | null; picked_up_at?: string } & StagePatch = {};
+  if (body.picked_up && !current.picked_up_at) patch.picked_up_at = new Date().toISOString();
+  if (body.status !== undefined) {
+    patch.status = body.status;
+    Object.assign(patch, stagePatch(body.status));
+  }
+  if (body.courier_name !== undefined) patch.courier_name = body.courier_name;
+  // Si entrega un repartidor que no se había asignado, queda registrado.
+  if (auth.role === "repartidor" && body.status === "Finalizados" && current.courier_name === null) {
+    patch.courier_name = courierName;
+  }
+
+  // Update condicional: solo aplica si el pedido sigue como lo leímos. Así un doble clic o dos
+  // personas a la vez no entregan dos veces (puntos y avisos duplicados) ni toman el mismo pedido.
+  let update = supabase.from("orders").update(patch).eq("id", body.id).eq("status", current.status);
+  if (patch.courier_name !== undefined) {
+    update = current.courier_name === null ? update.is("courier_name", null) : update.eq("courier_name", current.courier_name);
+  }
+  const { data, error } = await update.select().maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "El pedido cambió mientras lo editabas. Actualizá e intentá de nuevo." }, { status: 409 });
+
+  // Bitácora: no debe tumbar el cambio de estado si falla.
+  const events: Array<{ event: string; detail?: string }> = [];
+  if (patch.status) events.push({ event: patch.status });
+  if (patch.picked_up_at) events.push({ event: "picked_up" });
+  if (patch.courier_name && patch.courier_name !== current.courier_name) {
+    events.push({ event: "assigned", detail: patch.courier_name });
+  }
+  if (events.length > 0) {
+    await supabase
+      .from("order_events")
+      .insert(events.map((e) => ({ order_id: data.id, actor: auth.role, ...e })));
+  }
+
+  const notice = patch.status && patch.status !== "Cancelado" && patch.status !== "Recibidos" ? patch.status : null;
+  if (notice) after(() => notifyOrderEvent(supabase, data.id, notice as OrderNotice));
+
+  // Un pedido cancelado devuelve los puntos canjeados y, si se pagó online, el pago (idempotente).
+  if (patch.status === "Cancelado") await settleCancellation(supabase, data.id);
+
+  if (patch.status === "Finalizados") {
+    await awardPointsForOrder(supabase, {
+      id: data.id,
+      client_id: data.client_id,
+      total: Number(data.total),
+      items_desc: data.items_desc,
+      points_earned: data.points_earned,
+    });
+  }
+
   return NextResponse.json(data);
 }

@@ -1,3 +1,8 @@
+-- ⚠️ OBSOLETO — este archivo NO refleja el schema real aplicado en producción.
+-- La fuente de verdad son las migraciones en `supabase/migrations/` (001, 002, 003),
+-- confirmadas contra la base real vía introspección el 2026-08-27/28.
+-- Este archivo se conserva solo como referencia histórica; no ejecutar.
+
 -- Habilitar extensión pgvector para el chatbot RAG
 create extension if not exists vector;
 
