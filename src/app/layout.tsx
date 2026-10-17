@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Manrope, Inter } from "next/font/google";
 import "./globals.css";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -40,6 +41,7 @@ export default function RootLayout({
         {children}
         <CookieNotice />
         <DemoBanner />
+        <Analytics />
       </body>
     </html>
   );
