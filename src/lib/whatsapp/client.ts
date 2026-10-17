@@ -1,6 +1,7 @@
 import type { MetaTemplatePayload } from "./templates.ts";
 
-const GRAPH_URL = "https://graph.facebook.com/v21.0";
+// v21.0 se da de baja el 21/01/2027; v26.0 es la vigente (julio 2026).
+const GRAPH_URL = "https://graph.facebook.com/v26.0";
 const REQUEST_TIMEOUT_MS = 10_000;
 
 export interface WhatsAppCredentials {
@@ -24,6 +25,11 @@ export interface PhoneInfo {
   display_phone_number: string;
   verified_name: string;
   quality_rating?: string;
+}
+
+export interface WabaInfo {
+  id: string;
+  name?: string;
 }
 
 export interface TemplateInfo {
@@ -110,6 +116,29 @@ export function createWhatsAppClient(creds: WhatsAppCredentials, fetchImpl: type
 
     getPhoneInfo: () =>
       call<PhoneInfo>(`${GRAPH_URL}/${creds.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`),
+
+    /** Datos de la cuenta de WhatsApp Business: confirma que el WABA ID y el token coinciden. */
+    getWabaInfo: () => call<WabaInfo>(`${GRAPH_URL}/${requireWaba()}?fields=id,name`),
+
+    /** ¿La app recibe los eventos de la cuenta? Sin esto el webhook se verifica pero no llegan mensajes. */
+    async isAppSubscribed(): Promise<boolean> {
+      const json = await call<{ data?: unknown[] }>(`${GRAPH_URL}/${requireWaba()}/subscribed_apps`);
+      return (json.data ?? []).length > 0;
+    },
+
+    /** Suscribe la app (la del token) a la cuenta para recibir mensajes en el webhook. */
+    subscribeApp: () =>
+      call<{ success?: boolean }>(`${GRAPH_URL}/${requireWaba()}/subscribed_apps`, { method: "POST" }),
+
+    /** Registra el número en la Cloud API con el PIN de verificación en dos pasos (6 dígitos). */
+    async registerPhone(pin: string): Promise<void> {
+      if (!/^\d{6}$/.test(pin)) throw new WhatsAppApiError(400, "El PIN tiene que ser de 6 dígitos.");
+      await call(`${GRAPH_URL}/${creds.phoneNumberId}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", pin }),
+      });
+    },
 
     /** Descarga un archivo recibido (p. ej. un audio), rechazando los que superan `maxBytes`. */
     async downloadMedia(mediaId: string, maxBytes: number): Promise<DownloadedMedia> {

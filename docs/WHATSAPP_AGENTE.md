@@ -47,6 +47,11 @@ La guía paso a paso está en `admin/whatsapp`. Resumen: app de Meta con el prod
 método de pago en WhatsApp Manager (lo paga el dueño), token permanente de un usuario del
 sistema, y en Meta cargar la URL `https://TU-DOMINIO/api/whatsapp/webhook` con el token de
 verificación y suscribirse al campo `messages`. Meta solo acepta URLs públicas con HTTPS.
+Después, en la sección "Vinculación con Meta": **Registrar número** (PIN de 6 dígitos, una vez),
+**Suscribir app** (`POST /{WABA}/subscribed_apps`; sin esto el webhook se verifica pero no llegan
+mensajes) y **Revisar vinculación** hasta ver número, cuenta y suscripción en verde. El paso a
+paso completo y los errores frecuentes están en el skill `.claude/skills/whatsapp-vinculacion-meta`.
+Graph API: `v26.0` (`src/lib/whatsapp/client.ts`).
 
 ### 4. Plantillas
 

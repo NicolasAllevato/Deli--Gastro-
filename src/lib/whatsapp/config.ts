@@ -67,6 +67,7 @@ export function canReceive(s: WhatsAppSettings): boolean {
 
 /** Plantillas "creadas" en el demo (en memoria, como el resto de los datos de ejemplo). */
 const demoTemplates = new Map<string, TemplateInfo>();
+let demoSubscribed = false;
 
 /** Cliente simulado del modo demo: no sale a internet ni gasta mensajes de Meta. */
 function createDemoClient(): WhatsAppClient {
@@ -82,6 +83,15 @@ function createDemoClient(): WhatsAppClient {
       return { id: `demo-${payload.name}`, status: "APPROVED", category: payload.category };
     },
     getPhoneInfo: async () => ({ display_phone_number: "+54 9 11 0000-0000", verified_name: "Deli-Gastro (demo)" }),
+    getWabaInfo: async () => ({ id: "demo-waba", name: "Deli-Gastro (demo)" }),
+    isAppSubscribed: async () => demoSubscribed,
+    subscribeApp: async () => {
+      demoSubscribed = true;
+      return { success: true };
+    },
+    registerPhone: async (pin) => {
+      if (!/^\d{6}$/.test(pin)) throw new Error("El PIN tiene que ser de 6 dígitos.");
+    },
     downloadMedia: async () => {
       throw new Error("El modo demo no descarga audios.");
     },

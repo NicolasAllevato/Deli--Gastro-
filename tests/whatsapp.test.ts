@@ -184,6 +184,53 @@ describe("createWhatsAppClient", () => {
     });
   });
 
+  it("usa la versión v26.0 de la Graph API", async () => {
+    const { impl, calls } = fakeFetch({ messages: [{ id: "wamid.V" }] });
+    await createWhatsAppClient(cfg, impl).sendText("549", "Hola");
+    assert.match(calls[0]!.url, /^https:\/\/graph\.facebook\.com\/v26\.0\//);
+  });
+
+  it("getWabaInfo consulta la cuenta de WhatsApp Business", async () => {
+    const { impl, calls } = fakeFetch({ id: "WABA", name: "Deli Gastro" });
+    const info = await createWhatsAppClient({ ...cfg, wabaId: "WABA" }, impl).getWabaInfo();
+    assert.equal(info.name, "Deli Gastro");
+    assert.match(calls[0]!.url, /\/WABA\?fields=id,name$/);
+  });
+
+  it("isAppSubscribed indica si la app recibe los eventos de la cuenta", async () => {
+    const yes = fakeFetch({ data: [{ whatsapp_business_api_data: { id: "APP" } }] });
+    assert.equal(await createWhatsAppClient({ ...cfg, wabaId: "WABA" }, yes.impl).isAppSubscribed(), true);
+    assert.match(yes.calls[0]!.url, /\/WABA\/subscribed_apps$/);
+
+    const no = fakeFetch({ data: [] });
+    assert.equal(await createWhatsAppClient({ ...cfg, wabaId: "WABA" }, no.impl).isAppSubscribed(), false);
+  });
+
+  it("subscribeApp suscribe la app a la cuenta con un POST", async () => {
+    const { impl, calls } = fakeFetch({ success: true });
+    await createWhatsAppClient({ ...cfg, wabaId: "WABA" }, impl).subscribeApp();
+    assert.match(calls[0]!.url, /\/WABA\/subscribed_apps$/);
+    assert.equal(calls[0]!.init?.method, "POST");
+  });
+
+  it("registerPhone registra el número con su PIN de 6 dígitos", async () => {
+    const { impl, calls } = fakeFetch({ success: true });
+    await createWhatsAppClient(cfg, impl).registerPhone("123456");
+    assert.match(calls[0]!.url, /\/PNID\/register$/);
+    assert.deepEqual(JSON.parse(String(calls[0]!.init?.body)), { messaging_product: "whatsapp", pin: "123456" });
+  });
+
+  it("registerPhone rechaza un PIN que no sea de 6 dígitos sin llamar a Meta", async () => {
+    const { impl, calls } = fakeFetch({ success: true });
+    await assert.rejects(createWhatsAppClient(cfg, impl).registerPhone("12ab"), /6 dígitos/);
+    assert.equal(calls.length, 0);
+  });
+
+  it("las operaciones de la cuenta exigen el WABA ID", async () => {
+    const { impl } = fakeFetch({});
+    await assert.rejects(createWhatsAppClient(cfg, impl).isAppSubscribed(), /WABA ID/);
+  });
+
   it("sendTemplate arma la plantilla con idioma y variables", async () => {
     const { impl, calls } = fakeFetch({ messages: [{ id: "wamid.T" }] });
     await createWhatsAppClient(cfg, impl).sendTemplate("549", "confirmacion_pedido", "es_AR", ["Juan", "#A1B2"]);
