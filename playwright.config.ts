@@ -25,7 +25,7 @@ export default defineConfig({
   webServer: {
     command: "npm run demo",
     url: `${BASE_URL}/login`,
-    env: { DEMO_PORT: String(PORT) },
+    env: { DEMO_PORT: String(PORT), E2E_SIN_RATE_LIMIT: "1" },
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },

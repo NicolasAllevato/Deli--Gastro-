@@ -69,6 +69,10 @@ export async function rateLimit(
   // (200/min) no consume el cupo de las escrituras (10/min) de la misma IP.
   const key = `${identifier}|${max}|${windowMs}`;
 
+  // E2E: toda la suite sale de 127.0.0.1 y agota el cupo de escrituras. Solo en modo demo
+  // (datos en memoria), nunca contra Supabase real.
+  if (isDemoMode() && process.env.E2E_SIN_RATE_LIMIT === "1") return true;
+
   if (!upstashRedis || isDemoMode()) {
     return rateLimitMemory(key, max, windowMs);
   }
