@@ -20,6 +20,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Opsyn Dely",
   description: "Opsyn Dely — delivery inteligente de Opsyn Soluciones: pedidos, WhatsApp con IA y fidelización.",
+  applicationName: "Opsyn Dely",
+  authors: [{ name: "Opsyn Soluciones" }],
+  creator: "Opsyn Soluciones",
+  publisher: "Opsyn Soluciones",
 };
 
 export default function RootLayout({

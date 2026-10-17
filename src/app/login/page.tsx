@@ -7,6 +7,7 @@ import { createClient } from "@/utils/supabase/client";
 import { isDemoMode } from "@/lib/demo/mode";
 import { DemoAccessPanel } from "@/components/demo/DemoAccessPanel";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Copyright } from "@/components/Copyright";
 
 function LoginContent() {
   const router = useRouter();
@@ -143,6 +144,8 @@ function LoginContent() {
           </form>
         </div>
         )}
+
+        <Copyright className="mt-6" />
 
       </div>
     </div>

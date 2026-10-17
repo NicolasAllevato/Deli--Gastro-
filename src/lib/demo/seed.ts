@@ -34,7 +34,8 @@ const G = { cat: 1, prod: 2, client: 3, order: 4, ledger: 5, review: 6, zone: 7 
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
-const img = (seed: string) => `https://picsum.photos/seed/${seed}/600/400`;
+/** Fotos de muestra generadas con Gemini (`scripts/generar-fotos-demo.mjs`). */
+const img = (seed: string) => `/demo/productos/${seed}.jpg`;
 
 const CATEGORIES = [
   { name: "Hamburguesas",    description: "Hamburguesas artesanales 100% Angus", points: 1 },

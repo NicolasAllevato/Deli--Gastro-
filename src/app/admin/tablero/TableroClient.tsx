@@ -20,6 +20,9 @@ interface Props {
 
 const DEMO_POLL_MS = 5000;
 const MAX_FINISHED_SHOWN = 10;
+/** Margen inferior (padding del contenedor) que deja el tablero al ocupar el alto. */
+const BOARD_BOTTOM_GAP = 16;
+const BOARD_MIN_HEIGHT = 416;
 
 function isToday(iso: string): boolean {
   const d = new Date(iso);
@@ -36,6 +39,23 @@ export default function TableroClient({ initialOrders }: Props) {
   const [newOrderError, setNewOrderError] = useState<string | null>(null);
   const [couriers, setCouriers] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardHeight, setBoardHeight] = useState<number | null>(null);
+
+  // En escritorio el tablero ocupa todo el alto que queda visible debajo de él.
+  useEffect(() => {
+    const measure = () => {
+      const el = boardRef.current;
+      if (!el || window.innerWidth < 1024) return setBoardHeight(null);
+      const scroller = el.closest<HTMLElement>(".overflow-y-auto");
+      const offset = el.getBoundingClientRect().top + (scroller?.scrollTop ?? 0) - (scroller?.getBoundingClientRect().top ?? 0);
+      const available = (scroller?.clientHeight ?? window.innerHeight) - offset - BOARD_BOTTOM_GAP;
+      setBoardHeight(Math.max(BOARD_MIN_HEIGHT, Math.floor(available)));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
   const [mobileStatus, setMobileStatus] = useState<OrderStatus>("Recibidos");
   const busyRef = useRef<string | null>(null);
 
@@ -275,7 +295,11 @@ export default function TableroClient({ initialOrders }: Props) {
           })}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 lg:h-[calc(100dvh-18rem)] lg:min-h-[26rem]">
+        <div
+          ref={boardRef}
+          style={boardHeight ? { height: boardHeight } : undefined}
+          className="grid grid-cols-1 lg:grid-cols-4 gap-3 lg:min-h-[26rem]"
+        >
           {COLUMNS.map((column) => (
             <KanbanColumn
               key={column.status}

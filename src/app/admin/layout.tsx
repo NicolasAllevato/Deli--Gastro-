@@ -9,6 +9,7 @@ import { SignOutButton } from "@/components/ui/SignOutButton";
 import { cn } from "@/lib/cn";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Copyright } from "@/components/Copyright";
 import { NAV_SECTIONS, findSection, isTabActive } from "./_nav";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -104,6 +105,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </div>
             <p className="text-[10px] text-gray-500 mt-1.5">66% utilizado</p>
           </div>
+          <Copyright className="mt-3 px-1" />
         </div>
       </aside>
 

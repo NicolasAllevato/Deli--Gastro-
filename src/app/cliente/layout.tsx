@@ -4,6 +4,7 @@ import { Menu, MessageCircle } from "lucide-react";
 import { ClienteBottomNav } from "./_components/ClienteBottomNav";
 import { CartProvider } from "./_components/CartProvider";
 import { CartBar } from "./_components/CartBar";
+import { Copyright } from "@/components/Copyright";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { SignOutButton } from "@/components/ui/SignOutButton";
 
@@ -35,6 +36,7 @@ export default function ClienteLayout({ children }: { children: React.ReactNode 
       <main className="pb-28">
         <div className="max-w-2xl mx-auto">
           {children}
+          <Copyright className="mt-8 px-4" />
         </div>
       </main>
 
