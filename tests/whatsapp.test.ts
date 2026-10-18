@@ -5,7 +5,7 @@ import { verifySignature } from "../src/lib/whatsapp/signature.ts";
 import { parseWebhook } from "../src/lib/whatsapp/payload.ts";
 import { normalizePhone, samePhone } from "../src/lib/whatsapp/phone.ts";
 import { maskSecret } from "../src/lib/whatsapp/mask.ts";
-import { createWhatsAppClient, WhatsAppApiError } from "../src/lib/whatsapp/client.ts";
+import { createWhatsAppClient, exchangeCodeForToken, WhatsAppApiError } from "../src/lib/whatsapp/client.ts";
 
 const SECRET = "app-secret";
 const sign = (body: string, secret = SECRET) =>
@@ -182,6 +182,32 @@ describe("createWhatsAppClient", () => {
       type: "text",
       text: { body: "Hola", preview_url: false },
     });
+  });
+
+  it("exchangeCodeForToken canjea el código de Embedded Signup por el token", async () => {
+    const { impl, calls } = fakeFetch({ access_token: "BIZTOKEN" });
+    const token = await exchangeCodeForToken({ appId: "APP", appSecret: "SEC", code: "CODE" }, impl);
+
+    assert.equal(token, "BIZTOKEN");
+    const url = new URL(calls[0]!.url);
+    assert.equal(url.pathname, "/v26.0/oauth/access_token");
+    assert.equal(url.searchParams.get("client_id"), "APP");
+    assert.equal(url.searchParams.get("client_secret"), "SEC");
+    assert.equal(url.searchParams.get("code"), "CODE");
+    assert.equal(url.searchParams.has("redirect_uri"), false);
+  });
+
+  it("exchangeCodeForToken falla con el mensaje de Meta o si no hay token", async () => {
+    const bad = fakeFetch({ error: { message: "Code expired" } }, 400);
+    await assert.rejects(
+      exchangeCodeForToken({ appId: "A", appSecret: "S", code: "C" }, bad.impl),
+      (e: unknown) => e instanceof WhatsAppApiError && e.message === "Code expired",
+    );
+    const empty = fakeFetch({});
+    await assert.rejects(
+      exchangeCodeForToken({ appId: "A", appSecret: "S", code: "C" }, empty.impl),
+      WhatsAppApiError,
+    );
   });
 
   it("usa la versión v26.0 de la Graph API", async () => {

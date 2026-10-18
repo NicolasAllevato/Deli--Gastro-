@@ -156,3 +156,25 @@ export function createWhatsAppClient(creds: WhatsAppCredentials, fetchImpl: type
 }
 
 export type WhatsAppClient = ReturnType<typeof createWhatsAppClient>;
+
+export interface CodeExchange {
+  appId: string;
+  appSecret: string;
+  /** Código que devuelve FB.login en el flujo Embedded Signup (un solo uso, vence en minutos). */
+  code: string;
+}
+
+/** Canjea el código de Embedded Signup por el token de acceso del negocio (flujo SDK JS: sin redirect_uri). */
+export async function exchangeCodeForToken(
+  { appId, appSecret, code }: CodeExchange,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const params = new URLSearchParams({ client_id: appId, client_secret: appSecret, code });
+  const res = await fetchImpl(`${GRAPH_URL}/oauth/access_token?${params}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const json = (await res.json().catch(() => ({}))) as { access_token?: string } & GraphError;
+  if (!res.ok) throw new WhatsAppApiError(res.status, json.error?.message ?? `Error ${res.status} de Meta`);
+  if (!json.access_token) throw new WhatsAppApiError(502, "Meta no devolvió el token de acceso.");
+  return json.access_token;
+}

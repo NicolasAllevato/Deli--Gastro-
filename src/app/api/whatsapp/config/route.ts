@@ -15,6 +15,8 @@ const putSchema = z
     accessToken: field,
     appSecret: field,
     verifyToken: field,
+    appId: field,
+    configId: field,
   })
   .strict();
 
@@ -37,6 +39,8 @@ async function currentState() {
     phoneNumberId: settings.phoneNumberId ?? "",
     wabaId: settings.wabaId ?? "",
     verifyToken: settings.verifyToken ?? "",
+    appId: settings.appId ?? "",
+    configId: settings.configId ?? "",
     accessTokenHint: maskSecret(settings.accessToken),
     appSecretHint: maskSecret(settings.appSecret),
     canSend: canSend(settings),
