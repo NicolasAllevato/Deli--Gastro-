@@ -4,8 +4,8 @@ compatibility_date = "2026-08-27"
 compatibility_flags = ["nodejs_compat"]
 account_id = "53d56863addd21be708a642b540e5990"
 
-# Webhook de Meta: bot.opsyn.app (zona opsyn.app en la misma cuenta). La app web sigue en Vercel.
-routes = [{ pattern = "bot.opsyn.app", custom_domain = true }]
+# Webhook de Meta: bot.<dominio propio> (zona en esta misma cuenta), pendiente de compra.
+# routes = [{ pattern = "bot.<dominio>", custom_domain = true }]
 workers_dev = true
 
 # Corre cerca de Supabase (la base) en vez de cerca de Meta: menos latencia por consulta.
