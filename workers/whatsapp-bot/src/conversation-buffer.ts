@@ -6,6 +6,8 @@ export interface InboundTurn {
   phone: string;
   text: string;
   wamids: string[];
+  /** Audios a transcribir; cada uno aparece en `text` como `[audio:<wamid>]`. */
+  audios: { wamid: string; mediaId: string }[];
   receivedAt: number;
 }
 
@@ -42,7 +44,13 @@ export class ConversationBuffer extends DurableObject<BufferEnv> {
     const turn = combineBatch(batch);
     // Se encola antes de borrar: si falla, la alarma reintenta y el lote no se pierde.
     if (turn.text.length > 0) {
-      await this.env.INBOUND.send({ phone, text: turn.text, wamids: turn.wamids, receivedAt: batch.firstAt ?? Date.now() });
+      await this.env.INBOUND.send({
+        phone,
+        text: turn.text,
+        wamids: turn.wamids,
+        audios: turn.audios,
+        receivedAt: batch.firstAt ?? Date.now(),
+      });
     }
     await this.ctx.storage.delete(BATCH_KEY);
   }

@@ -23,6 +23,8 @@ export interface BufferedMessage {
   /** Hora de llegada en ms. */
   at: number;
   kind: MessageKind;
+  /** Audio todavía sin transcribir: el consumidor lo transcribe y reemplaza `[audio:<wamid>]`. */
+  mediaId?: string;
 }
 
 export interface Batch {
@@ -34,7 +36,12 @@ export interface Batch {
 export interface CombinedTurn {
   text: string;
   wamids: string[];
+  /** Audios pendientes de transcribir, en el orden en que aparecen en `text`. */
+  audios: { wamid: string; mediaId: string }[];
 }
+
+/** Marca que deja un audio sin transcribir dentro del texto combinado. */
+export const audioPlaceholder = (wamid: string): string => `[audio:${wamid}]`;
 
 export function emptyBatch(): Batch {
   return { messages: [], firstAt: null, lastAt: null };
@@ -65,9 +72,13 @@ const KIND_LABEL: Record<MessageKind, string> = { text: "", audio: "[audio] ", l
 
 /** Une el lote en un solo turno para el clasificador y el respondedor. */
 export function combineBatch(batch: Batch): CombinedTurn {
-  const useful = batch.messages.filter((m) => m.text.trim().length > 0);
+  const pending = (m: BufferedMessage) => m.mediaId !== undefined && m.text.trim().length === 0;
+  const useful = batch.messages.filter((m) => pending(m) || m.text.trim().length > 0);
   return {
-    text: useful.map((m) => `${KIND_LABEL[m.kind]}${m.text.trim()}`).join("\n"),
+    text: useful
+      .map((m) => (pending(m) ? audioPlaceholder(m.wamid) : `${KIND_LABEL[m.kind]}${m.text.trim()}`))
+      .join("\n"),
     wamids: batch.messages.map((m) => m.wamid),
+    audios: useful.filter(pending).map((m) => ({ wamid: m.wamid, mediaId: m.mediaId as string })),
   };
 }
