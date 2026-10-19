@@ -1,9 +1,15 @@
 import postgres from "postgres";
 import { verifyChallenge } from "./verify.ts";
+import type { ConversationBuffer, InboundTurn } from "./conversation-buffer.ts";
+
+export { ConversationBuffer } from "./conversation-buffer.ts";
 
 export interface Env {
   DB: Hyperdrive;
   AI: Ai;
+  /** Apilador por conversación (fase 3: el POST del webhook llama a `add`). */
+  BUFFER: DurableObjectNamespace<ConversationBuffer>;
+  INBOUND: Queue<InboundTurn>;
 }
 
 const WEBHOOK_PATH = "/webhook";
@@ -14,7 +20,7 @@ function connect(env: Env) {
 }
 
 async function readSecret(sql: postgres.Sql, key: string): Promise<string | null> {
-  const rows = await sql<{ value: string }[]>`select value from public.integration_secrets where key = ${key}`;
+  const rows = await sql<{ value: string }[]>`select value from public.bot_secrets where key = ${key}`;
   return rows[0]?.value ?? null;
 }
 
