@@ -19,17 +19,19 @@ const securityHeaders = [
   { key: "Referrer-Policy",                   value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy",                value: "camera=(), microphone=(), geolocation=()" },
   { key: "Strict-Transport-Security",         value: "max-age=63072000; includeSubDomains; preload" },
-  { key: "Cross-Origin-Opener-Policy",        value: "same-origin" },
+  // allow-popups: el popup de Facebook Login (Embedded Signup) necesita comunicarse con la página.
+  { key: "Cross-Origin-Opener-Policy",        value: "same-origin-allow-popups" },
   { key: "Cross-Origin-Resource-Policy",      value: "same-site" },
   {
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://va.vercel-scripts.com`,
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://va.vercel-scripts.com https://connect.facebook.net`,
+      "frame-src https://*.facebook.com",
       "style-src 'self' 'unsafe-inline'",
       `img-src 'self' data: blob: https://picsum.photos https://lh3.googleusercontent.com https://*.tile.openstreetmap.org${r2Host ? ` https://${r2Host}` : ""}`,
       "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://va.vercel-scripts.com https://vitals.vercel-insights.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://va.vercel-scripts.com https://vitals.vercel-insights.com https://*.facebook.com https://graph.facebook.com",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",

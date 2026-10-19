@@ -4,11 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Copy, KeyRound, MessageCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
+import { EmbeddedSignup } from "./EmbeddedSignup";
 
 interface State {
   phoneNumberId: string;
   wabaId: string;
   verifyToken: string;
+  appId: string;
+  configId: string;
   accessTokenHint: string;
   appSecretHint: string;
   canSend: boolean;
@@ -77,6 +80,8 @@ export default function WhatsAppPage() {
   const [accessToken, setAccessToken] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [verifyToken, setVerifyToken] = useState("");
+  const [appId, setAppId] = useState("");
+  const [configId, setConfigId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -89,6 +94,8 @@ export default function WhatsAppPage() {
     setPhoneNumberId(next.phoneNumberId);
     setWabaId(next.wabaId);
     setVerifyToken(next.verifyToken);
+    setAppId(next.appId);
+    setConfigId(next.configId);
   }, []);
 
   useEffect(() => {
@@ -107,7 +114,7 @@ export default function WhatsAppPage() {
       const next = await request<State>("/api/whatsapp/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumberId, wabaId, accessToken, appSecret, verifyToken }),
+        body: JSON.stringify({ phoneNumberId, wabaId, accessToken, appSecret, verifyToken, appId, configId }),
       });
       apply(next);
       setAccessToken("");
@@ -181,8 +188,23 @@ export default function WhatsAppPage() {
         <StatusBadge ok={state?.canReceive ?? false} label="Recepción de mensajes (webhook)" />
       </section>
 
+      <EmbeddedSignup
+        appId={state?.appId ?? ""}
+        configId={state?.configId ?? ""}
+        canConnect={Boolean(state?.appSecretHint)}
+        onConnected={(message) => {
+          setError(null);
+          setNotice(message);
+          request<State>("/api/whatsapp/config").then(apply).catch(() => undefined);
+        }}
+        onError={(message) => {
+          setNotice(null);
+          setError(message);
+        }}
+      />
+
       <section className="neumorphic rounded-2xl p-5 space-y-3">
-        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Cómo conectarlo</h2>
+        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Conexión manual (alternativa)</h2>
         <ol className="list-decimal pl-5 space-y-1.5 text-xs text-gray-600">
           {STEPS.map((step) => <li key={step}>{step}</li>)}
         </ol>
@@ -193,6 +215,8 @@ export default function WhatsAppPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Phone Number ID" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} inputMode="numeric" />
           <Field label="WABA ID" value={wabaId} onChange={(e) => setWabaId(e.target.value)} inputMode="numeric" />
+          <Field label="App ID (Meta)" value={appId} onChange={(e) => setAppId(e.target.value)} inputMode="numeric" />
+          <Field label="Config ID (Embedded Signup)" value={configId} onChange={(e) => setConfigId(e.target.value)} inputMode="numeric" />
           <Field
             label="Token de acceso"
             type="password"

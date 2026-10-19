@@ -1,0 +1,8 @@
+name = "dely-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+# Cuenta "Opsyn wallet": ahí está registrado opsyn.app. Demo de Opsyn Dely con subdominio prestado.
+account_id = "cb5cd50825ea15aa62e17db5302bca10"
+workers_dev = false
+
+routes = [{ pattern = "bot-dely.opsyn.app", custom_domain = true }]

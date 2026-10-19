@@ -10,6 +10,9 @@ export interface WhatsAppSettings {
   wabaId: string | null;
   appSecret: string | null;
   verifyToken: string | null;
+  /** App ID y Config ID de Embedded Signup: públicos (los usa el SDK en el navegador). */
+  appId: string | null;
+  configId: string | null;
 }
 
 export type SettingName = keyof WhatsAppSettings;
@@ -21,6 +24,8 @@ const SOURCES: Record<SettingName, { key: string; env: string }> = {
   wabaId: { key: "whatsapp_waba_id", env: "WHATSAPP_WABA_ID" },
   appSecret: { key: "whatsapp_app_secret", env: "WHATSAPP_APP_SECRET" },
   verifyToken: { key: "whatsapp_verify_token", env: "WHATSAPP_VERIFY_TOKEN" },
+  appId: { key: "whatsapp_app_id", env: "WHATSAPP_APP_ID" },
+  configId: { key: "whatsapp_config_id", env: "WHATSAPP_CONFIG_ID" },
 };
 
 const NAMES = Object.keys(SOURCES) as SettingName[];

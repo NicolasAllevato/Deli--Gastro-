@@ -1,0 +1,48 @@
+name = "whatsapp-bot"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+compatibility_flags = ["nodejs_compat"]
+account_id = "53d56863addd21be708a642b540e5990"
+
+# Webhook de Meta: bot.<dominio propio> (zona en esta misma cuenta), pendiente de compra.
+# routes = [{ pattern = "bot.<dominio>", custom_domain = true }]
+workers_dev = true
+
+# Corre cerca de Supabase (la base) en vez de cerca de Meta: menos latencia por consulta.
+[placement]
+mode = "smart"
+
+# Postgres de Supabase por Hyperdrive con el rol `deli_bot` (migración 015).
+# Crear con:  npx wrangler hyperdrive create deli-gastro-db --connection-string="postgres://deli_bot.<ref>:<clave>@<pooler>:6543/postgres"
+# y pegar acá el id que devuelve (el id no es secreto; la cadena de conexión queda solo en Cloudflare).
+[[hyperdrive]]
+binding = "DB"
+id = "5672a541cbee4d299b076bb2bb58946d"
+
+# Workers AI: clasificador, respondedor y transcripción de audios (sin OpenAI).
+[ai]
+binding = "AI"
+
+# Apilador: un Durable Object por teléfono junta la ráfaga (hasta 5 mensajes, 4 s de silencio, 12 s máximo)
+# y encola UN turno en wa-inbound. Ver src/batching.ts.
+[[durable_objects.bindings]]
+name = "BUFFER"
+class_name = "ConversationBuffer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ConversationBuffer"]
+
+[[queues.producers]]
+binding = "INBOUND"
+queue = "wa-inbound"
+
+# Fase 4: el consumidor (clasificador + respondedor) lee los turnos ya agrupados.
+# [[queues.consumers]]
+# queue = "wa-inbound"
+# max_batch_size = 10
+# max_retries = 3
+# dead_letter_queue = "wa-inbound-dlq"
+
+[observability]
+enabled = true

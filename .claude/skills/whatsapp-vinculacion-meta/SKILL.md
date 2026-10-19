@@ -42,7 +42,22 @@ from integration_secrets where key like 'whatsapp%' order by key;
 
 Nunca imprimir ni pegar en el chat el valor del token o del App Secret.
 
-## Paso a paso (lo que hace el dueño en Meta + la app)
+## Conexión con Facebook (Embedded Signup) — camino recomendado
+
+Botón «Conectar con Facebook» en `/admin/whatsapp` (`EmbeddedSignup.tsx` → `POST /api/whatsapp/embedded-signup`).
+El servidor canjea el código (`exchangeCodeForToken`), guarda token + Phone Number ID + WABA, registra el número con el PIN y suscribe la app.
+
+Requisitos en la app de Meta (una sola vez):
+1. Caso de uso WhatsApp, tipo Business. Copiar **App ID** y **App Secret** (Configuración → Básica).
+2. Producto **Facebook Login for Business**: «Login con SDK de JavaScript» = Sí y dominio de la app en «Dominios permitidos para el SDK». Meta exige HTTPS: no funciona desde `http://localhost`.
+3. Crear una configuración de tipo **WhatsApp Embedded Signup** (permisos `whatsapp_business_management` y `whatsapp_business_messaging`) y copiar el **Config ID**.
+4. Cargar App ID, Config ID y App Secret en «Credenciales» (claves `whatsapp_app_id`, `whatsapp_config_id`, `whatsapp_app_secret`).
+5. Webhook: URL `https://DOMINIO/api/whatsapp/webhook` + token de verificación, campo `messages`.
+
+Cabeceras: `next.config.ts` permite `connect.facebook.net` y `*.facebook.com` en la CSP y usa COOP `same-origin-allow-popups` (con `same-origin` el popup de login no puede devolver el resultado).
+En modo desarrollo de la app solo funcionan usuarios con rol en la app; para clientes reales hace falta verificación del negocio y App Review.
+
+## Paso a paso manual (alternativa: lo que hace el dueño en Meta + la app)
 
 1. **App** en Meta for Developers con el producto WhatsApp, asociada al Meta Business del local.
 2. **Pago**: tarjeta en WhatsApp Manager (Meta cobra los mensajes al dueño).
