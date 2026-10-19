@@ -1,15 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { addMessage, combineBatch, emptyBatch, flushAt, isFull, type Batch, type BufferedMessage } from "./batching.ts";
 
-/** Turno listo para el clasificador: un mensaje combinado por conversación. */
-export interface InboundTurn {
-  phone: string;
-  text: string;
-  wamids: string[];
-  /** Audios a transcribir; cada uno aparece en `text` como `[audio:<wamid>]`. */
-  audios: { wamid: string; mediaId: string }[];
-  receivedAt: number;
-}
+import type { InboundTurn } from "./turn-types.ts";
+
+export type { InboundTurn };
 
 export interface BufferEnv {
   INBOUND: Queue<InboundTurn>;

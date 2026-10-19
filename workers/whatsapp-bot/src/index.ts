@@ -4,6 +4,10 @@ import { handleWebhookEvents } from "./entry.ts";
 import { sqlInboundRepo } from "./repo/inbound.ts";
 import { parseWebhook } from "../../../src/lib/whatsapp/payload.ts";
 import { verifySignature } from "../../../src/lib/whatsapp/signature.ts";
+import { processTurn } from "./bot/turn.ts";
+import { audioTranscriber, whatsappClient } from "./bot/channels.ts";
+import { sqlBotRepo } from "./repo/bot.ts";
+import type { RunModel } from "./ai/models.ts";
 import type { BufferedMessage } from "./batching.ts";
 import type { ConversationBuffer, InboundTurn } from "./conversation-buffer.ts";
 
@@ -15,6 +19,8 @@ export interface Env {
   /** Apilador por conversación: un Durable Object por teléfono. */
   BUFFER: DurableObjectNamespace<ConversationBuffer>;
   INBOUND: Queue<InboundTurn>;
+  /** URL pública de la app (links permitidos en las respuestas del bot). */
+  APP_URL: string;
 }
 
 const WEBHOOK_PATH = "/webhook";
@@ -26,6 +32,7 @@ interface BotSecrets {
   appSecret: string | null;
   verifyToken: string | null;
   phoneNumberId: string | null;
+  accessToken: string | null;
 }
 
 /** Caché por instancia: evita una consulta por mensaje; un cambio en el panel se ve en ≤ 60 s. */
@@ -40,12 +47,13 @@ async function loadSecrets(sql: postgres.Sql): Promise<BotSecrets> {
   if (secretsCache && Date.now() - secretsCache.at < SECRETS_TTL_MS) return secretsCache.value;
   const rows = await sql<{ key: string; value: string }[]>`
     select key, value from public.bot_secrets
-    where key in ('whatsapp_app_secret', 'whatsapp_verify_token', 'whatsapp_phone_number_id')`;
+    where key in ('whatsapp_app_secret', 'whatsapp_verify_token', 'whatsapp_phone_number_id', 'whatsapp_access_token')`;
   const get = (key: string) => rows.find((r) => r.key === key)?.value ?? null;
   const value = {
     appSecret: get("whatsapp_app_secret"),
     verifyToken: get("whatsapp_verify_token"),
     phoneNumberId: get("whatsapp_phone_number_id"),
+    accessToken: get("whatsapp_access_token"),
   };
   secretsCache = { value, at: Date.now() };
   return value;
@@ -120,7 +128,47 @@ async function receiveWebhook(req: Request, env: Env, ctx: ExecutionContext): Pr
   return new Response("OK");
 }
 
+/** Consumidor de `wa-inbound` (fase 4): un turno agrupado → una respuesta. */
+async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
+  const sql = connect(env);
+  try {
+    const secrets = await loadSecrets(sql);
+    if (!secrets.accessToken || !secrets.phoneNumberId) {
+      console.error("[whatsapp-bot] faltan el token o el phone number id: los turnos quedan para reintentar");
+      batch.retryAll({ delaySeconds: 60 });
+      return;
+    }
+    const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
+    const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
+    const deps = {
+      repo: sqlBotRepo(sql),
+      run,
+      transcribe: audioTranscriber(env.AI, wa),
+      send: (phone: string, text: string) => wa.sendText(phone, text),
+      appUrl: env.APP_URL,
+      log: (message: string, detail?: unknown) => console.error(message, detail),
+    };
+    // En orden: dos turnos de la misma conversación nunca se responden a la vez dentro del lote.
+    for (const message of batch.messages) {
+      try {
+        const outcome = await processTurn(message.body, deps);
+        console.log("[whatsapp-bot] turno", outcome);
+        message.ack();
+      } catch (error: unknown) {
+        console.error("[whatsapp-bot] turno con error", error instanceof Error ? error.message : error);
+        message.retry({ delaySeconds: 10 });
+      }
+    }
+  } finally {
+    await sql.end({ timeout: 1 });
+  }
+}
+
 export default {
+  async queue(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
+    await consumeTurns(batch, env);
+  },
+
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
@@ -130,4 +178,4 @@ export default {
 
     return new Response("Not found", { status: 404 });
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<Env, InboundTurn>;
