@@ -72,6 +72,16 @@ describe("apilador: unir el lote en un solo turno", () => {
     assert.equal(combineBatch(batch).text, "[audio] dos empanadas\n[ubicación] -34.6,-58.4");
   });
 
+  it("deja una marca para los audios sin transcribir y los lista aparte", () => {
+    const batch = [
+      msg("a", "quiero pedir", 1),
+      { wamid: "b", text: "", at: 2, kind: "audio" as const, mediaId: "media-1" },
+    ].reduce(addMessage, emptyBatch());
+    const turn = combineBatch(batch);
+    assert.equal(turn.text, "quiero pedir\n[audio:b]");
+    assert.deepEqual(turn.audios, [{ wamid: "b", mediaId: "media-1" }]);
+  });
+
   it("ignora mensajes vacíos", () => {
     const batch = [msg("a", "  ", 1), msg("b", "hola", 2)].reduce(addMessage, emptyBatch());
     assert.equal(combineBatch(batch).text, "hola");

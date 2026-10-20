@@ -146,6 +146,16 @@ se separa la parte pura (cálculo de totales, validación) de la de base.
 | Token de WhatsApp, App Secret, verify token | Se siguen leyendo de `integration_secrets` (los carga el panel / Embedded Signup); caché 60 s |
 | Mercado Pago | Igual que hoy, desde `integration_secrets` |
 
+## Estado (2026-10-19)
+| Fase | Estado |
+|---|---|
+| 1. Infra | Hecha: rol `deli_bot` (015), vista `bot_secrets` (016), Hyperdrive `deli-gastro-db`, Worker desplegado. |
+| 2. Repositorio | Hecha en forma acotada: `repo/inbound.ts` y `repo/bot.ts` (SQL) con repos en memoria en los tests. |
+| 3. Entrada | Hecha: POST firmado, dedupe por `wamid`, traspaso a humano, estados; apilador (Durable Object, 4 s / 12 s / 5 mensajes). |
+| 4. Bots | Hecha: clasificador + respondedor con herramientas por intención, guardrails de entrada y salida, audios con Whisper, ALTA/BAJA, límites. Los pedidos se derivan a la web hasta la fase 5. |
+| 5. Pedidos y pagos | Pendiente. |
+| 6. Corte | Pendiente: Meta sigue apuntando al webhook de Next. Demo: `bot-dely.opsyn.app` (reenvío desde la cuenta Opsyn wallet). |
+
 ## Fases
 1. **Infra** (sin tocar el bot actual): rol `deli_bot` con permisos mínimos (migración 015), Hyperdrive,
    Worker vacío con `GET` de verificación y ruta `/health` que hace `select 1`. Medir latencia de la base.
