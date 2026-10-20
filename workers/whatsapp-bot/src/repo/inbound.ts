@@ -1,26 +1,7 @@
 import type postgres from "postgres";
-import type { DeliveryStatus } from "../../../../src/lib/whatsapp/payload.ts";
+import type { InboundRepo } from "./types.ts";
 
-export interface StoredConversation {
-  id: string;
-  phone: string;
-  /** true = un humano tomó la conversación desde el panel: el bot no responde. */
-  humanTakeover: boolean;
-}
-
-export interface InboundRow {
-  wamid: string;
-  type: "text" | "audio" | "unsupported";
-  body: string | null;
-}
-
-/** Acceso a la base para la entrada de mensajes (SQL en producción, memoria en los tests). */
-export interface InboundRepo {
-  upsertConversation(phone: string, name: string | null): Promise<StoredConversation>;
-  /** Guarda el mensaje entrante; false si ese wamid ya estaba (reintento de Meta). */
-  saveInbound(conversationId: string, message: InboundRow): Promise<boolean>;
-  updateStatus(wamid: string, status: DeliveryStatus): Promise<void>;
-}
+export type * from "./types.ts";
 
 /** Cliente con el mismo teléfono (últimos 10 dígitos, como `samePhone`). */
 const CLIENT_BY_PHONE = (sql: postgres.Sql, phone: string) => sql`

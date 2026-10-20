@@ -1,6 +1,6 @@
 import type { BotTool } from "../ai/responder.ts";
 import { toolsForIntent } from "../guardrails.ts";
-import type { BotConversation, BotRepo } from "../repo/bot.ts";
+import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
 
 const EMPTY = { type: "object", properties: {} };

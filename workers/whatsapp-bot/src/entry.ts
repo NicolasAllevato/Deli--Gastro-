@@ -6,7 +6,7 @@
 import type { InboundMessage, WebhookEvent } from "../../../src/lib/whatsapp/payload.ts";
 import { normalizePhone } from "../../../src/lib/whatsapp/phone.ts";
 import type { BufferedMessage } from "./batching.ts";
-import type { InboundRepo, InboundRow } from "./repo/inbound.ts";
+import type { InboundRepo, InboundRow } from "./repo/types.ts";
 
 export interface EntryDeps {
   repo: InboundRepo;

@@ -5,7 +5,7 @@ import { parseClassification } from "../workers/whatsapp-bot/src/ai/classifier.t
 import { respond, cleanReply } from "../workers/whatsapp-bot/src/ai/responder.ts";
 import { responseToolCalls } from "../workers/whatsapp-bot/src/ai/models.ts";
 import { REPLIES } from "../workers/whatsapp-bot/src/bot/prompts.ts";
-import type { BotRepo, HistoryItem } from "../workers/whatsapp-bot/src/repo/bot.ts";
+import type { BotRepo, HistoryItem } from "../workers/whatsapp-bot/src/repo/types.ts";
 import type { InboundTurn } from "../workers/whatsapp-bot/src/turn-types.ts";
 
 const PHONE = "5491100000001";

@@ -9,7 +9,7 @@ import type { ChatMessage, RunModel } from "../ai/models.ts";
 import { audioPlaceholder } from "../batching.ts";
 import type { InboundTurn } from "../turn-types.ts";
 import { inspectInbound, inspectOutbound, wrapUntrusted } from "../guardrails.ts";
-import type { BotConversation, BotRepo } from "../repo/bot.ts";
+import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
 import { buildResponderPrompt, orderReply, REPLIES } from "./prompts.ts";

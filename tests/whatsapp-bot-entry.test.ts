@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handleWebhookEvents, type EntryDeps } from "../workers/whatsapp-bot/src/entry.ts";
-import type { InboundRepo, StoredConversation } from "../workers/whatsapp-bot/src/repo/inbound.ts";
+import type { InboundRepo, StoredConversation } from "../workers/whatsapp-bot/src/repo/types.ts";
 import type { BufferedMessage } from "../workers/whatsapp-bot/src/batching.ts";
 import type { WebhookEvent } from "../src/lib/whatsapp/payload.ts";
 
