@@ -4,6 +4,30 @@ Estado al 2026-10-12, rama `feat/demo-local` (parte de `fix/security-design-clou
 Sin push. El trabajo del 2026-10-12 (sección siguiente) está **sin commitear**; lo anterior
 está commiteado en local (último: `d2d97f9`).
 
+## Actualización 2026-10-21: OpenWA y Conversaciones (rama `feat/conversaciones-openwa`, sin push)
+
+Hecho: evaluación de [OpenWA](https://github.com/rmyndharis/OpenWA) (MIT, NestJS). La vista de
+Conversaciones quedó rediseñada con su interfaz de chat portada (commit `0c008bf`): búsqueda, filtros,
+separadores por día, formato de WhatsApp, estados de entrega y bloqueo de la respuesta fuera de la
+ventana de 24 h. Clon de evaluación en `Desktop\Proyectos\openwa-eval`. Plan completo en
+`~/.claude/plans/gh-repo-clone-rmyndharis-openwa-dynamic-goose.md`.
+
+Para la próxima sesión, en orden:
+1. **Usuario:** desplegar OpenWA en EasyPanel siguiendo `Desktop\OpenWA en EasyPanel - pasos rapidos.txt`.
+   Pasar el dominio y la API key (de `/app/data/.api-key`). Solo un número descartable por QR.
+2. Push de `feat/conversaciones-openwa` y PR.
+3. Recorrer el panel y el Swagger de OpenWA con la sesión de prueba. Decidir si se despliega como canal
+   o si solo se usa su interfaz.
+4. Fase 1: motor `MetaCloudPlugin` (IWhatsAppEngine sobre la Cloud API) para que cada local conecte su
+   número por Meta. Reutiliza la firma, el cliente Graph y el parseo del Worker `whatsapp-bot`.
+5. Guardas de los límites de Meta: contador de mensajes iniciados por día con alerta al 80 % y breaker
+   por los códigos 131048/130429. Leer `quality_rating` en el diagnóstico.
+6. La vista muestra la ventana de 24 h con `lastInboundAt` de la lista. Si esa lista no cargó, el composer
+   queda bloqueado: agregar `lastInboundAt` a la respuesta de `/api/whatsapp/conversations/[id]`.
+7. El demo no tiene conversaciones de ejemplo: sembrar `wa_conversations`/`wa_messages` en `src/lib/demo/seed.ts`.
+8. Decidir dónde hospedar OpenWA en producción y su costo mensual. Docker Desktop no corre en esta PC
+   ("Windows hypervisor is not running").
+
 ## Actualización 2026-10-16 (rama `feat/demo-local`, 3 commits locales sin push)
 
 Hecho: migración 012 aplicada; canje de puntos → carrito (con devolución al cancelar); cobro con Mercado Pago
