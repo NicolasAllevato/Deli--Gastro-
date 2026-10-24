@@ -124,6 +124,8 @@ function fakeOpenWA(routes: Record<string, Array<() => Response>>) {
 const json = (body: unknown, status = 200) => () => new Response(JSON.stringify(body), { status });
 const SESSION = "GET /api/sessions/dely";
 const START = "POST /api/sessions/dely/start";
+const AUDIT = "GET /api/audit";
+const audit = (...actions: string[]) => json({ data: actions.map(action => ({ action, sessionId: "dely" })) });
 const SEND = "POST /api/sessions/dely/messages/send-text";
 const fast = { pollMs: 1, maxWaitMs: 50 };
 
@@ -136,10 +138,26 @@ test("ensureActive: con la sesión lista no hace nada más", async () => {
 test("ensureActive: una sesión desconectada se arranca y se espera hasta ready", async () => {
   const wa = fakeOpenWA({
     [SESSION]: [json({ status: "disconnected" }), json({ status: "initializing" }), json({ status: "ready" })],
+    [AUDIT]: [audit("session_started", "session_qr_generated")],
     [START]: [json({ status: "initializing" }, 201)],
   });
   assert.equal(await createOpenWAClient(cfg, wa.impl).ensureActive(fast), true);
-  assert.deepEqual(wa.calls, [SESSION, START, SESSION, SESSION]);
+  assert.deepEqual(wa.calls, [SESSION, AUDIT, START, SESSION, SESSION]);
+});
+
+test("ensureActive: una sesión frenada a mano (último evento session_stopped) no se vuelve a arrancar", async () => {
+  const wa = fakeOpenWA({
+    [SESSION]: [json({ status: "disconnected" })],
+    [AUDIT]: [json({ data: [{ action: "session_stopped", sessionId: "otra" }, { action: "session_stopped", sessionId: "dely" }, { action: "session_started", sessionId: "dely" }] })],
+  });
+  assert.equal(await createOpenWAClient(cfg, wa.impl).ensureActive(fast), false);
+  assert.deepEqual(wa.calls, [SESSION, AUDIT]);
+});
+
+test("ensureActive: si la auditoría no responde, ante la duda no se arranca", async () => {
+  const wa = fakeOpenWA({ [SESSION]: [json({ status: "disconnected" })], [AUDIT]: [json({ message: "Forbidden" }, 403)] });
+  assert.equal(await createOpenWAClient(cfg, wa.impl).ensureActive(fast), false);
+  assert.deepEqual(wa.calls, [SESSION, AUDIT]);
 });
 
 test("ensureActive: failed o qr necesitan a una persona, no se arrancan", async () => {
@@ -154,11 +172,12 @@ test("sendText: si la sesión no está activa la arranca y reintenta una vez", a
   const wa = fakeOpenWA({
     [SEND]: [json({ message: "Session 'dely' is not active. Start the session first" }, 409), json({ messageId: "m2" }, 201)],
     [SESSION]: [json({ status: "disconnected" }), json({ status: "ready" })],
+    [AUDIT]: [audit("session_started")],
     [START]: [json({}, 201)],
   });
   const client = createOpenWAClient(cfg, wa.impl, fast);
   assert.equal(await client.sendText("549", "Hola"), "m2");
-  assert.deepEqual(wa.calls, [SEND, SESSION, START, SESSION, SEND]);
+  assert.deepEqual(wa.calls, [SEND, SESSION, AUDIT, START, SESSION, SEND]);
 });
 
 const sent = (data: Record<string, unknown>) => ({

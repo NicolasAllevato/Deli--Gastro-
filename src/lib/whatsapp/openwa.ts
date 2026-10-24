@@ -49,6 +49,8 @@ export interface EnsureActiveOptions {
 
 const DEFAULT_ENSURE: Required<EnsureActiveOptions> = { pollMs: 1_500, maxWaitMs: 20_000 };
 const NOT_ACTIVE = /not active/i;
+const AUDIT_LOOKBACK = 50;
+const LIFECYCLE_ACTIONS = new Set(["session_started", "session_stopped"]);
 
 export function createOpenWAClient(
   cfg: OpenWAConfig,
@@ -58,8 +60,8 @@ export function createOpenWAClient(
   const sessionPath = `${cfg.url}/api/sessions/${encodeURIComponent(cfg.sessionId)}`;
   const headers = { "Content-Type": "application/json", "X-API-Key": cfg.apiKey };
 
-  async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const res = await fetchImpl(`${sessionPath}${path}`, { ...init, headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  async function call<T>(path: string, init: RequestInit = {}, base = sessionPath): Promise<T> {
+    const res = await fetchImpl(`${base}${path}`, { ...init, headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     const json = (await res.json().catch(() => ({}))) as T & { message?: string | string[] };
     if (!res.ok) {
       const detail = Array.isArray(json.message) ? json.message.join(", ") : json.message;
@@ -71,15 +73,32 @@ export function createOpenWAClient(
   const status = async () => (await call<{ status?: string }>("")).status ?? "unknown";
 
   /**
+   * ¿La última acción de arranque/freno sobre la sesión fue un freno manual? Un `stop` queda en la
+   * auditoría; la liberación por redeploy no. OpenWA no expone `desiredState` en su API.
+   * Si la auditoría no responde, se asume que sí: ante la duda no se prende un número.
+   */
+  async function stoppedByOperator(): Promise<boolean> {
+    try {
+      const { data } = await call<{ data?: Array<{ action?: string; sessionId?: string }> }>(
+        `/api/audit?sessionId=${encodeURIComponent(cfg.sessionId)}&limit=${AUDIT_LOOKBACK}`, {}, cfg.url,
+      );
+      const last = (data ?? []).find(e => e.sessionId === cfg.sessionId && LIFECYCLE_ACTIONS.has(e.action ?? ""));
+      return last?.action === "session_stopped";
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Deja la sesión en `ready` si solo está desconectada. OpenWA no retoma sola una sesión que el
    * contenedor anterior liberó al apagarse durante un redeploy. `failed` (otra instancia o número
-   * bloqueado) y `qr_ready` (hay que escanear) necesitan a una persona, así que no se tocan.
+   * bloqueado), `qr_ready` (hay que escanear) y un freno manual son decisiones de una persona: no se tocan.
    */
   async function ensureActive(opts: EnsureActiveOptions = ensureOpts): Promise<boolean> {
     const { pollMs, maxWaitMs } = { ...DEFAULT_ENSURE, ...opts };
     const current = await status();
     if (current === "ready") return true;
-    if (current !== "disconnected") return false;
+    if (current !== "disconnected" || (await stoppedByOperator())) return false;
 
     await call("/start", { method: "POST" });
     const deadline = Date.now() + maxWaitMs;

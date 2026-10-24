@@ -20,7 +20,7 @@ function keepOpenWASessionAlive() {
   after(async () => {
     try {
       if (!(await createOpenWAClient(cfg).ensureActive())) {
-        console.error("[openwa] la sesión no está lista y necesita atención (QR o falla)");
+        console.error("[openwa] la sesión no está lista: necesita QR, tiene una falla o la frenaron a mano");
       }
     } catch (error: unknown) {
       console.error("[openwa] no se pudo revisar la sesión", error);
@@ -39,7 +39,8 @@ export async function GET(req: NextRequest) {
     .from("wa_conversations")
     .select("*")
     .neq("client_phone", TEST_PHONE)
-    .order("last_inbound_at", { ascending: false })
+    // Un chat que inició el local (todavía sin mensajes del cliente) va al final, no arriba de todo.
+    .order("last_inbound_at", { ascending: false, nullsFirst: false })
     .limit(LIST_LIMIT);
   const list = conversations ?? [];
   if (list.length === 0) return NextResponse.json([]);
