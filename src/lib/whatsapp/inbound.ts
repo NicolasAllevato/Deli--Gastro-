@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
-import type { InboundMessage, WebhookEvent } from "./payload.ts";
+import type { InboundMessage, OutboundEcho, WebhookEvent } from "./payload.ts";
 import { normalizePhone, samePhone } from "./phone.ts";
 import type { WhatsAppSettings } from "./config.ts";
 
@@ -26,7 +26,7 @@ async function findClientId(db: Db, phone: string): Promise<string | null> {
   return (data ?? []).find((c) => c.phone && samePhone(c.phone, phone))?.id ?? null;
 }
 
-async function upsertConversation(db: Db, message: InboundMessage): Promise<Conversation> {
+async function upsertConversation(db: Db, message: Pick<InboundMessage, "from" | "name">): Promise<Conversation> {
   const phone = normalizePhone(message.from);
 
   const read = async () =>
@@ -96,6 +96,32 @@ async function handleMessage(
 }
 
 /**
+ * Guarda como saliente lo que el local mandó desde su número, para que el hilo y el historial del
+ * agente queden completos. No dispara al agente ni abre la ventana de 24 h: eso solo lo hace el cliente.
+ */
+async function handleEcho(db: Db, echo: OutboundEcho, settings: WhatsAppSettings): Promise<void> {
+  if (settings.phoneNumberId && echo.phoneNumberId !== settings.phoneNumberId) return;
+
+  // Lo enviado desde Conversaciones ya está guardado con este mismo wamid.
+  const { data: seen } = await db.from("wa_messages").select("id").eq("wamid", echo.wamid).maybeSingle();
+  if (seen) return;
+
+  const conversation = await upsertConversation(db, { from: echo.to, name: null });
+  const { content } = echo;
+  const { error } = await db.from("wa_messages").insert({
+    conversation_id: conversation.id,
+    wamid: echo.wamid,
+    direction: "out",
+    type: content.type === "unsupported" ? "unsupported" : content.type,
+    body: content.type === "text" ? content.text : null,
+    status: "sent",
+  });
+  if (error && error.code !== UNIQUE_VIOLATION) {
+    throw new Error(`No se pudo guardar el mensaje enviado: ${error.message}`);
+  }
+}
+
+/**
  * Procesa las notificaciones ya validadas de Meta. Un evento con error no frena
  * a los demás: se registra y se sigue.
  */
@@ -109,6 +135,8 @@ export async function processWebhookEvents(
     try {
       if (event.kind === "status") {
         await db.from("wa_messages").update({ status: event.status }).eq("wamid", event.wamid);
+      } else if (event.kind === "echo") {
+        await handleEcho(db, event, settings);
       } else {
         await handleMessage(db, event, settings, handler);
       }

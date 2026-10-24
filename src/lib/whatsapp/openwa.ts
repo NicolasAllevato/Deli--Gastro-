@@ -42,24 +42,95 @@ export class OpenWAApiError extends Error {
 /** Solo chats 1 a 1: los grupos (`@g.us`), estados y canales no entran a Conversaciones. */
 export const chatIdFor = (phone: string) => `${normalizePhone(phone)}@c.us`;
 
-export function createOpenWAClient(cfg: OpenWAConfig, fetchImpl: typeof fetch = fetch) {
-  async function sendText(to: string, text: string): Promise<string> {
-    const res = await fetchImpl(`${cfg.url}/api/sessions/${encodeURIComponent(cfg.sessionId)}/messages/send-text`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-API-Key": cfg.apiKey },
-      body: JSON.stringify({ chatId: chatIdFor(to), text }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    const json = (await res.json().catch(() => ({}))) as { messageId?: string; message?: string | string[] };
+export interface EnsureActiveOptions {
+  pollMs?: number;
+  maxWaitMs?: number;
+}
+
+const DEFAULT_ENSURE: Required<EnsureActiveOptions> = { pollMs: 1_500, maxWaitMs: 20_000 };
+const NOT_ACTIVE = /not active/i;
+const AUDIT_LOOKBACK = 50;
+const LIFECYCLE_ACTIONS = new Set(["session_started", "session_stopped"]);
+
+export function createOpenWAClient(
+  cfg: OpenWAConfig,
+  fetchImpl: typeof fetch = fetch,
+  ensureOpts: EnsureActiveOptions = {},
+) {
+  const sessionPath = `${cfg.url}/api/sessions/${encodeURIComponent(cfg.sessionId)}`;
+  const headers = { "Content-Type": "application/json", "X-API-Key": cfg.apiKey };
+
+  async function call<T>(path: string, init: RequestInit = {}, base = sessionPath): Promise<T> {
+    const res = await fetchImpl(`${base}${path}`, { ...init, headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const json = (await res.json().catch(() => ({}))) as T & { message?: string | string[] };
     if (!res.ok) {
       const detail = Array.isArray(json.message) ? json.message.join(", ") : json.message;
       throw new OpenWAApiError(res.status, detail ?? `Error ${res.status} de OpenWA`);
     }
+    return json;
+  }
+
+  const status = async () => (await call<{ status?: string }>("")).status ?? "unknown";
+
+  /**
+   * ¿La última acción de arranque/freno sobre la sesión fue un freno manual? Un `stop` queda en la
+   * auditoría; la liberación por redeploy no. OpenWA no expone `desiredState` en su API.
+   * Si la auditoría no responde, se asume que sí: ante la duda no se prende un número.
+   */
+  async function stoppedByOperator(): Promise<boolean> {
+    try {
+      const { data } = await call<{ data?: Array<{ action?: string; sessionId?: string }> }>(
+        `/api/audit?sessionId=${encodeURIComponent(cfg.sessionId)}&limit=${AUDIT_LOOKBACK}`, {}, cfg.url,
+      );
+      const last = (data ?? []).find(e => e.sessionId === cfg.sessionId && LIFECYCLE_ACTIONS.has(e.action ?? ""));
+      return last?.action === "session_stopped";
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Deja la sesión en `ready` si solo está desconectada. OpenWA no retoma sola una sesión que el
+   * contenedor anterior liberó al apagarse durante un redeploy. `failed` (otra instancia o número
+   * bloqueado), `qr_ready` (hay que escanear) y un freno manual son decisiones de una persona: no se tocan.
+   */
+  async function ensureActive(opts: EnsureActiveOptions = ensureOpts): Promise<boolean> {
+    const { pollMs, maxWaitMs } = { ...DEFAULT_ENSURE, ...opts };
+    const current = await status();
+    if (current === "ready") return true;
+    if (current !== "disconnected" || (await stoppedByOperator())) return false;
+
+    await call("/start", { method: "POST" });
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, pollMs));
+      const next = await status();
+      if (next === "ready") return true;
+      if (next !== "initializing" && next !== "authenticating") return false;
+    }
+    return false;
+  }
+
+  async function send(to: string, text: string): Promise<string> {
+    const json = await call<{ messageId?: string }>("/messages/send-text", {
+      method: "POST",
+      body: JSON.stringify({ chatId: chatIdFor(to), text }),
+    });
     if (!json.messageId) throw new OpenWAApiError(502, "OpenWA no devolvió el id del mensaje.");
     return json.messageId;
   }
 
-  return { sendText };
+  async function sendText(to: string, text: string): Promise<string> {
+    try {
+      return await send(to, text);
+    } catch (error: unknown) {
+      if (!(error instanceof OpenWAApiError) || !NOT_ACTIVE.test(error.message)) throw error;
+      if (!(await ensureActive())) throw error;
+      return send(to, text);
+    }
+  }
+
+  return { sendText, ensureActive };
 }
 
 const envelope = z.object({
@@ -82,6 +153,16 @@ const received = z.object({
   contact: z.object({ name: z.string().nullish(), pushName: z.string().nullish() }).nullish(),
 });
 
+/** `message.sent`: lo que sale del número, escrito en el teléfono o mandado por la API. */
+const sent = z.object({
+  id: z.string().min(1),
+  to: z.string().optional(),
+  chatId: z.string().optional(),
+  body: z.string().nullish(),
+  type: z.string().default("text"),
+  timestamp: z.number().optional(),
+});
+
 const ack = z.object({
   messageId: z.string().min(1),
   status: z.enum(["pending", "sent", "delivered", "read", "failed"]),
@@ -96,7 +177,7 @@ function senderPhoneOf(msg: z.infer<typeof received>): string | null {
   return PHONE_JID.exec(msg.chatId ?? msg.from)?.[1] ?? null;
 }
 
-function contentOf(msg: z.infer<typeof received>): InboundContent {
+function contentOf(msg: { type: string; body?: string | null }): InboundContent {
   if (msg.type === "text" && msg.body) return { type: "text", text: msg.body };
   return { type: "unsupported", rawType: msg.type };
 }
@@ -120,6 +201,23 @@ export function parseOpenWAWebhook(payload: unknown): WebhookEvent[] {
       wamid: msg.data.id,
       from,
       name: msg.data.contact?.pushName ?? msg.data.contact?.name ?? null,
+      timestamp: msg.data.timestamp ?? 0,
+      phoneNumberId: env.data.sessionId,
+      content: contentOf(msg.data),
+    }];
+  }
+
+  if (env.data.event === "message.sent") {
+    // Así el hilo (y el historial que lee el agente) incluye lo que el local responde desde el
+    // propio teléfono. Lo mandado desde Conversaciones llega también y se descarta por wamid.
+    const msg = sent.safeParse(env.data.data);
+    if (!msg.success) return [];
+    const to = PHONE_JID.exec(msg.data.chatId ?? msg.data.to ?? "")?.[1];
+    if (!to) return [];
+    return [{
+      kind: "echo",
+      wamid: msg.data.id,
+      to,
       timestamp: msg.data.timestamp ?? 0,
       phoneNumberId: env.data.sessionId,
       content: contentOf(msg.data),

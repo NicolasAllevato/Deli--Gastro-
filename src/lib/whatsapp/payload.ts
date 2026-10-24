@@ -25,7 +25,17 @@ export interface StatusEvent {
   timestamp: number;
 }
 
-export type WebhookEvent = InboundMessage | StatusEvent;
+/** Mensaje que salió del número del local (hoy solo lo informa OpenWA, incluso si se escribió en el teléfono). */
+export interface OutboundEcho {
+  kind: "echo";
+  wamid: string;
+  to: string;
+  timestamp: number;
+  phoneNumberId: string;
+  content: InboundContent;
+}
+
+export type WebhookEvent = InboundMessage | StatusEvent | OutboundEcho;
 
 const rawMessage = z.object({
   id: z.string().min(1),

@@ -1,21 +1,46 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { TEST_PHONE } from "@/lib/agent/settings";
+import { createOpenWAClient, isOpenWAProvider, openwaConfigFromEnv } from "@/lib/whatsapp/openwa";
 
 const LIST_LIMIT = 50;
+/** La vista refresca la lista seguido: la sesión de OpenWA se revisa como mucho una vez por minuto. */
+const SESSION_CHECK_MS = 60_000;
+let lastSessionCheck = 0;
+
+/**
+ * Con la vista abierta, una sesión de OpenWA que quedó desconectada (redeploy de EasyPanel) se
+ * vuelve a arrancar sola; si no, los mensajes de los clientes no llegan y no se guardan.
+ */
+function keepOpenWASessionAlive() {
+  const cfg = isOpenWAProvider() ? openwaConfigFromEnv() : null;
+  if (!cfg || Date.now() - lastSessionCheck < SESSION_CHECK_MS) return;
+  lastSessionCheck = Date.now();
+  after(async () => {
+    try {
+      if (!(await createOpenWAClient(cfg).ensureActive())) {
+        console.error("[openwa] la sesión no está lista: necesita QR, tiene una falla o la frenaron a mano");
+      }
+    } catch (error: unknown) {
+      console.error("[openwa] no se pudo revisar la sesión", error);
+    }
+  });
+}
 
 /** Conversaciones recientes con el último mensaje y el nombre del cliente. */
 export async function GET(req: NextRequest) {
   const denied = await guardAdmin(req, 120);
   if (denied) return denied;
+  keepOpenWASessionAlive();
 
   const db = createAdminClient();
   const { data: conversations } = await db
     .from("wa_conversations")
     .select("*")
     .neq("client_phone", TEST_PHONE)
-    .order("last_inbound_at", { ascending: false })
+    // Un chat que inició el local (todavía sin mensajes del cliente) va al final, no arriba de todo.
+    .order("last_inbound_at", { ascending: false, nullsFirst: false })
     .limit(LIST_LIMIT);
   const list = conversations ?? [];
   if (list.length === 0) return NextResponse.json([]);
