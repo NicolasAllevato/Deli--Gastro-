@@ -48,6 +48,8 @@ const nextConfig: NextConfig = {
     : {}),
   // Raíz fija: sin esto Next sube hasta el Escritorio por un package-lock.json ajeno.
   turbopack: { root: process.cwd() },
+  // Los avisos de `next dev` sobre actualizaciones se limitan a las de seguridad.
+  experimental: { agentUpgrade: "security" },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "picsum.photos" },
