@@ -1,29 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Hand, MessageSquare, Send } from "lucide-react";
+import { ArrowLeft, Hand, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { TOPIC_WA_CONVERSATIONS, waConversationTopic } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
-
-interface ConversationItem {
-  id: string;
-  phone: string;
-  name: string;
-  humanTakeover: boolean;
-  lastInboundAt: string | null;
-  last: { direction: string; text: string; at: string } | null;
-}
-
-interface ThreadMessage {
-  id: string;
-  direction: "in" | "out";
-  type: string;
-  body: string | null;
-  status: string | null;
-  tokens: number | null;
-  created_at: string;
-}
+import { Composer } from "./_components/Composer";
+import { ConversationList } from "./_components/ConversationList";
+import { MessageThread } from "./_components/MessageThread";
+import type { ConversationItem, ThreadMessage } from "./_components/conversation-utils";
 
 interface Thread {
   conversation: { id: string; phone: string; humanTakeover: boolean };
@@ -46,16 +31,22 @@ const send = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-const time = (iso: string) => new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+/** Cada cuánto se recalcula la ventana de 24 h y las horas relativas. */
+const CLOCK_TICK_MS = 30_000;
 
 export default function ConversacionesPage() {
   const [list, setList] = useState<ConversationItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
-  const [text, setText] = useState("");
+  const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const refreshList = useCallback(async () => {
     try {
@@ -100,7 +91,7 @@ export default function ConversacionesPage() {
     enabled: selected !== null,
   });
 
-  const act = async (action: () => Promise<void>) => {
+  const act = async (action: () => Promise<void>): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
@@ -120,14 +111,18 @@ export default function ConversacionesPage() {
     });
   };
 
-  const reply = () => {
-    if (!thread || !text.trim()) return;
-    void act(async () => {
+  const reply = async (text: string): Promise<boolean> => {
+    if (!thread) return false;
+    let ok = false;
+    await act(async () => {
       await request(`/api/whatsapp/conversations/${thread.conversation.id}`, send("POST", { text }));
-      setText("");
-      await refreshThread(thread.conversation.id);
+      ok = true;
+      await Promise.all([refreshThread(thread.conversation.id), refreshList()]);
     });
+    return ok;
   };
+
+  const selectedItem = list.find((c) => c.id === selected) ?? null;
 
   const open = selected !== null;
 
@@ -141,27 +136,8 @@ export default function ConversacionesPage() {
       {error && <p role="alert" className="text-xs font-bold text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-100">{error}</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-4">
-        <section aria-label="Lista de conversaciones" className={`space-y-2 ${open ? "hidden md:block" : ""}`}>
-          {loaded && list.length === 0 && (
-            <div className="neumorphic-inset rounded-xl p-6 text-center text-sm text-gray-500">Todavía no hay conversaciones.</div>
-          )}
-          {list.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setSelected(c.id)}
-              aria-current={selected === c.id}
-              className={`w-full text-left rounded-xl p-3 ${selected === c.id ? "neumorphic-inset" : "neumorphic neumorphic-hover"}`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className="font-bold text-sm text-gray-800 truncate">{c.name}</span>
-                {c.humanTakeover && <Hand size={14} className="text-brand-orange shrink-0" aria-label="Atiende una persona" />}
-              </span>
-              <span className="block text-xs text-gray-500 truncate mt-0.5">
-                {c.last ? `${c.last.direction === "out" ? "Vos: " : ""}${c.last.text}` : "Sin mensajes"}
-              </span>
-            </button>
-          ))}
+        <section aria-label="Lista de conversaciones" className={open ? "hidden md:block" : ""}>
+          <ConversationList list={list} loaded={loaded} selected={selected} now={now} onSelect={setSelected} />
         </section>
 
         <section aria-label="Conversación" className={`neumorphic rounded-2xl p-4 flex flex-col gap-3 min-h-[420px] ${open ? "" : "hidden md:flex"}`}>
@@ -186,32 +162,9 @@ export default function ConversacionesPage() {
                 </Button>
               </div>
 
-              <div className="flex-1 neumorphic-inset rounded-xl p-3 space-y-2 overflow-y-auto max-h-[420px]" role="log" aria-live="polite">
-                {thread.messages.map((m) => (
-                  <div key={m.id} className={`max-w-[85%] ${m.direction === "out" ? "ml-auto" : ""}`}>
-                    <p className={`text-sm px-3 py-2 rounded-xl whitespace-pre-wrap ${m.direction === "out" ? "bg-brand-orange text-white" : "neumorphic text-gray-700"}`}>
-                      {m.body ?? (m.type === "audio" ? "🎤 Audio sin transcribir" : "Mensaje no soportado")}
-                    </p>
-                    <p className={`text-[10px] text-gray-500 mt-0.5 ${m.direction === "out" ? "text-right" : ""}`}>
-                      {time(m.created_at)}{m.type === "audio" ? " · audio" : ""}{m.status ? ` · ${m.status}` : ""}
-                    </p>
-                  </div>
-                ))}
-              </div>
+              <MessageThread conversationId={thread.conversation.id} messages={thread.messages} now={now} />
 
-              <form onSubmit={(e) => { e.preventDefault(); reply(); }} className="flex gap-2">
-                <input
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  maxLength={1000}
-                  aria-label="Respuesta manual"
-                  placeholder="Escribir como el local"
-                  className="flex-1 min-w-0 px-4 py-3 rounded-xl neumorphic-inset text-sm text-gray-700 placeholder-gray-500 outline-none focus:ring-2 focus:ring-brand-orange/40"
-                />
-                <Button type="submit" size="sm" aria-label="Enviar respuesta" disabled={busy || !text.trim()} leftIcon={<Send size={14} aria-hidden />}>
-                  Enviar
-                </Button>
-              </form>
+              <Composer lastInboundAt={selectedItem?.lastInboundAt ?? null} now={now} busy={busy} onSend={reply} />
             </>
           )}
         </section>

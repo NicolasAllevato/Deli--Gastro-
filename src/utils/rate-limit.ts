@@ -77,9 +77,15 @@ export async function rateLimit(
     return rateLimitMemory(key, max, windowMs);
   }
 
-  const limiter = getRatelimiter(max, windowMs);
-  const { success } = await limiter.limit(key);
-  return success;
+  // Si Upstash no responde (base borrada, credenciales viejas, caída), se limita en memoria:
+  // un limitador caído no puede tirar abajo cada ruta que lo usa (login legal, pedidos, etc.).
+  try {
+    const { success } = await getRatelimiter(max, windowMs).limit(key);
+    return success;
+  } catch (error: unknown) {
+    console.error("[rate-limit] Upstash no disponible, se usa el límite en memoria", error);
+    return rateLimitMemory(key, max, windowMs);
+  }
 }
 
 export function getClientIp(req: Request): string {

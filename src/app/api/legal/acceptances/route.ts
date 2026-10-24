@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { sendAcceptanceToPanel } from "@/lib/legal/panel";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { requireAuth, isAuthorizationError } from "@/lib/auth/requireRole";
@@ -80,6 +81,18 @@ export async function POST(req: NextRequest) {
       { onConflict: "user_id,document,version", ignoreDuplicates: true },
     );
     if (error) throw new Error(error.message);
+
+    // Copia en el Panel de control de OPSYN, después de responder: no demora ni frena al usuario.
+    after(() => sendAcceptanceToPanel({
+      userId: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+      document: doc.id,
+      version: doc.version,
+      acceptedAt: new Date().toISOString(),
+      ip,
+      userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+    }));
 
     const status = await statusFor(db, auth.user.id);
     const res = NextResponse.json(status);

@@ -4,6 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { clientFor, loadWhatsAppSettings } from "@/lib/whatsapp/config";
 import { WhatsAppApiError } from "@/lib/whatsapp/client";
+import { OpenWAApiError, createOpenWAClient, isOpenWAProvider, openwaConfigFromEnv } from "@/lib/whatsapp/openwa";
 
 const idSchema = z.string().uuid();
 const patchSchema = z.object({ humanTakeover: z.boolean() }).strict();
@@ -91,7 +92,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     );
   }
 
-  const wa = clientFor(await loadWhatsAppSettings(db));
+  // Con WHATSAPP_PROVIDER=openwa la respuesta sale por el número conectado por QR (pruebas).
+  const openwa = isOpenWAProvider() ? openwaConfigFromEnv() : null;
+  const wa = openwa ? createOpenWAClient(openwa) : clientFor(await loadWhatsAppSettings(db));
   if (!wa) return NextResponse.json({ error: "Conectá WhatsApp primero." }, { status: 400 });
 
   try {
@@ -101,7 +104,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     });
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
-    const message = error instanceof WhatsAppApiError ? error.message : "No se pudo enviar el mensaje.";
+    const message = error instanceof WhatsAppApiError || error instanceof OpenWAApiError
+      ? error.message
+      : "No se pudo enviar el mensaje.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
