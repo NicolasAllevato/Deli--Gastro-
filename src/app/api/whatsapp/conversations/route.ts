@@ -1,14 +1,38 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { TEST_PHONE } from "@/lib/agent/settings";
+import { createOpenWAClient, isOpenWAProvider, openwaConfigFromEnv } from "@/lib/whatsapp/openwa";
 
 const LIST_LIMIT = 50;
+/** La vista refresca la lista seguido: la sesión de OpenWA se revisa como mucho una vez por minuto. */
+const SESSION_CHECK_MS = 60_000;
+let lastSessionCheck = 0;
+
+/**
+ * Con la vista abierta, una sesión de OpenWA que quedó desconectada (redeploy de EasyPanel) se
+ * vuelve a arrancar sola; si no, los mensajes de los clientes no llegan y no se guardan.
+ */
+function keepOpenWASessionAlive() {
+  const cfg = isOpenWAProvider() ? openwaConfigFromEnv() : null;
+  if (!cfg || Date.now() - lastSessionCheck < SESSION_CHECK_MS) return;
+  lastSessionCheck = Date.now();
+  after(async () => {
+    try {
+      if (!(await createOpenWAClient(cfg).ensureActive())) {
+        console.error("[openwa] la sesión no está lista y necesita atención (QR o falla)");
+      }
+    } catch (error: unknown) {
+      console.error("[openwa] no se pudo revisar la sesión", error);
+    }
+  });
+}
 
 /** Conversaciones recientes con el último mensaje y el nombre del cliente. */
 export async function GET(req: NextRequest) {
   const denied = await guardAdmin(req, 120);
   if (denied) return denied;
+  keepOpenWASessionAlive();
 
   const db = createAdminClient();
   const { data: conversations } = await db

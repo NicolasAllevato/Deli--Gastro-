@@ -48,7 +48,8 @@ export async function handleWebhookEvents(events: readonly WebhookEvent[], deps:
   for (const event of events) {
     try {
       if (event.kind === "status") await deps.repo.updateStatus(event.wamid, event.status);
-      else await handleMessage(event, deps);
+      // Los ecos de envíos propios solo los informa OpenWA; Meta no los manda a este Worker.
+      else if (event.kind === "message") await handleMessage(event, deps);
     } catch (error: unknown) {
       deps.log(`[whatsapp-bot] evento no procesado ${event.kind} ${event.wamid}`, error instanceof Error ? error.message : error);
     }
