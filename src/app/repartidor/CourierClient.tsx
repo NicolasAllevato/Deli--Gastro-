@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Bike, CheckCircle2, CreditCard, MapPin, Phone, PackageCheck } from "lucide-react";
+import { Bike, CheckCircle2, CreditCard, MapPin, MapPinOff, Navigation, Phone, PackageCheck } from "lucide-react";
+import { isNativeApp, openNativeSettings } from "@/lib/native-location";
+import { currentDeliveredPoint, useCourierTracking, type LocationPermission, type TrackingState } from "@/lib/useCourierTracking";
 import { formatMoney, formatOrderId, minutesSince, parseItems } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
@@ -13,6 +15,84 @@ interface Props {
 }
 
 const DEMO_POLL_MS = 5000;
+
+const TRACKING_COPY: Record<Exclude<TrackingState, "off">, { text: string; className: string }> = {
+  starting: { text: "Activando tu ubicación…", className: "badge-yellow" },
+  on: { text: "Compartiendo tu ubicación con el local", className: "badge-green" },
+  denied: { text: "Activá el permiso de ubicación para que el local vea por dónde vas", className: "badge-red" },
+  unavailable: { text: "No pudimos leer tu ubicación. Revisá el GPS.", className: "badge-red" },
+};
+
+interface LocationPermissionCardProps {
+  permission: LocationPermission;
+  onEnable: () => void;
+}
+
+/** Pide la ubicación antes de tomar pedidos: con permiso dado, el local ve en el mapa por dónde va cada entrega. */
+function LocationPermissionCard({ permission, onEnable }: LocationPermissionCardProps) {
+  if (permission === "granted") return null;
+
+  if (permission === "unsupported") {
+    return (
+      <section className="neumorphic-inset rounded-2xl p-4 text-sm text-gray-600">
+        Este navegador no comparte la ubicación. Abrí la app en Chrome o Safari del teléfono.
+      </section>
+    );
+  }
+
+  if (permission === "denied") {
+    return (
+      <section aria-labelledby="loc-title" className="neumorphic rounded-2xl p-5 space-y-2 border border-red-200">
+        <h3 id="loc-title" className="flex items-center gap-2 font-black text-gray-800">
+          <MapPinOff size={18} className="text-red-500" aria-hidden /> La ubicación está bloqueada
+        </h3>
+        <p className="text-sm text-gray-600">El local no puede ver por dónde vas. Para habilitarla:</p>
+        <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
+          <li><strong>Android (Chrome):</strong> tocá el candado junto a la dirección → Permisos → Ubicación → Permitir.</li>
+          <li><strong>iPhone (Safari):</strong> Ajustes → Safari → Ubicación → Permitir, y activá Ajustes → Privacidad → Localización.</li>
+        </ul>
+        <p className="text-xs text-gray-500">Después recargá esta página.</p>
+        {/* El estado "denied" llega después de montar, así que acá ya se puede consultar el puente nativo. */}
+        {isNativeApp() && (
+          <button
+            type="button"
+            onClick={() => openNativeSettings()}
+            className="w-full py-2.5 rounded-full neumorphic-inset text-brand-orange font-black text-sm"
+          >
+            Abrir ajustes de la app
+          </button>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="loc-title" className="neumorphic rounded-2xl p-5 space-y-3">
+      <h3 id="loc-title" className="flex items-center gap-2 font-black text-gray-800">
+        <Navigation size={18} className="text-brand-orange" aria-hidden /> Habilitá tu ubicación
+      </h3>
+      <p className="text-sm text-gray-600">
+        Mientras tengas entregas asignadas, el local ve en el mapa por dónde vas. Cuando terminás, deja de compartirse.
+      </p>
+      <button
+        type="button"
+        onClick={onEnable}
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-full btn-glow text-white font-black text-sm"
+      >
+        <Navigation size={16} aria-hidden /> Activar ubicación
+      </button>
+    </section>
+  );
+}
+
+function TrackingBadge({ state }: { state: Exclude<TrackingState, "off"> }) {
+  const { text, className } = TRACKING_COPY[state];
+  return (
+    <p role="status" className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${className}`}>
+      <Navigation size={12} aria-hidden /> {text}
+    </p>
+  );
+}
 
 export default function CourierClient({ initialOrders, courierName }: Props) {
   const [orders, setOrders] = useState<EnrichedOrder[]>(initialOrders);
@@ -37,10 +117,12 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
     setBusyId(id);
     setError(null);
     try {
+      // Al entregar se guarda dónde está el teléfono: es el punto de entrega en el mapa del admin.
+      const deliveredPoint = "status" in body ? await currentDeliveredPoint() : null;
       const res = await fetch("/api/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...body }),
+        body: JSON.stringify({ id, ...body, ...(deliveredPoint ? { delivered_point: deliveredPoint } : {}) }),
       });
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -55,6 +137,7 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
   };
 
   const mine = orders.filter((o) => o.courier_name === courierName);
+  const { state: tracking, permission, requestPermission } = useCourierTracking(mine.length > 0);
   const available = orders.filter((o) => o.courier_name === null);
   const others = orders.filter((o) => o.courier_name !== null && o.courier_name !== courierName);
 
@@ -151,7 +234,10 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
       <div>
         <h2 className="font-headline text-2xl font-black text-gray-800">Mis entregas</h2>
         <p className="text-gray-500 text-sm mt-1">Pedidos que ya salieron de cocina</p>
+        {tracking !== "off" && <TrackingBadge state={tracking} />}
       </div>
+
+      <LocationPermissionCard permission={permission} onEnable={requestPermission} />
 
       {error && (
         <p role="alert" className="text-xs font-bold text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-100">{error}</p>

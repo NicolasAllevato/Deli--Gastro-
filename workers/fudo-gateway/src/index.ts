@@ -1,0 +1,127 @@
+import { claimOrder, listRetryable, loadMaps, markFailed, markSent, MAX_ATTEMPTS, type DbEnv } from "./db";
+import { createFudoOrder, FudoError, listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo";
+import { buildFudoOrder, parseFudoWebhook } from "./payload";
+import { hmacHex, verifyHmacHex } from "./signature";
+
+export interface Env extends FudoEnv, DbEnv {
+  APP_URL: string;
+  /** Compartido con la app (FUDO_GATEWAY_SECRET en Vercel): firma x-gateway-signature en los dos sentidos. */
+  FUDO_GATEWAY_SECRET: string;
+}
+
+const SIGNATURE_HEADER = "x-gateway-signature";
+
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+type SyncResult = "sent" | "skipped" | "failed" | "busy";
+
+/** Manda un pedido a Fudo. Idempotente: un pedido ya enviado o tomado por otro proceso devuelve `busy`. */
+async function syncOrder(env: Env, orderId: string): Promise<SyncResult> {
+  const claimed = await claimOrder(env, orderId);
+  if (!claimed) return "busy";
+
+  const built = buildFudoOrder(claimed.order, await loadMaps(env));
+  if (!built.ok) {
+    await markFailed(env, orderId, built.reason, true);
+    return "skipped";
+  }
+  try {
+    await markSent(env, orderId, await createFudoOrder(env, built.body));
+    return "sent";
+  } catch (e) {
+    const permanent = e instanceof FudoError && e.permanent;
+    await markFailed(env, orderId, errorMessage(e), permanent || claimed.attempts >= MAX_ATTEMPTS);
+    return permanent ? "skipped" : "failed";
+  }
+}
+
+async function handleSync(request: Request, env: Env): Promise<Response> {
+  const raw = await request.text();
+  if (!(await verifyHmacHex(raw, request.headers.get(SIGNATURE_HEADER), env.FUDO_GATEWAY_SECRET))) {
+    return json({ error: "Firma inválida." }, 401);
+  }
+  let orderId: unknown;
+  try {
+    orderId = (JSON.parse(raw) as { orderId?: unknown }).orderId;
+  } catch {
+    return json({ error: "JSON inválido." }, 400);
+  }
+  if (typeof orderId !== "string" || !/^[0-9a-f-]{36}$/i.test(orderId)) return json({ error: "orderId inválido." }, 400);
+  return json({ result: await syncOrder(env, orderId) });
+}
+
+/** Webhook de Fudo: se valida la firma con el clientSecret y la app aplica el estado. */
+async function handleWebhook(request: Request, env: Env): Promise<Response> {
+  const raw = await request.text();
+  if (!(await verifyHmacHex(raw, request.headers.get("fudo-signature"), env.FUDO_CLIENT_SECRET))) {
+    return json({ error: "Firma inválida." }, 401);
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return json({ error: "JSON inválido." }, 400);
+  }
+  const parsed = parseFudoWebhook(body, request.headers.get("fudo-event"));
+  // El formato real todavía no está documentado: queda en los logs para ajustar el parser con el primero que llegue.
+  console.log("[fudo.webhook]", JSON.stringify({ parsed, body }).slice(0, 2000));
+  if (!parsed.event || (parsed.fudoOrderId === null && parsed.externalId === null)) {
+    return json({ received: true, ignored: "formato no reconocido" });
+  }
+
+  const forward = JSON.stringify({
+    event: parsed.event,
+    ...(parsed.externalId ? { orderId: parsed.externalId } : {}),
+    ...(parsed.fudoOrderId !== null ? { fudoOrderId: parsed.fudoOrderId } : {}),
+  });
+  const res = await fetch(`${env.APP_URL}/api/integrations/fudo/status`, {
+    method: "POST",
+    headers: { "content-type": "application/json", [SIGNATURE_HEADER]: await hmacHex(forward, env.FUDO_GATEWAY_SECRET) },
+    body: forward,
+  });
+  // 5xx de la app → 502 para que Fudo reintente; el resto (incluido 400 por evento desconocido) se da por recibido.
+  if (res.status >= 500) return json({ error: "La app no pudo aplicar el estado." }, 502);
+  return json({ received: true, app: res.status });
+}
+
+/** Catálogo de Fudo para la pantalla de mapeo. La app firma el path (`/products` o `/product-categories`). */
+async function handleCatalog(request: Request, env: Env, path: "/products" | "/product-categories"): Promise<Response> {
+  if (!(await verifyHmacHex(path, request.headers.get(SIGNATURE_HEADER), env.FUDO_GATEWAY_SECRET))) {
+    return json({ error: "Firma inválida." }, 401);
+  }
+  try {
+    return json(path === "/products" ? await listFudoProducts(env) : await listFudoCategories(env));
+  } catch (e) {
+    return json({ error: errorMessage(e) }, 502);
+  }
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const { pathname } = new URL(request.url);
+    if (request.method === "POST" && pathname === "/sync") return handleSync(request, env);
+    if (request.method === "POST" && pathname === "/webhook") return handleWebhook(request, env);
+    if (request.method === "GET" && (pathname === "/products" || pathname === "/product-categories")) {
+      return handleCatalog(request, env, pathname);
+    }
+    if (request.method === "GET" && pathname === "/health") return json({ ok: true });
+    return json({ error: "No encontrado." }, 404);
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      (async () => {
+        for (const id of await listRetryable(env)) {
+          try {
+            await syncOrder(env, id);
+          } catch (e) {
+            console.error("[fudo.cron]", id, errorMessage(e));
+          }
+        }
+      })(),
+    );
+  },
+} satisfies ExportedHandler<Env>;

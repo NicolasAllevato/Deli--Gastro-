@@ -44,14 +44,14 @@ export interface QueryResult {
 const KNOWN_TABLES: readonly TableName[] = [
   "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
   "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
-  "payment_intents",
+  "payment_intents", "order_items", "courier_locations",
 ];
 
 /** Tablas cuya clave primaria es `key` (no `id`). */
 const KEY_TABLES: readonly TableName[] = ["global_config", "integration_secrets"];
 
 /** Tablas sin `updated_at` (solo se agregan filas). */
-const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages", "legal_acceptances"];
+const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages", "legal_acceptances", "order_items"];
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -69,7 +69,8 @@ const DEFAULTS: Record<TableName, () => Row> = {
     client_id: null, status: "Recibidos", delivery_fee: 0, delivery_address: null,
     delivery_lat: null, delivery_lng: null, payment_method: null, notes: null, courier_name: null,
     channel: "web", accepted_at: null, ready_at: null, picked_up_at: null, delivered_at: null,
-    survey_sent_at: null,
+    survey_sent_at: null, fudo_order_id: null, fudo_sync_status: null, fudo_error: null,
+    fudo_attempts: 0, fudo_synced_at: null, delivered_lat: null, delivered_lng: null, delivered_accuracy_m: null,
   }),
   points_ledger: () => ({ order_id: null }),
   global_config: () => ({}),
@@ -77,6 +78,8 @@ const DEFAULTS: Record<TableName, () => Row> = {
   products: () => ({ category_id: null, description: "", image_url: "", is_active: true }),
   reviews: () => ({ feedback: null }),
   order_events: () => ({ actor: null, detail: null }),
+  order_items: () => ({ product_id: null }),
+  courier_locations: () => ({ accuracy_m: null, heading: null, speed_mps: null }),
   delivery_zones: () => ({ fee: 0, min_order: 0, sort_order: 0, is_active: true }),
   integration_secrets: () => ({}),
   wa_conversations: () => ({

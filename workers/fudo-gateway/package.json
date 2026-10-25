@@ -1,0 +1,14 @@
+{
+  "name": "fudo-gateway",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260921.1",
+    "typescript": "^5.7.0",
+    "wrangler": "4.136.0"
+  }
+}

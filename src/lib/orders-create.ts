@@ -7,6 +7,7 @@ import { getGateway } from "@/lib/payments/gateway";
 import { refundPaymentForOrder } from "@/lib/payments/refunds";
 import { loadDeliverySettings } from "@/lib/zones-server";
 import { quoteDelivery } from "@/lib/zones";
+import { fudoGatewayConfig, requestFudoSync } from "@/lib/fudo/gateway";
 
 type Db = ReturnType<typeof createAdminClient>;
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
@@ -172,6 +173,13 @@ async function resolveReward(
   return { ok: true, value: { reward, discount: outcome.discount } };
 }
 
+export interface OrderLine {
+  productId: string;
+  name: string;
+  qty: number;
+  price: number;
+}
+
 /**
  * Pedido ya cotizado y validado, listo para insertarse. Es lo que guarda una intención de pago:
  * cuando el pago se aprueba se crea el pedido desde esta foto, sin volver a cotizar.
@@ -179,6 +187,8 @@ async function resolveReward(
 export interface OrderSnapshot {
   clientId: string;
   itemsDesc: string;
+  /** Líneas del pedido, para `order_items` y el envío a Fudo. Las intenciones de pago viejas no las traen. */
+  lines?: OrderLine[];
   total: number;
   fee: number;
   /** Puntos que suma el pedido al entregarse, según los puntos de cada plato y categoría. */
@@ -215,6 +225,7 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
     value: {
       clientId: input.clientId,
       itemsDesc: buildItemsDesc(lines),
+      lines: lines.map(({ productId, name, qty, price }) => ({ productId, name, qty, price })),
       total,
       fee,
       pointsEarned: pointsForLines(lines),
@@ -230,6 +241,7 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
 
 /** Inserta el pedido de una cotización, cobra los puntos del canje y deja la bitácora. */
 export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recibidos"): Promise<Outcome<OrderRow>> {
+  const fudoSync = fudoGatewayConfig() !== null;
   const { data: order, error } = await db
     .from("orders")
     .insert({
@@ -245,10 +257,22 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
       notes: snapshot.notes,
       channel: snapshot.channel,
       points_earned: snapshot.pointsEarned ?? null,
+      fudo_sync_status: fudoSync ? "pending" : null,
     })
     .select()
     .single();
   if (error) return fail(500, error.message);
+
+  const lines = snapshot.lines ?? [];
+  if (lines.length > 0) {
+    const { error: itemsError } = await db.from("order_items").insert(
+      lines.map((l) => ({ order_id: order.id, product_id: l.productId, name: l.name, qty: l.qty, unit_price: l.price })),
+    );
+    // Sin líneas no se puede mandar a Fudo: queda en la bitácora para cargarlo a mano.
+    if (itemsError) {
+      await db.from("order_events").insert({ order_id: order.id, event: "order_items_error", actor: "sistema", detail: itemsError.message.slice(0, 200) });
+    }
+  }
 
   // Los puntos se cobran recién con el pedido creado y ligados a él, para poder devolverlos si se cancela.
   if (snapshot.reward) {
@@ -257,6 +281,9 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
 
   // La bitácora no debe tumbar el pedido ya creado.
   await db.from("order_events").insert({ order_id: order.id, event, actor: snapshot.actor });
+
+  // Fudo no debe demorar ni tumbar el pedido: si el Worker no responde, su cron lo reintenta.
+  if (fudoSync) await requestFudoSync(order.id);
   return { ok: true, value: order };
 }
 

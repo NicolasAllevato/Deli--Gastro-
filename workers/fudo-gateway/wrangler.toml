@@ -1,0 +1,34 @@
+name = "fudo-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-08-27"
+compatibility_flags = ["nodejs_compat"]
+account_id = "53d56863addd21be708a642b540e5990"
+workers_dev = true
+
+# Pasarela Deli-Gastro <-> Fudo (Integrations API v1). Ver docs/FUDO_INTEGRACION.md.
+#   POST /sync      la app pide mandar un pedido a Fudo (firma x-gateway-signature)
+#   POST /webhook   webhooks de Fudo (firma fudo-signature) -> la app aplica el estado
+#   GET  /products  catálogo de Fudo para la pantalla de mapeo (firma del path)
+#   cron            reintenta pedidos pending/failed
+
+# Token de Fudo (dura 24 h) cacheado entre isolates.
+# Crear con:  npx wrangler kv namespace create FUDO_KV   y pegar el id acá.
+[[kv_namespaces]]
+binding = "FUDO_KV"
+id = "REEMPLAZAR_CON_EL_ID_DEL_NAMESPACE"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+FUDO_API_URL = "https://integrations.fu.do/fudo"
+APP_URL = "https://dely.opsyn.app"
+
+# Secrets (npx wrangler secret put <NOMBRE>, nunca en el repo):
+#   FUDO_CLIENT_ID, FUDO_CLIENT_SECRET   credenciales del usuario de integración (crm-dely@lagambeta)
+#   FUDO_INTEGRATOR_TOKEN                lo asigna Fudo al aprobar la integración
+#   FUDO_GATEWAY_SECRET                  compartido con la app (misma variable en Vercel)
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+[observability]
+enabled = true
