@@ -23,6 +23,7 @@ crons = ["*/5 * * * *"]
 [vars]
 FUDO_API_URL = "https://integrations.fu.do/fudo"
 APP_URL = "https://dely.opsyn.app"
+# DEBUG_WEBHOOK_BODY = "1"  # temporal: loguea el webhook completo (datos del cliente) hasta conocer el formato
 
 # Secrets (npx wrangler secret put <NOMBRE>, nunca en el repo):
 #   FUDO_CLIENT_ID, FUDO_CLIENT_SECRET   credenciales del usuario de integración (crm-dely@lagambeta)

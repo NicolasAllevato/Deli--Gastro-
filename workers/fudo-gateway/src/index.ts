@@ -7,6 +7,8 @@ export interface Env extends FudoEnv, DbEnv {
   APP_URL: string;
   /** Compartido con la app (FUDO_GATEWAY_SECRET en Vercel): firma x-gateway-signature en los dos sentidos. */
   FUDO_GATEWAY_SECRET: string;
+  /** "1" para loguear el cuerpo completo del webhook (trae datos del cliente). Solo mientras se ajusta el parser. */
+  DEBUG_WEBHOOK_BODY?: string;
 }
 
 const SIGNATURE_HEADER = "x-gateway-signature";
@@ -66,8 +68,10 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
     return json({ error: "JSON inválido." }, 400);
   }
   const parsed = parseFudoWebhook(body, request.headers.get("fudo-event"));
-  // El formato real todavía no está documentado: queda en los logs para ajustar el parser con el primero que llegue.
-  console.log("[fudo.webhook]", JSON.stringify({ parsed, body }).slice(0, 2000));
+  // El cuerpo puede traer nombre, teléfono y dirección del cliente: por defecto solo se loguean las claves.
+  const keys = body && typeof body === "object" ? Object.keys(body) : [];
+  const logged = env.DEBUG_WEBHOOK_BODY === "1" ? { parsed, body } : { parsed, keys };
+  console.log("[fudo.webhook]", JSON.stringify(logged).slice(0, 2000));
   if (!parsed.event || (parsed.fudoOrderId === null && parsed.externalId === null)) {
     return json({ received: true, ignored: "formato no reconocido" });
   }
