@@ -5,66 +5,44 @@ import { LOCATION_SEND_MS } from "@/lib/courier-location";
 import { isNativeApp, watchFixes, type Fix } from "@/lib/native-location";
 
 export type TrackingState = "off" | "starting" | "on" | "denied" | "unavailable";
-/** Permiso del navegador. `unknown`: el navegador no deja consultarlo (Safari viejo) hasta pedirlo. */
-export type LocationPermission = "granted" | "prompt" | "denied" | "unsupported" | "unknown";
 
 const ENDPOINT = "/api/couriers/location";
+/** Una posición más vieja que esto no sirve como punto de entrega. */
+const DELIVERED_POINT_MAX_AGE_MS = 2 * 60_000;
+
+export interface DeliveredPoint {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+}
 
 export interface CourierTracking {
   state: TrackingState;
-  permission: LocationPermission;
-  /** Pide el permiso con un gesto del usuario (botón): los navegadores móviles lo exigen. */
-  requestPermission: () => void;
-}
-
-function useLocationPermission(): [LocationPermission, (p: LocationPermission) => void] {
-  const [permission, setPermission] = useState<LocationPermission>("unknown");
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPermission("unsupported");
-      return;
-    }
-    if (!navigator.permissions?.query) return;
-    let status: PermissionStatus | null = null;
-    const sync = () => status && setPermission(status.state);
-    navigator.permissions
-      .query({ name: "geolocation" })
-      .then((s) => {
-        status = s;
-        sync();
-        s.addEventListener("change", sync);
-      })
-      .catch(() => { /* queda en unknown: se resuelve al pedirlo */ });
-    return () => status?.removeEventListener("change", sync);
-  }, []);
-
-  return [permission, setPermission];
+  /** Dentro de la app Android. `null` hasta montar (en el servidor no se sabe). */
+  native: boolean | null;
+  /** Última posición reciente para marcar dónde se entregó; null si no hay. */
+  deliveredPoint: () => DeliveredPoint | null;
 }
 
 /**
- * Comparte la posición del repartidor mientras `active` (tiene entregas asignadas) y el permiso está dado.
- * El GPS avisa cada vez que se mueve, pero al servidor se manda como mucho cada 15 s.
- * Al dejar de estar activo se borra la última posición guardada.
+ * Comparte la posición del repartidor mientras `active` (tiene entregas asignadas).
+ * La ubicación sale solo de la app Android (GPS nativo, sigue con la pantalla bloqueada);
+ * desde el navegador no se toma. El GPS avisa cada vez que se mueve, pero al servidor
+ * se manda como mucho cada 15 s. Al dejar de estar activo se borra la última posición guardada.
  */
 export function useCourierTracking(active: boolean): CourierTracking {
   const [state, setState] = useState<TrackingState>("off");
-  const [permission, setPermission] = useLocationPermission();
+  const [native, setNative] = useState<boolean | null>(null);
   const lastSent = useRef(0);
+  const lastFix = useRef<{ fix: Fix; at: number } | null>(null);
 
-  const requestPermission = useCallback(() => {
-    if (permission === "unsupported") return;
-    navigator.geolocation.getCurrentPosition(
-      () => setPermission("granted"),
-      (err) => setPermission(err.code === err.PERMISSION_DENIED ? "denied" : "granted"),
-      { enableHighAccuracy: true, timeout: 30_000 },
-    );
-  }, [permission, setPermission]);
+  useEffect(() => {
+    // El puente de Capacitor solo existe en el cliente: se consulta después de montar.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNative(isNativeApp());
+  }, []);
 
-  // Con `unknown` también se arranca: watchPosition dispara el pedido de permiso del navegador.
-  // En la app el plugin nativo pide el permiso él mismo (incluido el de segundo plano).
-  const canWatch = active && (isNativeApp() || permission === "granted" || permission === "unknown");
+  const canWatch = active && native === true;
 
   useEffect(() => {
     if (!canWatch) return;
@@ -87,14 +65,11 @@ export function useCourierTracking(active: boolean): CourierTracking {
 
     const stop = watchFixes(
       (fix) => {
+        lastFix.current = { fix, at: Date.now() };
         setState("on");
-        setPermission("granted");
         send(fix);
       },
-      (error) => {
-        if (error === "denied") setPermission("denied");
-        setState(error);
-      },
+      (error) => setState(error),
     );
 
     return () => {
@@ -103,28 +78,13 @@ export function useCourierTracking(active: boolean): CourierTracking {
       setState("off");
       void fetch(ENDPOINT, { method: "DELETE", keepalive: true }).catch(() => {});
     };
-  }, [canWatch, setPermission]);
+  }, [canWatch]);
 
-  return { state: active && permission === "denied" ? "denied" : state, permission, requestPermission };
-}
+  const deliveredPoint = useCallback((): DeliveredPoint | null => {
+    const last = lastFix.current;
+    if (!last || Date.now() - last.at > DELIVERED_POINT_MAX_AGE_MS) return null;
+    return { lat: last.fix.lat, lng: last.fix.lng, accuracy: last.fix.accuracy };
+  }, []);
 
-export interface DeliveredPoint {
-  lat: number;
-  lng: number;
-  accuracy: number | null;
-}
-
-/**
- * Posición actual para marcar el punto de entrega. Nunca frena la entrega: sin permiso,
- * sin GPS o si tarda más de 8 s, devuelve null y el pedido se cierra igual.
- */
-export function currentDeliveredPoint(): Promise<DeliveredPoint | null> {
-  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      () => resolve(null),
-      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 8_000 },
-    );
-  });
+  return { state, native, deliveredPoint };
 }

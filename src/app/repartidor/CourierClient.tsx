@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Bike, CheckCircle2, CreditCard, MapPin, MapPinOff, Navigation, Phone, PackageCheck } from "lucide-react";
-import { isNativeApp, openNativeSettings } from "@/lib/native-location";
-import { currentDeliveredPoint, useCourierTracking, type LocationPermission, type TrackingState } from "@/lib/useCourierTracking";
+import { Bike, CheckCircle2, CreditCard, Download, MapPin, MapPinOff, Navigation, Phone, PackageCheck, Smartphone } from "lucide-react";
+import { COURIER_APK_URL, COURIER_APK_VERSION } from "@/lib/courier-app";
+import { openNativeSettings } from "@/lib/native-location";
+import { useCourierTracking, type TrackingState } from "@/lib/useCourierTracking";
 import { formatMoney, formatOrderId, minutesSince, parseItems } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
@@ -23,63 +24,60 @@ const TRACKING_COPY: Record<Exclude<TrackingState, "off">, { text: string; class
   unavailable: { text: "No pudimos leer tu ubicación. Revisá el GPS.", className: "badge-red" },
 };
 
-interface LocationPermissionCardProps {
-  permission: LocationPermission;
-  onEnable: () => void;
-}
+const isAndroid = (): boolean => typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 
-/** Pide la ubicación antes de tomar pedidos: con permiso dado, el local ve en el mapa por dónde va cada entrega. */
-function LocationPermissionCard({ permission, onEnable }: LocationPermissionCardProps) {
-  if (permission === "granted") return null;
-
-  if (permission === "unsupported") {
-    return (
-      <section className="neumorphic-inset rounded-2xl p-4 text-sm text-gray-600">
-        Este navegador no comparte la ubicación. Abrí la app en Chrome o Safari del teléfono.
-      </section>
-    );
-  }
-
-  if (permission === "denied") {
-    return (
-      <section aria-labelledby="loc-title" className="neumorphic rounded-2xl p-5 space-y-2 border border-red-200">
-        <h3 id="loc-title" className="flex items-center gap-2 font-black text-gray-800">
-          <MapPinOff size={18} className="text-red-500" aria-hidden /> La ubicación está bloqueada
-        </h3>
-        <p className="text-sm text-gray-600">El local no puede ver por dónde vas. Para habilitarla:</p>
-        <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
-          <li><strong>Android (Chrome):</strong> tocá el candado junto a la dirección → Permisos → Ubicación → Permitir.</li>
-          <li><strong>iPhone (Safari):</strong> Ajustes → Safari → Ubicación → Permitir, y activá Ajustes → Privacidad → Localización.</li>
-        </ul>
-        <p className="text-xs text-gray-500">Después recargá esta página.</p>
-        {/* El estado "denied" llega después de montar, así que acá ya se puede consultar el puente nativo. */}
-        {isNativeApp() && (
-          <button
-            type="button"
-            onClick={() => openNativeSettings()}
-            className="w-full py-2.5 rounded-full neumorphic-inset text-brand-orange font-black text-sm"
-          >
-            Abrir ajustes de la app
-          </button>
-        )}
-      </section>
-    );
-  }
-
+/** Desde el navegador no se toma la ubicación: se ofrece bajar la app Android, que la comparte en segundo plano. */
+function DownloadAppCard() {
+  const android = isAndroid();
   return (
-    <section aria-labelledby="loc-title" className="neumorphic rounded-2xl p-5 space-y-3">
-      <h3 id="loc-title" className="flex items-center gap-2 font-black text-gray-800">
-        <Navigation size={18} className="text-brand-orange" aria-hidden /> Habilitá tu ubicación
+    <section aria-labelledby="app-title" className="neumorphic rounded-2xl p-5 space-y-3">
+      <h3 id="app-title" className="flex items-center gap-2 font-black text-gray-800">
+        <Smartphone size={18} className="text-brand-orange" aria-hidden /> Bajá la app del repartidor
       </h3>
       <p className="text-sm text-gray-600">
-        Mientras tengas entregas asignadas, el local ve en el mapa por dónde vas. Cuando terminás, deja de compartirse.
+        La ubicación se comparte solo desde la app: sigue funcionando con la pantalla bloqueada y el local ve en el mapa
+        por dónde vas mientras tenés entregas.
+      </p>
+      {android ? (
+        <>
+          <a
+            href={COURIER_APK_URL}
+            download
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-full btn-glow text-white font-black text-sm"
+          >
+            <Download size={16} aria-hidden /> Descargar app para Android (v{COURIER_APK_VERSION})
+          </a>
+          <ol className="text-xs text-gray-500 list-decimal pl-5 space-y-1">
+            <li>Abrí el archivo descargado y aceptá &ldquo;Instalar apps desconocidas&rdquo; para el navegador.</li>
+            <li>Si aparece un aviso de Play Protect, tocá &ldquo;Más detalles&rdquo; → &ldquo;Instalar de todas formas&rdquo;.</li>
+            <li>En Samsung, si se bloquea, desactivá Ajustes → Seguridad → Bloqueador automático.</li>
+            <li>Abrí la app, iniciá sesión y aceptá la ubicación &ldquo;Permitir todo el tiempo&rdquo;.</li>
+          </ol>
+        </>
+      ) : (
+        <p className="text-sm text-gray-500">Abrí esta página desde un teléfono Android para descargar la app.</p>
+      )}
+    </section>
+  );
+}
+
+/** Dentro de la app, si el permiso de ubicación quedó denegado, se lleva a los ajustes para habilitarlo. */
+function LocationDeniedCard() {
+  return (
+    <section aria-labelledby="loc-title" className="neumorphic rounded-2xl p-5 space-y-2 border border-red-200">
+      <h3 id="loc-title" className="flex items-center gap-2 font-black text-gray-800">
+        <MapPinOff size={18} className="text-red-500" aria-hidden /> La ubicación está bloqueada
+      </h3>
+      <p className="text-sm text-gray-600">
+        El local no puede ver por dónde vas. En los ajustes de la app, entrá a Permisos → Ubicación y elegí
+        &ldquo;Permitir todo el tiempo&rdquo;.
       </p>
       <button
         type="button"
-        onClick={onEnable}
-        className="w-full flex items-center justify-center gap-2 py-3 rounded-full btn-glow text-white font-black text-sm"
+        onClick={() => openNativeSettings()}
+        className="w-full py-2.5 rounded-full neumorphic-inset text-brand-orange font-black text-sm"
       >
-        <Navigation size={16} aria-hidden /> Activar ubicación
+        Abrir ajustes de la app
       </button>
     </section>
   );
@@ -110,6 +108,9 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
 
   useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh, demoPollMs: DEMO_POLL_MS });
 
+  const mine = orders.filter((o) => o.courier_name === courierName);
+  const { state: tracking, native, deliveredPoint: lastPoint } = useCourierTracking(mine.length > 0);
+
   const act = async (
     id: string,
     body: { status: "Finalizados" } | { courier_name: string } | { picked_up: true },
@@ -117,8 +118,8 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
     setBusyId(id);
     setError(null);
     try {
-      // Al entregar se guarda dónde está el teléfono: es el punto de entrega en el mapa del admin.
-      const deliveredPoint = "status" in body ? await currentDeliveredPoint() : null;
+      // Al entregar se guarda la última posición de la app: es el punto de entrega en el mapa del admin.
+      const deliveredPoint = "status" in body ? lastPoint() : null;
       const res = await fetch("/api/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -136,8 +137,6 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
     }
   };
 
-  const mine = orders.filter((o) => o.courier_name === courierName);
-  const { state: tracking, permission, requestPermission } = useCourierTracking(mine.length > 0);
   const available = orders.filter((o) => o.courier_name === null);
   const others = orders.filter((o) => o.courier_name !== null && o.courier_name !== courierName);
 
@@ -237,7 +236,8 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
         {tracking !== "off" && <TrackingBadge state={tracking} />}
       </div>
 
-      <LocationPermissionCard permission={permission} onEnable={requestPermission} />
+      {native === false && <DownloadAppCard />}
+      {native === true && tracking === "denied" && <LocationDeniedCard />}
 
       {error && (
         <p role="alert" className="text-xs font-bold text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-100">{error}</p>

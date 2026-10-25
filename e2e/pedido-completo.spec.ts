@@ -46,6 +46,8 @@ test.describe("pedido de punta a punta", () => {
 
       // 5. El repartidor lo toma, sale con el pedido y lo entrega.
       await repartidor.page.goto("/repartidor");
+      // Desde el navegador no se toma la ubicación: se ofrece la app Android.
+      await expect(repartidor.page.getByRole("heading", { name: "Bajá la app del repartidor" })).toBeVisible();
       const tarjetaRepartidor = repartidor.page.locator("article", { hasText: codigo });
       await expect(tarjetaRepartidor).toBeVisible();
       await tarjetaRepartidor.getByRole("button", { name: "Tomar pedido" }).click();

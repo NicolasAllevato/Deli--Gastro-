@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Fuente de posiciones del repartidor. En el navegador usa `navigator.geolocation` (se corta con la
- * pantalla bloqueada). Dentro de la app Android (Capacitor, carpeta `mobile/repartidor`) usa el plugin
- * nativo `BackgroundGeolocation`, que sigue mandando con la pantalla apagada y muestra una notificación fija.
+ * Fuente de posiciones del repartidor: solo la app Android (Capacitor, carpeta `mobile/repartidor`),
+ * con el plugin nativo `BackgroundGeolocation`, que sigue mandando con la pantalla apagada y muestra
+ * una notificación fija. En el navegador no se toma la ubicación (se corta al bloquear la pantalla).
  * La web no importa `@capacitor/core`: el puente lo inyecta la app en `window.Capacitor`.
  */
 
@@ -95,23 +95,9 @@ export function watchFixes(onFix: (fix: Fix) => void, onError: (error: WatchErro
     };
   }
 
-  if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-    onError("unavailable");
-    return () => {};
-  }
-  const watchId = navigator.geolocation.watchPosition(
-    (pos) =>
-      onFix({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: finite(pos.coords.accuracy),
-        heading: finite(pos.coords.heading),
-        speed: finite(pos.coords.speed),
-      }),
-    (err) => onError(err.code === err.PERMISSION_DENIED ? "denied" : "unavailable"),
-    { enableHighAccuracy: true, maximumAge: 10_000, timeout: 30_000 },
-  );
-  return () => navigator.geolocation.clearWatch(watchId);
+  // Fuera de la app no se toma la ubicación: el repartidor tiene que usar la app Android.
+  onError("unavailable");
+  return () => {};
 }
 
 /** En la app, si el permiso quedó denegado, abre los ajustes de la app para habilitarlo. */
