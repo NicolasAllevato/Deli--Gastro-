@@ -35,12 +35,17 @@ export async function listCourierNames(): Promise<string[]> {
   }
 
   const db = createAdminClient();
-  const { data, error } = await db.auth.admin.listUsers({ perPage: MAX_USERS });
-  if (error) return namesFromRecentOrders(db);
+  // Los dados de alta con PIN en el admin (tabla couriers) siempre están, aunque falle la Admin API.
+  const { data: rows } = await db.from("couriers").select("name").eq("active", true);
+  const withPin = (rows ?? []).map((r) => r.name);
 
-  return unique(
-    data.users
+  const { data, error } = await db.auth.admin.listUsers({ perPage: MAX_USERS });
+  if (error) return unique([...withPin, ...(await namesFromRecentOrders(db))]);
+
+  return unique([
+    ...withPin,
+    ...data.users
       .filter((u) => u.app_metadata?.role === "repartidor" && !u.banned_until)
       .map((u) => courierDisplayName(u)),
-  );
+  ]);
 }

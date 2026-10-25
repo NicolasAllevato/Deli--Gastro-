@@ -30,6 +30,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
       { href: "/admin/tablero", label: "Tablero" },
       { href: "/admin/pedidos", label: "Historial" },
       { href: "/admin/mapa", label: "Mapa" },
+      { href: "/admin/repartidores", label: "Repartidores" },
     ],
   },
   {

@@ -41,12 +41,27 @@ async function markComplete(res: NextResponse, db: Db, userId: string, appMetada
   if (error) throw new Error(`No se pudo registrar la aceptación en la sesión: ${error.message}`);
 }
 
-/** Estado de aceptación del usuario actual. */
-export async function GET() {
+/** ¿Ya tiene la marca que lee el proxy? Sin ella, "Ingresar" vuelve a mandar a esta pantalla. */
+function hasMark(req: NextRequest, appMetadata: Record<string, unknown> | undefined): boolean {
+  if (isDemoMode()) return req.cookies.get(DEMO_LEGAL_COOKIE)?.value === LEGAL_BUNDLE_VERSION;
+  return appMetadata?.legal_version === LEGAL_BUNDLE_VERSION;
+}
+
+/**
+ * Estado de aceptación del usuario actual. Si ya aceptó todo pero falta la marca (se aceptó en otro
+ * navegador, se perdió la cookie o falló al escribirla), se deja ahora para que pueda entrar.
+ */
+export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (isAuthorizationError(auth)) return auth.error;
   try {
-    return NextResponse.json(await statusFor(createAdminClient(), auth.user.id));
+    const db = createAdminClient();
+    const status = await statusFor(db, auth.user.id);
+    const res = NextResponse.json(status);
+    if (status.complete && !hasMark(req, auth.user.app_metadata)) {
+      await markComplete(res, db, auth.user.id, auth.user.app_metadata ?? {});
+    }
+    return res;
   } catch (error: unknown) {
     console.error("[legal] estado", error);
     return NextResponse.json({ error: "No pudimos verificar tus aceptaciones." }, { status: 500 });

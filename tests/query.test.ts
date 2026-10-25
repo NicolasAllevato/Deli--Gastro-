@@ -8,7 +8,7 @@ function emptyStore(): Tables {
     legal_acceptances: [],
     payment_intents: [],
     order_items: [],
-    courier_locations: [],
+    courier_locations: [], couriers: [],
     clients: [],
     orders: [],
     points_ledger: [],

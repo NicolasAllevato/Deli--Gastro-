@@ -134,7 +134,9 @@ export function AcceptTermsClient() {
             <button
               type="button"
               disabled={!status.complete}
-              onClick={() => { router.replace(target); router.refresh(); }}
+              // Navegación completa: el router del cliente puede tener en caché la redirección a esta
+              // misma pantalla (de antes de aceptar) y no volver a preguntarle al servidor.
+              onClick={() => window.location.assign(target)}
               className="mt-6 w-full neumorphic neumorphic-hover rounded-full px-5 py-3 text-sm font-black text-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {status.complete ? "Ingresar" : `Falta aceptar ${status.pending.length === 2 ? "los dos documentos" : "un documento"}`}
