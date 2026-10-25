@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getUserRole } from "@/lib/auth/roles";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
+import { cleanEnv } from "@/lib/clean-env";
 import { accountByRole } from "@/lib/demo/users";
 import { DEMO_LEGAL_COOKIE, LEGAL_BUNDLE_VERSION } from "@/lib/legal/documents";
 
@@ -48,8 +49,8 @@ async function supabaseProxy(req: NextRequest): Promise<NextResponse> {
   const res = NextResponse.next();
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     {
       cookies: {
         getAll: () => req.cookies.getAll(),
