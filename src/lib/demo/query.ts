@@ -44,7 +44,7 @@ export interface QueryResult {
 const KNOWN_TABLES: readonly TableName[] = [
   "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
   "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
-  "payment_intents", "order_items", "courier_locations",
+  "payment_intents", "order_items", "courier_locations", "couriers",
 ];
 
 /** Tablas cuya clave primaria es `key` (no `id`). */
@@ -80,6 +80,7 @@ const DEFAULTS: Record<TableName, () => Row> = {
   order_events: () => ({ actor: null, detail: null }),
   order_items: () => ({ product_id: null }),
   courier_locations: () => ({ accuracy_m: null, heading: null, speed_mps: null }),
+  couriers: () => ({ active: true }),
   delivery_zones: () => ({ fee: 0, min_order: 0, sort_order: 0, is_active: true }),
   integration_secrets: () => ({}),
   wa_conversations: () => ({

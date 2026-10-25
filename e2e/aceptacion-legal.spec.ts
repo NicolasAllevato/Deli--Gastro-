@@ -5,6 +5,7 @@ import { COLD_ROUTE_TIMEOUT_MS, loginAs } from "./helpers";
 // y la aceptación aparece en el panel del admin.
 test.describe("aceptación de términos y privacidad", () => {
   test("un usuario nuevo acepta los dos documentos por separado y entra a su portal", async ({ browser }) => {
+    test.setTimeout(180_000);
     const { context, page } = await loginAs(browser, "cliente", { acceptLegal: false });
     try {
       await page.goto("/cliente", { timeout: COLD_ROUTE_TIMEOUT_MS });
@@ -24,6 +25,17 @@ test.describe("aceptación de términos y privacidad", () => {
       await expect(page).toHaveURL(/\/cliente$/, { timeout: COLD_ROUTE_TIMEOUT_MS });
     } finally {
       await context.close();
+    }
+
+    // Otro navegador del mismo usuario (sin la marca de aceptación): ya aceptó todo, así que "Ingresar" entra.
+    const otro = await loginAs(browser, "cliente", { acceptLegal: false });
+    try {
+      await otro.page.goto("/cliente", { timeout: COLD_ROUTE_TIMEOUT_MS });
+      await expect(otro.page).toHaveURL(/\/aceptar-terminos/);
+      await otro.page.getByRole("button", { name: "Ingresar" }).click({ timeout: COLD_ROUTE_TIMEOUT_MS });
+      await expect(otro.page).toHaveURL(/\/cliente$/, { timeout: COLD_ROUTE_TIMEOUT_MS });
+    } finally {
+      await otro.context.close();
     }
 
     const admin = await loginAs(browser, "admin");

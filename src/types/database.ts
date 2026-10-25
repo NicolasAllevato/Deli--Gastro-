@@ -141,6 +141,31 @@ export interface Database {
         Update: Record<string, never>
         Relationships: []
       }
+      couriers: {
+        Row: {
+          user_id: string
+          name: string
+          pin_hash: string
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          name: string
+          pin_hash: string
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          name?: string
+          pin_hash?: string
+          active?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       courier_locations: {
         Row: {
           user_id: string

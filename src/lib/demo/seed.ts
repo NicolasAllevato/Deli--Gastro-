@@ -1,5 +1,6 @@
 import { RESTAURANT_LOCATION, SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { DEMO_ACCOUNTS } from "@/lib/demo/users";
+import { DEMO_COURIER_PIN, DEMO_PIN_SECRET, hashPin } from "@/lib/courier-pins";
 
 export type Row = Record<string, unknown>;
 export type TableName =
@@ -19,9 +20,21 @@ export type TableName =
   | "legal_acceptances"
   | "payment_intents"
   | "order_items"
-  | "courier_locations";
+  | "courier_locations"
+  | "couriers";
 
 export type Tables = Record<TableName, Row[]>;
+
+/** El repartidor de ejemplo, dado de alta con su PIN (1234) como si lo hubiera cargado el admin. */
+function demoCouriers(): Row[] {
+  const courier = DEMO_ACCOUNTS.find((a) => a.role === "repartidor");
+  if (!courier) return [];
+  const created = "2026-01-01T00:00:00.000Z";
+  return [{
+    id: courier.id, user_id: courier.id, name: courier.name, pin_hash: hashPin(DEMO_COURIER_PIN, DEMO_PIN_SECRET),
+    active: true, created_at: created, updated_at: created,
+  }];
+}
 
 /**
  * UUID v4 determinístico (válido para z.uuid) a partir de un grupo y un número.
@@ -510,5 +523,6 @@ export function buildSeed(): Tables {
     reviews: [...reviews, ...extraReviews],
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
     integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [], payment_intents: [], order_items: [], courier_locations: [],
+    couriers: demoCouriers(),
   };
 }
