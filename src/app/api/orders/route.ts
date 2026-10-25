@@ -10,6 +10,7 @@ import { notifyOrderEvent, type OrderNotice } from "@/lib/whatsapp/notify";
 import { awardPointsForOrder, listOrders } from "@/lib/orders-server";
 import { settleCancellation } from "@/lib/orders-create";
 import type { OrderStatus } from "@/types/database";
+import { locationSchema } from "@/lib/courier-location";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
@@ -32,6 +33,8 @@ const updateOrderSchema = z
     status: z.enum(VALID_STATUSES as [OrderStatus, ...OrderStatus[]]).optional(),
     courier_name: z.string().trim().min(1).max(60).nullable().optional(),
     picked_up: z.literal(true).optional(),
+    /** Posición del teléfono del repartidor al marcar entregado. */
+    delivered_point: locationSchema.pick({ lat: true, lng: true, accuracy: true }).optional(),
   })
   .refine((v) => v.status !== undefined || v.courier_name !== undefined || v.picked_up === true, {
     message: "Indicá status, courier_name o picked_up",
@@ -151,13 +154,26 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "El pedido todavía no está en camino." }, { status: 409 });
   }
 
-  const patch: { status?: OrderStatus; courier_name?: string | null; picked_up_at?: string } & StagePatch = {};
+  const patch: {
+    status?: OrderStatus;
+    courier_name?: string | null;
+    picked_up_at?: string;
+    delivered_lat?: number;
+    delivered_lng?: number;
+    delivered_accuracy_m?: number | null;
+  } & StagePatch = {};
   if (body.picked_up && !current.picked_up_at) patch.picked_up_at = new Date().toISOString();
   if (body.status !== undefined) {
     patch.status = body.status;
     Object.assign(patch, stagePatch(body.status));
   }
   if (body.courier_name !== undefined) patch.courier_name = body.courier_name;
+  // Solo el repartidor que entrega deja el punto: es su teléfono el que estaba en la puerta.
+  if (auth.role === "repartidor" && body.status === "Finalizados" && body.delivered_point) {
+    patch.delivered_lat = body.delivered_point.lat;
+    patch.delivered_lng = body.delivered_point.lng;
+    patch.delivered_accuracy_m = body.delivered_point.accuracy ?? null;
+  }
   // Si entrega un repartidor que no se había asignado, queda registrado.
   if (auth.role === "repartidor" && body.status === "Finalizados" && current.courier_name === null) {
     patch.courier_name = courierName;

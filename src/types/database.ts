@@ -4,6 +4,7 @@ export type OrderStatus = 'Recibidos' | 'En Preparación' | 'En Camino' | 'Final
 export type ClientTier  = 'Bronce' | 'Plata' | 'Oro' | 'Platino'
 export type PaymentMethod = 'Efectivo' | 'Tarjeta' | 'Mercado Pago'
 export type OrderChannel = 'web' | 'whatsapp' | 'mostrador'
+export type FudoSyncStatus = 'pending' | 'sent' | 'failed' | 'skipped'
 export type PaymentIntentStatus = 'pending' | 'approved' | 'cancelled' | 'expired' | 'refunded'
 
 export interface Database {
@@ -63,6 +64,14 @@ export interface Database {
           survey_sent_at: string | null
           channel: OrderChannel
           points_earned: number | null
+          fudo_order_id: number | null
+          fudo_sync_status: FudoSyncStatus | null
+          fudo_error: string | null
+          fudo_attempts: number
+          fudo_synced_at: string | null
+          delivered_lat: number | null
+          delivered_lng: number | null
+          delivered_accuracy_m: number | null
           created_at: string
           updated_at: string
         }
@@ -81,6 +90,7 @@ export interface Database {
           courier_name?: string | null
           channel?: OrderChannel
           points_earned?: number | null
+          fudo_sync_status?: FudoSyncStatus | null
         }
         Update: {
           status?: OrderStatus
@@ -99,7 +109,80 @@ export interface Database {
           delivered_at?: string | null
           survey_sent_at?: string | null
           points_earned?: number | null
+          fudo_order_id?: number | null
+          fudo_sync_status?: FudoSyncStatus | null
+          fudo_error?: string | null
+          fudo_attempts?: number
+          fudo_synced_at?: string | null
+          delivered_lat?: number | null
+          delivered_lng?: number | null
+          delivered_accuracy_m?: number | null
         }
+        Relationships: []
+      }
+      order_items: {
+        Row: {
+          id: string
+          order_id: string
+          product_id: string | null
+          name: string
+          qty: number
+          unit_price: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          order_id: string
+          product_id?: string | null
+          name: string
+          qty: number
+          unit_price: number
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      courier_locations: {
+        Row: {
+          user_id: string
+          courier_name: string
+          lat: number
+          lng: number
+          accuracy_m: number | null
+          heading: number | null
+          speed_mps: number | null
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          courier_name: string
+          lat: number
+          lng: number
+          accuracy_m?: number | null
+          heading?: number | null
+          speed_mps?: number | null
+          updated_at?: string
+        }
+        Update: {
+          courier_name?: string
+          lat?: number
+          lng?: number
+          accuracy_m?: number | null
+          heading?: number | null
+          speed_mps?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fudo_product_map: {
+        Row: { product_id: string; fudo_product_id: number; fudo_name: string | null; updated_at: string }
+        Insert: { product_id: string; fudo_product_id: number; fudo_name?: string | null }
+        Update: { fudo_product_id?: number; fudo_name?: string | null }
+        Relationships: []
+      }
+      fudo_payment_map: {
+        Row: { payment_method: string; fudo_payment_method_id: number; updated_at: string }
+        Insert: { payment_method: string; fudo_payment_method_id: number }
+        Update: { fudo_payment_method_id?: number }
         Relationships: []
       }
       wa_campaigns: {

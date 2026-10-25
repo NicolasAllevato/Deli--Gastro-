@@ -110,6 +110,14 @@ describe("createDeliveryOrder", () => {
     const event = demo.store.order_events.find((e) => e.order_id === result.value.id);
     assert.equal(event?.event, "Recibidos");
     assert.equal(event?.actor, "cliente");
+
+    const items = demo.store.order_items.filter((i) => i.order_id === result.value.id);
+    assert.deepEqual(
+      items.map((i) => ({ product_id: i.product_id, name: i.name, qty: i.qty, unit_price: i.unit_price })),
+      [{ product_id: productId(demo, "Hamburguesa Clásica"), name: "Hamburguesa Clásica", qty: 1, unit_price: 8500 }],
+    );
+    // Sin FUDO_GATEWAY_URL la integración está apagada: el pedido no queda pendiente de envío.
+    assert.equal(result.value.fudo_sync_status, null);
   });
 
   it("no crea nada si el precio cambió desde la cotización", async () => {

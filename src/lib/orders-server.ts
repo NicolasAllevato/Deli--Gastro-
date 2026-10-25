@@ -26,6 +26,9 @@ export interface EnrichedOrder {
   ready_at: string | null;
   picked_up_at: string | null;
   delivered_at: string | null;
+  /** Dónde estaba el repartidor al marcar entregado. */
+  delivered_lat: number | null;
+  delivered_lng: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +51,8 @@ interface RawOrder {
   ready_at?: string | null;
   picked_up_at?: string | null;
   delivered_at?: string | null;
+  delivered_lat?: number | null;
+  delivered_lng?: number | null;
   created_at: string;
   updated_at?: string;
 }
@@ -92,6 +97,8 @@ export async function enrichOrders(db: Db, orders: RawOrder[]): Promise<Enriched
       ready_at: o.ready_at ?? null,
       picked_up_at: o.picked_up_at ?? null,
       delivered_at: o.delivered_at ?? null,
+      delivered_lat: o.delivered_lat ?? null,
+      delivered_lng: o.delivered_lng ?? null,
       created_at: o.created_at,
       updated_at: o.updated_at ?? o.created_at,
     };

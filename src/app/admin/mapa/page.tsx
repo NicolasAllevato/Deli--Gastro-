@@ -9,6 +9,8 @@ import type { EnrichedOrder } from "@/lib/orders-server";
 import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import type { CourierLocation } from "@/lib/courier-location";
+import { isSameLocalDay } from "@/lib/delivery-metrics";
 
 const MapComponent = dynamic(() => import("./MapComponent"), {
   ssr: false,
@@ -23,6 +25,8 @@ const MapComponent = dynamic(() => import("./MapComponent"), {
 });
 
 const DEMO_POLL_MS = 5000;
+/** Las posiciones llegan cada 15 s desde el teléfono del repartidor. */
+const COURIER_POLL_MS = 10_000;
 const MAP_STATUSES = ["Recibidos", "En Preparación", "En Camino"] as const;
 
 const estadoIcon: Record<string, React.ReactNode> = {
@@ -33,10 +37,24 @@ const estadoIcon: Record<string, React.ReactNode> = {
 
 export default function MapaPage() {
   const [orders, setOrders] = useState<EnrichedOrder[]>([]);
+  const [delivered, setDelivered] = useState<EnrichedOrder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [local, setLocal] = useState<GeoPoint | undefined>(undefined);
+  const [couriers, setCouriers] = useState<CourierLocation[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/couriers/location", { cache: "no-store" })
+        .then((res) => (res.ok ? (res.json() as Promise<CourierLocation[]>) : null))
+        .then((data) => { if (data && !cancelled) setCouriers(data); })
+        .catch(() => { /* sin red: se reintenta en el próximo ciclo */ });
+    void load();
+    const id = setInterval(load, COURIER_POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   // Las zonas casi no cambian: se piden una sola vez (el mapa funciona igual si falla).
   useEffect(() => {
@@ -56,6 +74,8 @@ export default function MapaPage() {
       if (!res.ok) return;
       const all = (await res.json()) as EnrichedOrder[];
       setOrders(all.filter((o) => (MAP_STATUSES as readonly string[]).includes(o.status)));
+      // Entregas de hoy con punto de entrega: cierran el recorrido de cada repartidor en el mapa.
+      setDelivered(all.filter((o) => o.status === "Finalizados" && o.delivered_lat !== null && isSameLocalDay(o.delivered_at)));
     } finally {
       setLoaded(true);
     }
@@ -88,13 +108,13 @@ export default function MapaPage() {
         </div>
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full badge-blue text-xs font-bold">
           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-          {enRuta} en ruta
+          {enRuta} en ruta · {couriers.length} {couriers.length === 1 ? "repartidor" : "repartidores"} en el mapa
         </span>
       </div>
 
       {/* Mapa */}
       <div className="neumorphic rounded-2xl p-1 overflow-hidden">
-        <MapComponent orders={visible} zones={zones} local={local} />
+        <MapComponent orders={visible} zones={zones} local={local} couriers={couriers} delivered={delivered} />
       </div>
 
       {/* Búsqueda */}
