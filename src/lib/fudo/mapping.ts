@@ -187,37 +187,67 @@ export function requeueCutoff(now: number = Date.now()): string {
   return new Date(now - REQUEUE_WINDOW_MS).toISOString();
 }
 
-/** Pedidos omitidos por falta de mapeo: el MISMO criterio para contarlos y para reencolarlos. */
-function onlySkippedByMapping<Q extends {
-  eq(column: string, value: string): Q;
-  is(column: string, value: null): Q;
-  like(column: string, pattern: string): Q;
-}>(query: Q): Q {
-  return query
-    .eq("fudo_sync_status", "skipped")
-    .is("fudo_order_id", null)
-    .like("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`);
+interface Eq<Q> { eq(column: string, value: string): Q; is(column: string, value: null): Q }
+
+/** Base de los omitidos: `skipped` y sin pedido creado en Fudo. */
+function onlySkipped<Q extends Eq<Q>>(query: Q): Q {
+  return query.eq("fudo_sync_status", "skipped").is("fudo_order_id", null);
 }
+
+/** Pedidos omitidos por falta de mapeo: el MISMO criterio para contarlos y para reencolarlos. */
+function onlySkippedByMapping<Q extends Eq<Q> & { like(column: string, pattern: string): Q }>(query: Q): Q {
+  return onlySkipped(query).like("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`);
+}
+
+const SKIPPED_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** El cron del gateway toma pedidos de más de 1 min (db.ts listRetryable); 10 min de margen para no avisar de lo normal. */
+const STUCK_AFTER_MS = 10 * 60 * 1000;
+/** Mismo tope de intentos que `MAX_ATTEMPTS` del Worker: con más, el pedido ya pasó a `skipped`. */
+const GATEWAY_MAX_ATTEMPTS = 6;
 
 export interface SkippedSummary {
-  /** Todos los pedidos omitidos por falta de mapeo (nunca se reintentan solos). */
-  count: number;
-  /** Fecha (ISO) del más viejo, o null si no hay. */
-  oldestAt: string | null;
-  /** Los de las últimas 24 h: son los que se reenvían al guardar el mapeo. */
-  recentCount: number;
+  /** Omitidos por falta de mapeo (últimos 30 días): nunca se reintentan solos. */
+  byMapping: { count: number; oldestAt: string | null; recentCount: number };
+  /** Omitidos por otro motivo (rechazo de Fudo, sin líneas, intentos agotados), sin solaparse con byMapping. */
+  otherSkipped: number;
+  /** Pending/failed con más de 10 minutos de espera y todavía con intentos disponibles. */
+  stuck: number;
 }
 
+export const EMPTY_SKIPPED: SkippedSummary = { byMapping: { count: 0, oldestAt: null, recentCount: 0 }, otherSkipped: 0, stuck: 0 };
+
+/** Cuenta pedidos que no llegaron a Fudo (ventana de 30 días). Lanza ante error de base: el llamador decide degradar. */
 export async function countSkippedOrders(db: Db, now: number = Date.now()): Promise<SkippedSummary> {
-  const [total, recent, oldest] = await Promise.all([
-    onlySkippedByMapping(db.from("orders").select("id", { count: "exact", head: true })),
-    onlySkippedByMapping(db.from("orders").select("id", { count: "exact", head: true })).gte("created_at", requeueCutoff(now)),
-    onlySkippedByMapping(db.from("orders").select("created_at")).order("created_at", { ascending: true }).limit(1),
+  const since = new Date(now - SKIPPED_WINDOW_MS).toISOString();
+  const head = { count: "exact" as const, head: true };
+  const [total, recent, oldest, other, stuck] = await Promise.all([
+    onlySkippedByMapping(db.from("orders").select("id", head)).gte("created_at", since),
+    onlySkippedByMapping(db.from("orders").select("id", head)).gte("created_at", requeueCutoff(now)),
+    onlySkippedByMapping(db.from("orders").select("created_at")).gte("created_at", since).order("created_at", { ascending: true }).limit(1),
+    onlySkipped(db.from("orders").select("id", head)).not("fudo_error", "like", `${UNMAPPED_ERROR_PREFIX}%`).gte("created_at", since),
+    db.from("orders").select("id", head)
+      .in("fudo_sync_status", ["pending", "failed"]).is("fudo_order_id", null)
+      .lt("fudo_attempts", GATEWAY_MAX_ATTEMPTS)
+      .gte("created_at", since).lt("created_at", new Date(now - STUCK_AFTER_MS).toISOString()),
   ]);
-  const failed = total.error ?? recent.error ?? oldest.error;
+  const failed = total.error ?? recent.error ?? oldest.error ?? other.error ?? stuck.error;
   if (failed) throw new Error(failed.message);
   const first = (oldest.data as { created_at: string }[] | null)?.[0];
-  return { count: total.count ?? 0, oldestAt: first?.created_at ?? null, recentCount: recent.count ?? 0 };
+  return {
+    byMapping: { count: total.count ?? 0, oldestAt: first?.created_at ?? null, recentCount: recent.count ?? 0 },
+    otherSkipped: other.count ?? 0,
+    stuck: stuck.count ?? 0,
+  };
+}
+
+/** El aviso es accesorio: ante cualquier error se loguea (sin datos) y se devuelve el resumen vacío. */
+export async function safeCountSkippedOrders(db: Db, now: number = Date.now()): Promise<SkippedSummary> {
+  try {
+    return await countSkippedOrders(db, now);
+  } catch (error: unknown) {
+    console.error("[admin/fudo-map] contar omitidos", error instanceof Error ? error.message : "error");
+    return EMPTY_SKIPPED;
+  }
 }
 
 /** Cuerpo del GET de /api/admin/fudo-map: el mapeo de siempre más `skipped` (campo nuevo). */

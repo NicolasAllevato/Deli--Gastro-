@@ -4,7 +4,7 @@ import { createDemoDb } from "./helpers/demo-db.ts";
 
 const {
   saveSchema, buildProductRows, buildPaymentRows, findUnmappedProducts, parseFudoCatalog,
-  loadMapping, saveMapping, countSkippedOrders, buildMapResponse, findUnknownFudoIds, applyCatalogNames, suggestionsFrom,
+  loadMapping, saveMapping, countSkippedOrders, safeCountSkippedOrders, EMPTY_SKIPPED, buildMapResponse, findUnknownFudoIds, applyCatalogNames, suggestionsFrom,
 } = await import("../src/lib/fudo/mapping.ts");
 const { processSaveRequest } = await import("../src/lib/fudo/save-request.ts");
 const { fetchFudoCatalog } = await import("../src/lib/fudo/gateway.ts");
@@ -180,12 +180,13 @@ describe("mapeo Fudo: reencolado de omitidos", () => {
 
 describe("mapeo Fudo: aviso de omitidos", () => {
   const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
   const order = (id: string, over: Record<string, unknown>) => ({
     id, status: "Recibidos", total: 10, fudo_sync_status: "skipped", fudo_order_id: null,
     fudo_error: "Productos sin mapear a Fudo: Burger", fudo_attempts: 0, created_at: hoursAgo(1), ...over,
   });
 
-  it("cuenta solo los omitidos por mapeo, con recientes y el más viejo", async () => {
+  it("byMapping cuenta solo los omitidos por mapeo, con recientes y el más viejo", async () => {
     const { db, store } = createDemoDb();
     store.orders.length = 0;
     const old = hoursAgo(50);
@@ -197,19 +198,78 @@ describe("mapeo Fudo: aviso de omitidos", () => {
       order("e", { fudo_sync_status: "sent", fudo_error: null }),
       order("f", { fudo_order_id: 9 }),
     );
-    assert.deepEqual(await countSkippedOrders(db), { count: 3, oldestAt: old, recentCount: 2 });
+    const s = await countSkippedOrders(db);
+    assert.deepEqual(s.byMapping, { count: 3, oldestAt: old, recentCount: 2 });
   });
 
-  it("sin omitidos responde 0 y sin fecha", async () => {
+  it("sin pedidos todo da 0 y sin fecha", async () => {
     const { db, store } = createDemoDb();
     store.orders.length = 0;
-    assert.deepEqual(await countSkippedOrders(db), { count: 0, oldestAt: null, recentCount: 0 });
+    assert.deepEqual(await countSkippedOrders(db), {
+      byMapping: { count: 0, oldestAt: null, recentCount: 0 }, otherSkipped: 0, stuck: 0,
+    });
+  });
+
+  it("las tres categorías son disjuntas y excluyen enviados y NULL", async () => {
+    const { db, store } = createDemoDb();
+    store.orders.length = 0;
+    store.orders.push(
+      order("map", {}),
+      order("rechazo", { fudo_error: "Fudo /orders 400" }),
+      order("sinlineas", { fudo_error: "El pedido no tiene líneas guardadas" }),
+      order("agotado", { fudo_error: "timeout", fudo_attempts: 6 }),
+      order("pend", { fudo_sync_status: "pending", fudo_error: null, created_at: minutesAgo(30) }),
+      order("fail", { fudo_sync_status: "failed", fudo_error: "timeout", fudo_attempts: 2, created_at: minutesAgo(15) }),
+      order("reciente", { fudo_sync_status: "pending", fudo_error: null, created_at: minutesAgo(3) }),
+      order("sinintentos", { fudo_sync_status: "failed", fudo_attempts: 6, created_at: minutesAgo(30) }),
+      order("sent", { fudo_sync_status: "sent", fudo_error: null }),
+      order("nulo", { fudo_sync_status: null, fudo_error: null, created_at: minutesAgo(30) }),
+      order("conid", { fudo_sync_status: "pending", fudo_order_id: 5, fudo_error: null, created_at: minutesAgo(30) }),
+    );
+    const s = await countSkippedOrders(db);
+    assert.equal(s.byMapping.count, 1);
+    assert.equal(s.otherSkipped, 3);
+    assert.equal(s.stuck, 2);
+  });
+
+  it("solo mira los últimos 30 días", async () => {
+    const { db, store } = createDemoDb();
+    store.orders.length = 0;
+    const days40 = hoursAgo(40 * 24);
+    store.orders.push(
+      order("viejo-map", { created_at: days40 }),
+      order("viejo-otro", { created_at: days40, fudo_error: "Fudo /orders 400" }),
+      order("viejo-stuck", { created_at: days40, fudo_sync_status: "pending", fudo_error: null }),
+      order("nuevo", { created_at: hoursAgo(29 * 24) }),
+    );
+    const s = await countSkippedOrders(db);
+    assert.deepEqual(s, { byMapping: { count: 1, oldestAt: s.byMapping.oldestAt, recentCount: 0 }, otherSkipped: 0, stuck: 0 });
+  });
+
+  it("paridad: recentCount coincide con lo que saveMapping reencola", async () => {
+    const { db, store } = createDemoDb();
+    const first = String(store.products[0].id);
+    store.orders.length = 0;
+    store.orders.push(
+      order("a", {}), order("b", { created_at: hoursAgo(20) }), order("c", { created_at: hoursAgo(30) }),
+      order("d", { fudo_error: "Fudo /orders 400" }),
+    );
+    const before = await countSkippedOrders(db);
+    const requeued = await saveMapping(db, saveSchema.parse({ products: [{ productId: first, fudoProductId: 1 }] }));
+    assert.equal(requeued, before.byMapping.recentCount);
+    assert.equal(requeued, 2);
+  });
+
+  it("degradación: si una query falla devuelve el resumen vacío sin lanzar", async () => {
+    const broken = { from() { throw new Error("db caída"); } } as unknown as Parameters<typeof countSkippedOrders>[0];
+    await assert.rejects(countSkippedOrders(broken));
+    assert.deepEqual(await safeCountSkippedOrders(broken), EMPTY_SKIPPED);
   });
 
   it("el GET incluye skipped sin tocar el resto", async () => {
     const { db } = createDemoDb();
     const mapping = await loadMapping(db);
-    const skipped = { count: 2, oldestAt: null, recentCount: 1 };
+    const skipped = { byMapping: { count: 2, oldestAt: null, recentCount: 1 }, otherSkipped: 1, stuck: 0 };
     const body = buildMapResponse(mapping, [{ id: 1, name: "A", active: true }, { id: 2, name: "B", active: false }], true, skipped);
     assert.deepEqual(body.skipped, skipped);
     assert.equal(body.gatewayConfigured, true);
