@@ -3,11 +3,15 @@
  * agrupación de mensajes por día. Inspirado en el sidebar de chats de OpenWA (MIT).
  */
 
+import { isBotPausedUntil } from "../../../../lib/whatsapp/pause.ts";
+
 export interface ConversationItem {
   id: string;
   phone: string;
   name: string;
   humanTakeover: boolean;
+  /** Pausa del bot por un mensaje escrito desde la app WhatsApp Business (ISO). */
+  botPausedUntil?: string | null;
   lastInboundAt: string | null;
   last: { direction: string; text: string; at: string } | null;
 }
@@ -54,6 +58,21 @@ export function formatRemaining(ms: number): string {
   return "menos de 1 min";
 }
 
+/** Una persona atiende: tomó el control desde el panel o hay una pausa por eco vigente. */
+export function personAttends(c: { humanTakeover: boolean; botPausedUntil?: string | null }, now: number): boolean {
+  return c.humanTakeover || isBotPausedUntil(c.botPausedUntil, now);
+}
+
+/** Texto de estado del chat para el encabezado. */
+export function attendedLabel(c: { humanTakeover: boolean; botPausedUntil?: string | null }, now: number): string {
+  if (c.humanTakeover) return "Atiende una persona (el agente no responde)";
+  if (isBotPausedUntil(c.botPausedUntil, now)) {
+    const time = new Date(c.botPausedUntil as string).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    return `Bot en pausa hasta ${time}`;
+  }
+  return "Responde el agente";
+}
+
 const digits = (s: string) => s.replace(/\D/g, "");
 
 export function filterConversations(
@@ -65,8 +84,8 @@ export function filterConversations(
   const q = query.trim().toLowerCase();
   const qDigits = digits(q);
   return list.filter((c) => {
-    if (filter === "agente" && c.humanTakeover) return false;
-    if (filter === "persona" && !c.humanTakeover) return false;
+    if (filter === "agente" && personAttends(c, now)) return false;
+    if (filter === "persona" && !personAttends(c, now)) return false;
     if (filter === "abiertas" && !isWindowOpen(c.lastInboundAt, now)) return false;
     if (!q) return true;
     return (

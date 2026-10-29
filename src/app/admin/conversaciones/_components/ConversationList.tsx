@@ -6,6 +6,7 @@ import {
   CONVERSATION_FILTERS,
   filterConversations,
   isWindowOpen,
+  personAttends,
   type ConversationFilter,
   type ConversationItem,
 } from "./conversation-utils";
@@ -75,7 +76,7 @@ export function ConversationList({ list, loaded, selected, now, onSelect }: Conv
             >
               <span className="flex items-center gap-2">
                 <span className="flex-1 font-bold text-sm text-gray-800 truncate">{c.name}</span>
-                {c.humanTakeover && <Hand size={13} className="text-brand-orange shrink-0" aria-label="Atiende una persona" />}
+                {personAttends(c, now) && <Hand size={13} className="text-brand-orange shrink-0" aria-label="Atiende una persona" />}
                 {isWindowOpen(c.lastInboundAt, now) && <Clock size={13} className="text-green-600 shrink-0" aria-label="Ventana de 24 h abierta" />}
                 {c.last && <span className="text-[10px] text-gray-500 shrink-0">{shortTime(c.last.at, now)}</span>}
               </span>

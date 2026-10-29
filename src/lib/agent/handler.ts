@@ -1,3 +1,4 @@
+import { isBotSilenced } from "@/lib/whatsapp/pause";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { InboundContext, InboundHandler } from "@/lib/whatsapp/inbound";
 import { clientFor, loadWhatsAppSettings } from "@/lib/whatsapp/config";
@@ -91,7 +92,7 @@ async function respond(db: Db, wa: WhatsAppClient, llm: AgentLlm, settings: Agen
 /** Atiende cada mensaje entrante de WhatsApp con el agente de pedidos. */
 export const agentHandler: InboundHandler = async (ctx) => {
   const { db, conversation } = ctx;
-  if (conversation.human_takeover) return;
+  if (isBotSilenced(conversation)) return;
 
   const settings = await loadAgentSettings(db);
   if (!settings.active) return;

@@ -36,6 +36,19 @@ export function settingsFromConfig(config: Record<string, unknown>): BotSettings
   };
 }
 
+/** Clave de `global_config`: minutos que el bot calla en un chat tras un mensaje escrito desde la app WhatsApp Business. */
+export const TAKEOVER_KEY = "bot_human_takeover_minutes";
+export const DEFAULT_TAKEOVER_MINUTES = 120;
+const MAX_TAKEOVER_MINUTES = 7 * 24 * 60;
+
+/** Número (o texto numérico) positivo; inválido => 120. Se acota a 7 días. */
+export function takeoverMinutesFromConfig(config: Record<string, unknown>): number {
+  const raw = config[TAKEOVER_KEY];
+  const minutes = typeof raw === "string" ? Number(raw.trim()) : raw;
+  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 1) return DEFAULT_TAKEOVER_MINUTES;
+  return Math.min(Math.floor(minutes), MAX_TAKEOVER_MINUTES);
+}
+
 export function openNow(settings: BotSettings, now: Date = new Date()): boolean {
   return !settings.paused && isOpenNow(settings.hours.open, settings.hours.close, now);
 }

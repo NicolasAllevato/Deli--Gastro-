@@ -1,4 +1,4 @@
-const MIN_DIGITS = 8;
+export const MIN_DIGITS = 8;
 const COMPARE_DIGITS = 10;
 
 /** Solo dígitos: "+54 9 11 5555-0101" → "5491155550101". */

@@ -3,6 +3,7 @@ import { verifyChallenge } from "./verify.ts";
 import { handleWebhookEvents } from "./entry.ts";
 import { sqlInboundRepo } from "./repo/inbound.ts";
 import { parseWebhook } from "../../../src/lib/whatsapp/payload.ts";
+import { parseCoexistence } from "../../../src/lib/whatsapp/coexistence.ts";
 import { verifySignature } from "../../../src/lib/whatsapp/signature.ts";
 import { processTurn } from "./bot/turn.ts";
 import { createOrdersClient } from "./orders/client.ts";
@@ -68,7 +69,15 @@ async function health(env: Env): Promise<Response> {
   const started = Date.now();
   try {
     await sql`select 1`;
-    return Response.json({ ok: true, dbMs: Date.now() - started });
+    const dbMs = Date.now() - started;
+    // La migración 021 tiene que estar aplicada antes que este Worker: sus consultas leen esta columna.
+    try {
+      await sql`select bot_paused_until from public.wa_conversations limit 0`;
+    } catch (error: unknown) {
+      console.error("[whatsapp-bot] health: falta wa_conversations.bot_paused_until (migración 021)", error instanceof Error ? error.message : error);
+      return Response.json({ ok: false, schema: false, dbMs }, { status: 503 });
+    }
+    return Response.json({ ok: true, schema: true, dbMs });
   } catch (error: unknown) {
     console.error("[whatsapp-bot] health", error instanceof Error ? error.message : error);
     return Response.json({ ok: false }, { status: 503 });
@@ -89,12 +98,13 @@ async function verifyWebhook(url: URL, env: Env): Promise<Response> {
 
 /** Procesa en segundo plano lo que ya respondimos con 200 (Meta no espera). */
 async function processEvents(rawBody: string, phoneNumberId: string | null, env: Env): Promise<void> {
-  const events = parseWebhook(JSON.parse(rawBody) as unknown);
+  const payload = JSON.parse(rawBody) as unknown;
+  const events = [...parseCoexistence(payload), ...parseWebhook(payload)];
   if (events.length === 0) return;
   const sql = connect(env);
   try {
     await handleWebhookEvents(events, {
-      repo: sqlInboundRepo(sql),
+      repo: sqlInboundRepo(sql, (message, detail) => console.error(message, detail)),
       phoneNumberId,
       buffer: (phone: string, message: BufferedMessage) => env.BUFFER.get(env.BUFFER.idFromName(phone)).add(phone, message),
       log: (message, detail) => console.error(message, detail),
@@ -151,7 +161,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
     const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
     const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
     const deps = {
-      repo: sqlBotRepo(sql),
+      repo: sqlBotRepo(sql, (message, detail) => console.error(message, detail)),
       run,
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),

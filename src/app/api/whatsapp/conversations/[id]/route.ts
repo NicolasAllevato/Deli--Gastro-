@@ -42,7 +42,12 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     .limit(THREAD_LIMIT);
 
   return NextResponse.json({
-    conversation: { id, phone: conversation.client_phone, humanTakeover: conversation.human_takeover },
+    conversation: {
+      id,
+      phone: conversation.client_phone,
+      humanTakeover: conversation.human_takeover,
+      botPausedUntil: conversation.bot_paused_until ?? null,
+    },
     messages: [...(messages ?? [])].reverse(),
   });
 }
@@ -59,13 +64,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
   const { data, error } = await createAdminClient()
     .from("wa_conversations")
-    .update({ human_takeover: parsed.data.humanTakeover })
+    // Devolver el chat al agente también levanta la pausa por eco; tomarlo no la toca.
+    .update(parsed.data.humanTakeover ? { human_takeover: true } : { human_takeover: false, bot_paused_until: null })
     .eq("id", id)
-    .select("id, human_takeover")
+    .select("id, human_takeover, bot_paused_until")
     .maybeSingle();
   if (error) return NextResponse.json({ error: "No se pudo actualizar la conversación." }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Conversación no encontrada." }, { status: 404 });
-  return NextResponse.json({ id: data.id, humanTakeover: data.human_takeover });
+  return NextResponse.json({ id: data.id, humanTakeover: data.human_takeover, botPausedUntil: data.bot_paused_until ?? null });
 }
 
 /** Respuesta manual del local, dentro de la ventana de 24 h. */

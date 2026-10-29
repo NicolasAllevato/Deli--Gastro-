@@ -43,7 +43,15 @@ const HISTORY_TURNS = 8;
 const ORDER_INTENTS: readonly Intent[] = ["pedido_nuevo", "pedido_datos", "pedido_confirmar", "pedido_cancelar"];
 const ALLOWED_HOSTS = ["mpago.la", "mercadopago.com.ar", "google.com", "maps.google.com"];
 
-async function reply(deps: TurnDeps, conversation: BotConversation, text: string): Promise<void> {
+/** Una persona escribió desde la app mientras se preparaba la respuesta: el turno se aborta sin enviar nada. */
+class PausedMidTurn extends Error {}
+
+/**
+ * Envía y guarda la respuesta. Antes de enviar vuelve a leer la conversación: un eco de la app WhatsApp Business
+ * puede haber pausado el bot mientras el modelo pensaba. `recheck: false` solo para el aviso de traspaso a una persona.
+ */
+async function reply(deps: TurnDeps, conversation: BotConversation, text: string, recheck = true): Promise<void> {
+  if (recheck && (await deps.repo.getConversation(conversation.phone))?.humanTakeover) throw new PausedMidTurn();
   const wamid = await deps.send(conversation.phone, text);
   // Se guarda en wa_messages: el panel muestra lo que respondió el bot (coexistencia).
   await deps.repo.saveOutbound(conversation.id, wamid, text);
@@ -105,6 +113,15 @@ async function answer(
 }
 
 export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> {
+  try {
+    return await runTurn(turn, deps);
+  } catch (error: unknown) {
+    if (error instanceof PausedMidTurn) return "takeover";
+    throw error;
+  }
+}
+
+async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> {
   const conversation = await deps.repo.getConversation(turn.phone);
   if (!conversation) return "no_conversation";
   if (conversation.humanTakeover) return "takeover";
@@ -165,7 +182,7 @@ export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<Tu
 
   if (intent === "humano") {
     await deps.repo.setTakeover(conversation.id);
-    await reply(deps, conversation, REPLIES.handoff);
+    await reply(deps, conversation, REPLIES.handoff, false);
     return "answered";
   }
   if (confidence < MIN_CONFIDENCE) {

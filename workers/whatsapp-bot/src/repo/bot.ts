@@ -1,21 +1,28 @@
 import type postgres from "postgres";
+import { phoneTail, resolveMatches } from "./phone-tail.ts";
 import type { BotRepo, HistoryItem } from "./types.ts";
 
 export type * from "./types.ts";
 
 const MENU_LIMIT = 200;
 
-export function sqlBotRepo(sql: postgres.Sql): BotRepo {
+export function sqlBotRepo(sql: postgres.Sql, log: (message: string, detail?: unknown) => void = () => {}): BotRepo {
   return {
     async getConversation(phone) {
-      const [row] = await sql<{ id: string; client_phone: string; client_id: string | null; name: string | null; human_takeover: boolean }[]>`
-        select c.id, c.client_phone, c.client_id, coalesce(cl.name, c.contact_name) as name, c.human_takeover
+      // Mismos 10 dígitos que entrantes y eco; con varias filas manda la de actividad más reciente y, si alguna
+      // está silenciada, el bot calla (fail-closed).
+      const rows = await sql<{ id: string; client_phone: string; client_id: string | null; name: string | null; silenced: boolean }[]>`
+        select c.id, c.client_phone, c.client_id, coalesce(cl.name, c.contact_name) as name,
+          (c.human_takeover or coalesce(c.bot_paused_until > now(), false)) as silenced
         from public.wa_conversations c
         left join public.clients cl on cl.id = c.client_id
-        where c.client_phone = ${phone}`;
-      return row
-        ? { id: row.id, phone: row.client_phone, clientId: row.client_id, displayName: row.name, humanTakeover: row.human_takeover }
-        : null;
+        where right(c.client_phone, 10) = ${phoneTail(phone)}
+        order by coalesce(c.last_inbound_at, c.created_at) desc, c.created_at desc`;
+      const found = resolveMatches(rows);
+      if (!found) return null;
+      if (found.duplicates > 0) log("[whatsapp-bot] varias conversaciones comparten el teléfono (últimos 10 dígitos)", { duplicates: found.duplicates });
+      const { primary } = found;
+      return { id: primary.id, phone: primary.client_phone, clientId: primary.client_id, displayName: primary.name, humanTakeover: found.silenced };
     },
 
     async history(conversationId, limit) {
