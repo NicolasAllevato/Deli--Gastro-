@@ -15,7 +15,7 @@ workers_dev = true
 # Crear con:  npx wrangler kv namespace create FUDO_KV   y pegar el id acá.
 [[kv_namespaces]]
 binding = "FUDO_KV"
-id = "REEMPLAZAR_CON_EL_ID_DEL_NAMESPACE"
+id = "edecc57f9a2b46c88f09c2254d8ab4cb"
 
 [triggers]
 crons = ["*/5 * * * *"]
