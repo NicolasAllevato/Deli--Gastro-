@@ -187,6 +187,49 @@ export function requeueCutoff(now: number = Date.now()): string {
   return new Date(now - REQUEUE_WINDOW_MS).toISOString();
 }
 
+/** Pedidos omitidos por falta de mapeo: el MISMO criterio para contarlos y para reencolarlos. */
+function onlySkippedByMapping<Q extends {
+  eq(column: string, value: string): Q;
+  is(column: string, value: null): Q;
+  like(column: string, pattern: string): Q;
+}>(query: Q): Q {
+  return query
+    .eq("fudo_sync_status", "skipped")
+    .is("fudo_order_id", null)
+    .like("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`);
+}
+
+export interface SkippedSummary {
+  /** Todos los pedidos omitidos por falta de mapeo (nunca se reintentan solos). */
+  count: number;
+  /** Fecha (ISO) del más viejo, o null si no hay. */
+  oldestAt: string | null;
+  /** Los de las últimas 24 h: son los que se reenvían al guardar el mapeo. */
+  recentCount: number;
+}
+
+export async function countSkippedOrders(db: Db, now: number = Date.now()): Promise<SkippedSummary> {
+  const [total, recent, oldest] = await Promise.all([
+    onlySkippedByMapping(db.from("orders").select("id", { count: "exact", head: true })),
+    onlySkippedByMapping(db.from("orders").select("id", { count: "exact", head: true })).gte("created_at", requeueCutoff(now)),
+    onlySkippedByMapping(db.from("orders").select("created_at")).order("created_at", { ascending: true }).limit(1),
+  ]);
+  const failed = total.error ?? recent.error ?? oldest.error;
+  if (failed) throw new Error(failed.message);
+  const first = (oldest.data as { created_at: string }[] | null)?.[0];
+  return { count: total.count ?? 0, oldestAt: first?.created_at ?? null, recentCount: recent.count ?? 0 };
+}
+
+/** Cuerpo del GET de /api/admin/fudo-map: el mapeo de siempre más `skipped` (campo nuevo). */
+export function buildMapResponse(
+  mapping: MappingState,
+  catalog: FudoCatalogItem[],
+  gatewayConfigured: boolean,
+  skipped: SkippedSummary,
+) {
+  return { ...mapping, catalog: suggestionsFrom(catalog), gatewayConfigured, skipped };
+}
+
 export async function loadMapping(db: Db): Promise<MappingState> {
   const [products, productMap, paymentMap] = await Promise.all([
     db.from("products").select("id,name,is_active,categories(name)").order("name", { ascending: true }),
@@ -222,12 +265,9 @@ export async function saveMapping(db: Db, input: SaveInput, now: number = Date.n
     if (error) throw new Error(error.message);
   }
   if (productRows.length === 0) return 0;
-  const { data, error } = await db
-    .from("orders")
-    .update({ fudo_sync_status: "pending", fudo_error: null, fudo_attempts: 0 })
-    .eq("fudo_sync_status", "skipped")
-    .is("fudo_order_id", null)
-    .like("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`)
+  const { data, error } = await onlySkippedByMapping(
+    db.from("orders").update({ fudo_sync_status: "pending", fudo_error: null, fudo_attempts: 0 }),
+  )
     .gte("created_at", requeueCutoff(now))
     .select("id");
   if (error) throw new Error(error.message);

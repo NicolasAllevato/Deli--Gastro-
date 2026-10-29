@@ -3,11 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Save, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui";
-import type { FudoCatalogItem, MappingState, SaveInput } from "@/lib/fudo/mapping";
+import type { FudoCatalogItem, MappingState, SaveInput, SkippedSummary } from "@/lib/fudo/mapping";
 
 interface MapResponse extends MappingState {
   catalog: FudoCatalogItem[];
   gatewayConfigured: boolean;
+  skipped: SkippedSummary;
+}
+
+const NO_SKIPPED: SkippedSummary = { count: 0, oldestAt: null, recentCount: 0 };
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 const inputClass =
@@ -126,9 +134,11 @@ export default function FudoMapPage() {
     setRejectedIds(new Set());
     try {
       const res = await request<MapResponse & { requeued: number }>("PUT", diff.input);
-      load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false });
+      load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false, skipped: data?.skipped ?? NO_SKIPPED });
       setRequeued(res.requeued ?? 0);
       setSaved(true);
+      // El PUT no trae el aviso: se relee para que baje la cuenta de omitidos.
+      void request<MapResponse>("GET").then((fresh) => setData((d) => (d ? { ...d, skipped: fresh.skipped ?? NO_SKIPPED } : d))).catch(() => undefined);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "No se pudo guardar.";
       if (e instanceof HttpError && e.status === 400) {
@@ -175,6 +185,17 @@ export default function FudoMapPage() {
 
       {data && (
         <>
+          {(data.skipped?.count ?? 0) > 0 && (
+            <div role="alert" className="badge-orange text-xs font-bold px-3 py-2 rounded-lg flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+              <span>
+                {data.skipped.count} {data.skipped.count === 1 ? "pedido no llegó" : "pedidos no llegaron"} a Fudo por productos sin mapear
+                {data.skipped.oldestAt ? ` (el más viejo: ${formatDate(data.skipped.oldestAt)})` : ""}.
+                {" "}Cargá el mapeo y guardá: los de las últimas 24 h ({data.skipped.recentCount}) se reenvían solos; los más viejos hay que pasarlos a mano.
+              </span>
+            </div>
+          )}
+
           <section role="status" className="neumorphic rounded-2xl p-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
             {data.unmappedProducts + data.unmappedPayments === 0 ? (
               <span className="badge-green px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5">

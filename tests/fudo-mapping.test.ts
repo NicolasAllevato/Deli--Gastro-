@@ -4,7 +4,7 @@ import { createDemoDb } from "./helpers/demo-db.ts";
 
 const {
   saveSchema, buildProductRows, buildPaymentRows, findUnmappedProducts, parseFudoCatalog,
-  loadMapping, saveMapping, findUnknownFudoIds, applyCatalogNames, suggestionsFrom,
+  loadMapping, saveMapping, countSkippedOrders, buildMapResponse, findUnknownFudoIds, applyCatalogNames, suggestionsFrom,
 } = await import("../src/lib/fudo/mapping.ts");
 const { processSaveRequest } = await import("../src/lib/fudo/save-request.ts");
 const { fetchFudoCatalog } = await import("../src/lib/fudo/gateway.ts");
@@ -175,6 +175,46 @@ describe("mapeo Fudo: reencolado de omitidos", () => {
     store.orders.push(order("a", {}));
     assert.equal(await saveMapping(db, saveSchema.parse({ payments: [{ paymentMethod: "Tarjeta", fudoPaymentMethodId: 2 }] })), 0);
     assert.equal(store.orders[0].fudo_sync_status, "skipped");
+  });
+});
+
+describe("mapeo Fudo: aviso de omitidos", () => {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const order = (id: string, over: Record<string, unknown>) => ({
+    id, status: "Recibidos", total: 10, fudo_sync_status: "skipped", fudo_order_id: null,
+    fudo_error: "Productos sin mapear a Fudo: Burger", fudo_attempts: 0, created_at: hoursAgo(1), ...over,
+  });
+
+  it("cuenta solo los omitidos por mapeo, con recientes y el más viejo", async () => {
+    const { db, store } = createDemoDb();
+    store.orders.length = 0;
+    const old = hoursAgo(50);
+    store.orders.push(
+      order("a", {}),
+      order("b", { created_at: hoursAgo(5) }),
+      order("c", { created_at: old }),
+      order("d", { fudo_error: "Fudo /orders 400" }),
+      order("e", { fudo_sync_status: "sent", fudo_error: null }),
+      order("f", { fudo_order_id: 9 }),
+    );
+    assert.deepEqual(await countSkippedOrders(db), { count: 3, oldestAt: old, recentCount: 2 });
+  });
+
+  it("sin omitidos responde 0 y sin fecha", async () => {
+    const { db, store } = createDemoDb();
+    store.orders.length = 0;
+    assert.deepEqual(await countSkippedOrders(db), { count: 0, oldestAt: null, recentCount: 0 });
+  });
+
+  it("el GET incluye skipped sin tocar el resto", async () => {
+    const { db } = createDemoDb();
+    const mapping = await loadMapping(db);
+    const skipped = { count: 2, oldestAt: null, recentCount: 1 };
+    const body = buildMapResponse(mapping, [{ id: 1, name: "A", active: true }, { id: 2, name: "B", active: false }], true, skipped);
+    assert.deepEqual(body.skipped, skipped);
+    assert.equal(body.gatewayConfigured, true);
+    assert.deepEqual(body.catalog.map((c) => c.id), [1]);
+    assert.equal(body.products, mapping.products);
   });
 });
 
