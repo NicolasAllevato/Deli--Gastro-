@@ -103,9 +103,22 @@ function digits(text: string): string {
   return text.replace(/\D/g, "");
 }
 
+/** Dominios de Mercado Pago donde puede vivir el link de pago que devuelve el servidor. */
+export const PAYMENT_HOSTS: readonly string[] = ["mpago.la", "mercadopago.com.ar"];
+
 function hostAllowed(host: string, allowed: readonly string[]): boolean {
   const h = host.toLowerCase();
   return allowed.some((a) => h === a || h.endsWith(`.${a}`));
+}
+
+/** El link de pago es https y de un dominio de Mercado Pago: cualquier otra cosa no se le manda al cliente. */
+export function isTrustedPaymentUrl(raw: string): boolean {
+  try {
+    const url = new globalThis.URL(raw);
+    return url.protocol === "https:" && hostAllowed(url.hostname, PAYMENT_HOSTS);
+  } catch {
+    return false;
+  }
 }
 
 /** Respuesta del modelo antes de enviarla: `block` se reemplaza por un mensaje seguro y queda registrado. */

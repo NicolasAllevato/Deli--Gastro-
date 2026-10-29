@@ -15,6 +15,10 @@ import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
 import { buildResponderPrompt, orderReply, REPLIES } from "./prompts.ts";
 import { settingsFromConfig, type BotSettings } from "./settings.ts";
 import { toolsFor } from "./tools.ts";
+import type { OrdersClient } from "../orders/client.ts";
+import {
+  cancelAfterPrompt, CANCEL_MARKER, confirmAfterSummary, disabledReply, isAffirmation, newOrderState, QUOTE_MARKER, type OrderTurn,
+} from "../orders/flow.ts";
 
 export interface TurnDeps {
   repo: BotRepo;
@@ -25,6 +29,8 @@ export interface TurnDeps {
   send: (phone: string, text: string) => Promise<string>;
   /** URL pública de la app (links permitidos en las respuestas). */
   appUrl: string;
+  /** Cliente firmado de los endpoints de pedidos; sin él (o con el flag apagado) los pedidos se derivan a la web. */
+  orders?: OrdersClient;
   log: (message: string, detail?: unknown) => void;
 }
 
@@ -58,7 +64,9 @@ function historyMessages(items: { direction: "in" | "out"; body: string }[]): Ch
   return items.map((m) => (m.direction === "in" ? { role: "user", content: wrapUntrusted(m.body) } : { role: "assistant", content: m.body }));
 }
 
-async function answer(turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps): Promise<TurnOutcome> {
+async function answer(
+  turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps, order?: OrderTurn,
+): Promise<TurnOutcome> {
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
   while (history.at(-1)?.direction === "in") history.pop();
@@ -66,8 +74,14 @@ async function answer(turnText: string, intent: Intent, suspicious: boolean, con
     system: buildResponderPrompt(settings, intent, conversation.displayName, suspicious),
     history: historyMessages(history),
     userText: wrapUntrusted(turnText),
-    tools: suspicious ? [] : toolsFor(intent, deps.repo, conversation, settings),
+    tools: suspicious ? [] : toolsFor(intent, deps.repo, conversation, settings, Date.now, order),
   });
+
+  // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
+  if (order?.state.fixedReply) {
+    await reply(deps, conversation, order.state.fixedReply);
+    return "answered";
+  }
 
   const appHost = new URL(deps.appUrl).host;
   const check = inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] });
@@ -119,6 +133,24 @@ export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<Tu
   }
 
   const lastBot = (await deps.repo.history(conversation.id, 4)).filter((m) => m.direction === "out").at(-1)?.body ?? null;
+  const wamid = turn.wamids.at(-1);
+  const order: OrderTurn | undefined =
+    settings.ordersEnabled && deps.orders && wamid
+      ? {
+          client: deps.orders, repo: deps.repo, conversation, inboundWamid: wamid, inboundText: text,
+          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, appUrl: deps.appUrl, state: newOrderState(),
+        }
+      : undefined;
+
+  // Camino determinista: SÍ literal justo después del resumen (o de la pregunta de cancelar) no pasa por el clasificador.
+  if (order && isAffirmation(text) && !order.hasAudio) {
+    const direct = lastBot?.startsWith(QUOTE_MARKER) ? confirmAfterSummary : lastBot?.startsWith(CANCEL_MARKER) ? cancelAfterPrompt : null;
+    if (direct) {
+      await direct(order);
+      await reply(deps, conversation, order.state.fixedReply ?? REPLIES.failure);
+      return "answered";
+    }
+  }
   const { intent, confidence } = await classify(deps.run, wrapUntrusted(text), lastBot);
 
   if (intent === "humano") {
@@ -130,9 +162,10 @@ export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<Tu
     await reply(deps, conversation, REPLIES.unclear);
     return "unclear";
   }
-  if (ORDER_INTENTS.includes(intent)) {
-    await reply(deps, conversation, orderReply(deps.appUrl, settings));
+  if (ORDER_INTENTS.includes(intent) && !order) {
+    // Flag apagado (o sin cliente): camino de siempre, derivar a la web.
+    await reply(deps, conversation, settings.ordersEnabled ? disabledReply(deps.appUrl) : orderReply(deps.appUrl, settings));
     return "order_redirect";
   }
-  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps);
+  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order);
 }

@@ -11,6 +11,8 @@ export interface BotSettings {
   hours: { open: string; close: string };
   estimatedMinutes: number;
   paused: boolean;
+  /** Fase 5: el bot toma pedidos por los endpoints internos. Apagado = se derivan a la web (`bot_orders_enabled`, el mismo flag del servidor). */
+  ordersEnabled: boolean;
 }
 
 const text = (value: unknown, fallback: string, max: number): string =>
@@ -29,6 +31,7 @@ export function settingsFromConfig(config: Record<string, unknown>): BotSettings
     hours: { open: text(config.horario_apertura, "11:00", 5), close: text(config.horario_cierre, "23:00", 5) },
     estimatedMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 30,
     paused: config.modo_pausa === true || config.tienda_activa === false,
+    ordersEnabled: config.bot_orders_enabled === true,
   };
 }
 

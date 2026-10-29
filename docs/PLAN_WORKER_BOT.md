@@ -153,7 +153,7 @@ se separa la parte pura (cálculo de totales, validación) de la de base.
 | 2. Repositorio | Hecha en forma acotada: `repo/inbound.ts` y `repo/bot.ts` (SQL) con repos en memoria en los tests. |
 | 3. Entrada | Hecha: POST firmado, dedupe por `wamid`, traspaso a humano, estados; apilador (Durable Object, 4 s / 12 s / 5 mensajes). |
 | 4. Bots | Hecha: clasificador + respondedor con herramientas por intención, guardrails de entrada y salida, audios con Whisper, ALTA/BAJA, límites. Los pedidos se derivan a la web hasta la fase 5. |
-| 5. Pedidos y pagos | Pendiente. |
+| 5. Pedidos y pagos | Endpoints internos de la app hechos (PR #18/#19) y lado del Worker hecho (cliente firmado, herramientas, plantillas, compuertas; todo detrás del flag `bot_orders_enabled`, apagado por defecto). Falta activarlo: ver «Estado del lado del Worker». |
 | 6. Corte | Pendiente: Meta sigue apuntando al webhook de Next. Demo: `bot-dely.opsyn.app` (reenvío desde la cuenta Opsyn wallet). |
 
 ## Fases
@@ -247,6 +247,20 @@ Si no se puede guardar el borrador, `quote` responde 503 `unavailable` en vez de
 ### Diferido
 Anular la preferencia de Mercado Pago al cancelar (depende del gateway), tabla de idempotencia propia, rate limit distribuido y pago de una intención vencida. Límite conocido: si tras un fallo de `confirm` no se puede restaurar el borrador
 (`restoreDraft` condicionado por `updated_at` falla dos veces), se loguea y el cliente debe volver a cotizar; no hay update incondicional de último recurso.
+
+### Estado del lado del Worker (PR 3)
+Hecho en `workers/whatsapp-bot/src`:
+- `orders/client.ts`: cliente firmado (Web Crypto, misma firma que `signature.ts`, con test de paridad), timestamp nuevo por intento, timeout 8 s, `Idempotency-Key` = wamid en confirm/cancel. `claim_lost` reintenta una vez; 429/5xx/red/timeout hasta 2 reintentos con backoff; 400/401/403/422/409 y `503 not_configured` no se reintentan.
+- `orders/flow.ts`: plantillas fijas (resumen, link de pago, pregunta de cancelar, errores por código) y compuertas. `bot/tools.ts`: `quote_order`, `confirm_order`, `cancel_order` y `order_status` (por la app) con esquemas estrictos; `get_menu` expone el `id` solo con el flag encendido.
+- `bot/turn.ts`: con `bot_orders_enabled` en `global_config` (mismo flag que el servidor) y `BOT_INTERNAL_SECRET` cargado, las intenciones de pedido ya no se derivan a la web. Con el flag apagado o sin secreto el camino es el de siempre (`orderReply`; sin secreto y con flag encendido, «no disponible, hacelo desde la web»).
+- El resumen lo envía el Worker desde los datos del servidor (el texto del modelo se descarta). El «SÍ» literal justo después del resumen confirma sin pasar por el clasificador. `confirm_order` exige: sin `quote_order` en el turno, último mensaje del cliente = afirmación literal corta (sí, dale, ok, listo, confirmo, de acuerdo; no audios, no preguntas), el último mensaje del bot es el resumen y `Mercado Pago`. Cancelar: el bot pregunta con plantilla y solo un SÍ posterior cancela. El link de pago solo se envía si es https de Mercado Pago.
+- Logs: `op`, `status`, `code` (sin datos personales).
+
+Falta (no se hizo ni se despliega desde el código):
+1. `BOT_INTERNAL_SECRET` en Vercel (Production y Preview) y en el Worker (`wrangler secret put`), idéntico y ≥ 32 caracteres.
+2. Activar `bot_orders_enabled` con `bot_orders_allowlist` (teléfonos del piloto) y topes explícitos.
+3. Probar el pago con Mercado Pago sandbox de punta a punta y desplegar el Worker.
+4. `get_customer` figura en la lista blanca de `guardrails.ts` pero no existe como herramienta (la dirección se pregunta siempre).
 
 ### Corte de emergencia
 Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;
