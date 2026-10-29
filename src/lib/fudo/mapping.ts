@@ -61,7 +61,7 @@ export interface MappedProduct {
   fudoName: string | null;
 }
 export interface MappedPayment { method: MappedPaymentMethod; fudoPaymentMethodId: number | null }
-export interface FudoCatalogItem { id: number; name: string }
+export interface FudoCatalogItem { id: number; name: string; active: boolean }
 
 export interface MappingState {
   products: MappedProduct[];
@@ -128,24 +128,45 @@ export function buildMappingState(products: ProductRow[], productMap: ProductMap
 
 /**
  * Lee el catálogo de Fudo. La spec real (GET /products) responde `{ products: [{ id, name, active, ... }] }`;
- * también se acepta una lista plana o JSON:API (`data[].attributes.name`). Se saltean los inactivos.
+ * también se acepta una lista plana o JSON:API (`data[].attributes.name`). Devuelve el catálogo COMPLETO
+ * (con `active`) para validar ids; para sugerencias usar `suggestionsFrom`.
  */
 export function parseFudoCatalog(raw: unknown): FudoCatalogItem[] {
   const root = raw as { products?: unknown; data?: unknown } | null;
   const list = Array.isArray(raw) ? raw : (root?.products ?? root?.data);
   if (!Array.isArray(list)) return [];
   const items: FudoCatalogItem[] = [];
-  for (const entry of list.slice(0, CATALOG_MAX_ITEMS)) {
+  for (const entry of list) {
     if (!entry || typeof entry !== "object") continue;
     const e = entry as { id?: unknown; name?: unknown; active?: unknown; attributes?: { name?: unknown } };
-    if (e.active === false) continue;
     const id = Number(e.id);
     const name = typeof e.attributes?.name === "string" ? e.attributes.name : e.name;
     if (Number.isInteger(id) && id > 0 && typeof name === "string" && name.trim()) {
-      items.push({ id, name: name.trim().slice(0, FUDO_NAME_MAX) });
+      items.push({ id, name: name.trim().slice(0, FUDO_NAME_MAX), active: e.active !== false });
     }
   }
   return items.sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+/** Sugerencias para el datalist: solo productos activos, hasta 5000. */
+export function suggestionsFrom(catalog: FudoCatalogItem[]): FudoCatalogItem[] {
+  return catalog.filter((c) => c.active).slice(0, CATALOG_MAX_ITEMS);
+}
+
+export type SaveDecision =
+  | { ok: true; products: SaveInput["products"] }
+  | { ok: false; error: string };
+
+/** Decide si se puede guardar: con catálogo no vacío rechaza ids desconocidos; sin catálogo deja pasar (fail-open). */
+export function decideSave(products: SaveInput["products"], catalog: FudoCatalogItem[]): SaveDecision {
+  const unknown = findUnknownFudoIds(products, catalog);
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      error: `Ese id no figura en el catálogo de Fudo: ${unknown.join(", ")}. Revisalo para no enviar el plato equivocado.`,
+    };
+  }
+  return { ok: true, products: applyCatalogNames(products, catalog) };
 }
 
 /** Ids de `products` que no figuran en un catálogo no vacío (sin catálogo no se puede decidir). */
@@ -206,7 +227,7 @@ export async function saveMapping(db: Db, input: SaveInput, now: number = Date.n
     .update({ fudo_sync_status: "pending", fudo_error: null, fudo_attempts: 0 })
     .eq("fudo_sync_status", "skipped")
     .is("fudo_order_id", null)
-    .ilike("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`)
+    .like("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`)
     .gte("created_at", requeueCutoff(now))
     .select("id");
   if (error) throw new Error(error.message);

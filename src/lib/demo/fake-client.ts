@@ -84,6 +84,7 @@ class DemoQueryBuilder implements PromiseLike<QueryResult> {
   in(column: string, values: unknown[]): this { return this.filter("in", column, values); }
   is(column: string, value: unknown): this { return this.filter("is", column, value); }
   ilike(column: string, pattern: string): this { return this.filter("ilike", column, pattern); }
+  like(column: string, pattern: string): this { return this.filter("like", column, pattern); }
   not(column: string, operator: FilterOp, value: unknown): this {
     return this.filter("not", column, { op: operator, value });
   }

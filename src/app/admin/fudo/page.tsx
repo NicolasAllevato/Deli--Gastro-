@@ -20,8 +20,22 @@ async function request<T>(method: "GET" | "PUT", body?: unknown): Promise<T> {
     ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
   });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(json.error ?? "No se pudo completar la operación.");
+  if (!res.ok) throw new HttpError(json.error ?? "No se pudo completar la operación.", res.status);
   return json;
+}
+
+class HttpError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Ids que el servidor nombra tras los dos puntos ("…catálogo de Fudo: 6, 9. Revisalo…"). */
+function idsInMessage(message: string): Set<number> {
+  const list = /:\s*([\d,\s]+)\./.exec(message)?.[1] ?? "";
+  return new Set(list.split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0));
 }
 
 const MAX_FUDO_ID = 2_147_483_647;
@@ -42,6 +56,7 @@ export default function FudoMapPage() {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [requeued, setRequeued] = useState(0);
+  const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
 
   const load = (next: MapResponse) => {
     setData(next);
@@ -108,6 +123,7 @@ export default function FudoMapPage() {
     setError(null);
     setSaved(false);
     setRequeued(0);
+    setRejectedIds(new Set());
     try {
       const res = await request<MapResponse & { requeued: number }>("PUT", diff.input);
       load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false });
@@ -115,8 +131,14 @@ export default function FudoMapPage() {
       setSaved(true);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "No se pudo guardar.";
-      await fetchState(); // vuelve al estado real de la base
-      setError(message);
+      if (e instanceof HttpError && e.status === 400) {
+        // Error de validación: se conservan las ediciones y se marcan los ids rechazados.
+        setRejectedIds(idsInMessage(message));
+        setError(message);
+      } else {
+        await fetchState(); // 5xx o red: vuelve al estado real de la base
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -224,8 +246,8 @@ export default function FudoMapPage() {
                         list="fudo-catalog"
                         placeholder="Id en Fudo"
                         aria-label={`Id de Fudo para ${p.name}`}
-                        aria-invalid={isInvalidDraft(draft) || undefined}
-                        className={`${inputClass} ${isInvalidDraft(draft) ? invalidRing : ""}`}
+                        aria-invalid={isInvalidDraft(draft) || (id !== null && rejectedIds.has(id)) || undefined}
+                        className={`${inputClass} ${isInvalidDraft(draft) || (id !== null && rejectedIds.has(id)) ? invalidRing : ""}`}
                       />
                       <button
                         type="button"
@@ -260,7 +282,7 @@ export default function FudoMapPage() {
             )}
             {saved && (
               <p role="status" className="badge-green text-xs font-bold px-2.5 py-1 rounded-full">
-                Mapeo guardado.{requeued > 0 ? ` ${requeued} ${requeued === 1 ? "pedido se reenviará" : "pedidos se reenviarán"} a Fudo.` : ""}
+                Mapeo guardado.{requeued > 0 ? ` Hasta ${requeued} ${requeued === 1 ? "pedido omitido se vuelve" : "pedidos omitidos se vuelven"} a intentar.` : ""}
               </p>
             )}
           </div>

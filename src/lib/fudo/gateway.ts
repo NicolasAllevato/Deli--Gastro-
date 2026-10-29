@@ -69,7 +69,7 @@ export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<Fu
     }
     const declared = Number(res.headers.get("content-length") ?? 0);
     const text = declared > CATALOG_MAX_BYTES ? "" : await res.text();
-    if (declared > CATALOG_MAX_BYTES || text.length > CATALOG_MAX_BYTES) {
+    if (declared > CATALOG_MAX_BYTES || new TextEncoder().encode(text).byteLength > CATALOG_MAX_BYTES) {
       console.warn("[fudo] el catálogo supera el tamaño máximo permitido");
       return [];
     }

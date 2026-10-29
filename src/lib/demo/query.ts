@@ -7,7 +7,7 @@ import type { Row, TableName, Tables } from "@/lib/demo/seed";
  * servidor lo ejecuta contra el store.
  */
 
-export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike" | "not";
+export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike" | "like" | "not";
 
 export interface Filter {
   op: FilterOp;
@@ -117,9 +117,10 @@ function matches(row: Row, f: Filter): boolean {
       const inner = f.value as { op: FilterOp; value: unknown };
       return !matches(row, { op: inner.op, column: f.column, value: inner.value });
     }
-    case "ilike": {
+    case "ilike":
+    case "like": {
       const pattern = String(f.value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*");
-      return new RegExp(`^${pattern}$`, "i").test(String(v ?? ""));
+      return new RegExp(`^${pattern}$`, f.op === "ilike" ? "i" : "").test(String(v ?? ""));
     }
   }
 }

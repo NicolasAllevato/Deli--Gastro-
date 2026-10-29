@@ -4,8 +4,10 @@ import { createDemoDb } from "./helpers/demo-db.ts";
 
 const {
   saveSchema, buildProductRows, buildPaymentRows, findUnmappedProducts, parseFudoCatalog,
-  loadMapping, saveMapping, findUnknownFudoIds, applyCatalogNames,
+  loadMapping, saveMapping, findUnknownFudoIds, applyCatalogNames, suggestionsFrom,
 } = await import("../src/lib/fudo/mapping.ts");
+const { processSaveRequest } = await import("../src/lib/fudo/save-request.ts");
+const { fetchFudoCatalog } = await import("../src/lib/fudo/gateway.ts");
 const { PAYMENT_METHODS } = await import("../src/lib/orders.ts");
 
 const UUID = "11111111-1111-4111-8111-111111111111";
@@ -46,34 +48,46 @@ describe("mapeo Fudo: armado de filas", () => {
     assert.equal(findUnmappedProducts(list).length, 1);
   });
 
-  it("lee el catálogo con la forma real de la spec ({products:[...]}) y saltea inactivos", () => {
+  it("lee el catálogo completo de la spec ({products:[...]}); los inactivos no son sugerencias pero sí válidos al guardar", async () => {
     const raw = { products: [
       { id: 7, name: "Pizza", active: true, price: 10, productCategoryId: 1, description: "" },
       { id: 8, name: "Vieja", active: false },
       { id: 3, name: "Agua" },
     ] };
-    assert.deepEqual(parseFudoCatalog(raw), [{ id: 3, name: "Agua" }, { id: 7, name: "Pizza" }]);
+    const catalog = parseFudoCatalog(raw);
+    assert.equal(catalog.length, 3);
+    assert.deepEqual(suggestionsFrom(catalog).map((c) => c.id), [3, 7]);
+    // El id inactivo (8) se acepta al guardar; el 99 no existe.
+    assert.deepEqual(findUnknownFudoIds([{ productId: UUID, fudoProductId: 8 }], catalog), []);
+    assert.deepEqual(findUnknownFudoIds([{ productId: UUID, fudoProductId: 99 }], catalog), [99]);
+    const { db, store } = createDemoDb();
+    const first = String(store.products[0].id);
+    const res = await processSaveRequest(db, { products: [{ productId: first, fudoProductId: 8 }] }, catalog);
+    assert.equal(res.status, 200);
   });
 
   it("acepta también JSON:API y lista plana, trunca nombres y rechaza formas inválidas", () => {
     assert.deepEqual(
       parseFudoCatalog({ data: [{ id: "9", attributes: { name: "Pizza" } }, { id: "x", attributes: { name: "mal" } }] }),
-      [{ id: 9, name: "Pizza" }],
+      [{ id: 9, name: "Pizza", active: true }],
     );
-    assert.deepEqual(parseFudoCatalog([{ id: 2, name: "Coca" }]), [{ id: 2, name: "Coca" }]);
+    assert.deepEqual(parseFudoCatalog([{ id: 2, name: "Coca" }]), [{ id: 2, name: "Coca", active: true }]);
     assert.equal(parseFudoCatalog({ products: [{ id: 1, name: "x".repeat(300) }] })[0].name.length, 120);
     for (const bad of [null, undefined, "x", 5, {}, { products: "no" }, { products: [null, 1, { id: 0, name: "a" }] }]) {
       assert.deepEqual(parseFudoCatalog(bad), []);
     }
   });
 
-  it("limita el catálogo a 5000 ítems", () => {
+  it("valida contra el catálogo completo pero sugiere como máximo 5000", () => {
     const products = Array.from({ length: 6000 }, (_, i) => ({ id: i + 1, name: `P${i}` }));
-    assert.equal(parseFudoCatalog({ products }).length, 5000);
+    const catalog = parseFudoCatalog({ products });
+    assert.equal(catalog.length, 6000);
+    assert.equal(suggestionsFrom(catalog).length, 5000);
+    assert.deepEqual(findUnknownFudoIds([{ productId: UUID, fudoProductId: 5999 }], catalog), []);
   });
 
   it("valida ids contra el catálogo y usa los nombres del catálogo", () => {
-    const catalog = [{ id: 5, name: "Real" }];
+    const catalog = [{ id: 5, name: "Real", active: true }];
     const products = [{ productId: UUID, fudoProductId: 5, fudoName: "Falso" }, { productId: UUID, fudoProductId: 6, fudoName: "Typo" }];
     assert.deepEqual(findUnknownFudoIds(products, catalog), [6]);
     assert.deepEqual(findUnknownFudoIds(products, []), []);
@@ -147,11 +161,86 @@ describe("mapeo Fudo: reencolado de omitidos", () => {
     assert.equal(store.orders.find((o) => o.id === "e")?.fudo_sync_status, "sent");
   });
 
+  it("quitar un mapeo sin guardar productos no reencola", async () => {
+    const { db, store } = createDemoDb();
+    store.orders.length = 0;
+    store.orders.push(order("a", {}));
+    assert.equal(await saveMapping(db, saveSchema.parse({ removeProducts: [UUID] })), 0);
+    assert.equal(store.orders[0].fudo_sync_status, "skipped");
+  });
+
   it("no reencola al guardar solo medios de pago", async () => {
     const { db, store } = createDemoDb();
     store.orders.length = 0;
     store.orders.push(order("a", {}));
     assert.equal(await saveMapping(db, saveSchema.parse({ payments: [{ paymentMethod: "Tarjeta", fudoPaymentMethodId: 2 }] })), 0);
     assert.equal(store.orders[0].fudo_sync_status, "skipped");
+  });
+});
+
+describe("ruta fudo-map (processSaveRequest)", () => {
+  const catalog = [{ id: 5, name: "Real", active: true }];
+
+  it("400 por id desconocido con catálogo no vacío, sin escribir nada", async () => {
+    const { db, store } = createDemoDb();
+    const first = String(store.products[0].id);
+    const res = await processSaveRequest(db, { products: [{ productId: first, fudoProductId: 6 }] }, catalog);
+    assert.equal(res.status, 400);
+    assert.match((res.body as { error: string }).error, /no figura en el catálogo de Fudo: 6/);
+    assert.equal(store.fudo_product_map.length, 0);
+  });
+
+  it("fail-open con catálogo vacío y respuesta con requeued", async () => {
+    const { db, store } = createDemoDb();
+    const first = String(store.products[0].id);
+    const res = await processSaveRequest(db, { products: [{ productId: first, fudoProductId: 6, fudoName: "Cliente" }] }, []);
+    assert.equal(res.status, 200);
+    assert.equal((res.body as { requeued: number }).requeued, 0);
+    assert.equal(store.fudo_product_map[0].fudo_name, "Cliente");
+  });
+
+  it("con catálogo usa el nombre del catálogo, no el del cliente", async () => {
+    const { db, store } = createDemoDb();
+    const first = String(store.products[0].id);
+    await processSaveRequest(db, { products: [{ productId: first, fudoProductId: 5, fudoName: "Falso" }] }, catalog);
+    assert.equal(store.fudo_product_map[0].fudo_name, "Real");
+  });
+
+  it("400 por cuerpo inválido", async () => {
+    const { db } = createDemoDb();
+    assert.equal((await processSaveRequest(db, null, [])).status, 400);
+  });
+});
+
+describe("fetchFudoCatalog", () => {
+  const config = { url: "https://gw.example", secret: "s" };
+  const realFetch = globalThis.fetch;
+  const realWarn = console.warn;
+  const withFetch = async (impl: () => Promise<Response>, run: () => Promise<void>) => {
+    globalThis.fetch = (async () => impl()) as typeof fetch;
+    console.warn = () => {};
+    try { await run(); } finally { globalThis.fetch = realFetch; console.warn = realWarn; }
+  };
+
+  it("devuelve el catálogo completo cuando responde bien", async () => {
+    await withFetch(
+      async () => new Response(JSON.stringify({ products: [{ id: 1, name: "A", active: false }] })),
+      async () => assert.deepEqual(await fetchFudoCatalog(config), [{ id: 1, name: "A", active: false }]),
+    );
+  });
+
+  it("devuelve [] si !res.ok, si falla el fetch o sin configuración", async () => {
+    await withFetch(async () => new Response("x", { status: 502 }), async () => assert.deepEqual(await fetchFudoCatalog(config), []));
+    await withFetch(async () => { throw new Error("red"); }, async () => assert.deepEqual(await fetchFudoCatalog(config), []));
+    assert.deepEqual(await fetchFudoCatalog(null), []);
+  });
+
+  it("devuelve [] si supera 1 MB (por content-length o por bytes reales)", async () => {
+    await withFetch(
+      async () => new Response("{}", { headers: { "content-length": "2000000" } }),
+      async () => assert.deepEqual(await fetchFudoCatalog(config), []),
+    );
+    const big = JSON.stringify({ products: [{ id: 1, name: "é".repeat(600_000) }] }); // < 1M caracteres, > 1 MB en bytes
+    await withFetch(async () => new Response(big), async () => assert.deepEqual(await fetchFudoCatalog(config), []));
   });
 });
