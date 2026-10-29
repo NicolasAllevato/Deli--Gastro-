@@ -200,13 +200,13 @@ export interface Database {
       }
       fudo_product_map: {
         Row: { product_id: string; fudo_product_id: number; fudo_name: string | null; updated_at: string }
-        Insert: { product_id: string; fudo_product_id: number; fudo_name?: string | null }
+        Insert: { product_id: string; fudo_product_id: number; fudo_name?: string | null; updated_at?: string }
         Update: { fudo_product_id?: number; fudo_name?: string | null }
         Relationships: []
       }
       fudo_payment_map: {
         Row: { payment_method: string; fudo_payment_method_id: number; updated_at: string }
-        Insert: { payment_method: string; fudo_payment_method_id: number }
+        Insert: { payment_method: string; fudo_payment_method_id: number; updated_at?: string }
         Update: { fudo_payment_method_id?: number }
         Relationships: []
       }
