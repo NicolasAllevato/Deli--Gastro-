@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 120, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
   return NextResponse.json(await listCourierLocations(createAdminClient()));
 }
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 30, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireRole("repartidor");
+  const auth = await requireRole("repartidor", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   let raw: unknown;
@@ -44,7 +44,7 @@ export async function DELETE(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 30, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireRole("repartidor");
+  const auth = await requireRole("repartidor", req);
   if (isAuthorizationError(auth)) return auth.error;
   await clearCourierLocation(createAdminClient(), auth.user.id);
   return new NextResponse(null, { status: 204 });

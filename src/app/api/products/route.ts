@@ -40,7 +40,7 @@ function fail(error: z.ZodError) {
 /** Catálogo completo (incluye inactivos) para el panel admin. */
 export async function GET(req: NextRequest) {
   if (!(await limited(req, 120))) return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const db = createAdminClient();
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!(await limited(req, 30))) return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const parsed = productSchema.safeParse(await req.json().catch(() => null));
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   if (!(await limited(req, 60))) return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const parsed = updateSchema.safeParse(await req.json().catch(() => null));
@@ -87,7 +87,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   if (!(await limited(req, 30))) return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const id = z.string().uuid().safeParse(req.nextUrl.searchParams.get("id"));

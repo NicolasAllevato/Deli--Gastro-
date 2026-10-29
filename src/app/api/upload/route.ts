@@ -43,7 +43,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", request);
   if (isAuthorizationError(auth)) return auth.error;
 
   let file: File;

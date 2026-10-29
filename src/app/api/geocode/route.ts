@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireClient();
+  const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const query = querySchema.safeParse(req.nextUrl.searchParams.get("q") ?? "");

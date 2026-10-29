@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireAnyRole(["admin", "repartidor"]);
+  const auth = await requireAnyRole(["admin", "repartidor"], req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const supabase = createAdminClient();
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   let rawBody: unknown;
@@ -103,7 +103,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireAnyRole(["admin", "repartidor"]);
+  const auth = await requireAnyRole(["admin", "repartidor"], req);
   if (isAuthorizationError(auth)) return auth.error;
 
   let rawBody: unknown;

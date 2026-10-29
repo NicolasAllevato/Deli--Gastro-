@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { rejectCrossOrigin } from "@/lib/auth/requireRole";
 
 const MAX_FEEDBACK_LENGTH = 1000;
 
@@ -17,6 +18,9 @@ function zodErrorMessage(error: z.ZodError): string {
 }
 
 export async function POST(req: Request) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   // Autenticación requerida — no se aceptan reseñas anónimas
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireClient();
+  const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const { data, error } = await createAdminClient()
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireClient();
+  const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const parsed = createSchema.safeParse(await req.json().catch(() => null));
