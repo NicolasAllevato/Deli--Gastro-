@@ -7,12 +7,12 @@ export interface DbEnv {
 }
 
 async function rest<T>(env: DbEnv, path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+  const res = await fetch(`${env.SUPABASE_URL.trim()}/rest/v1/${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY.trim(),
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY.trim()}`,
       prefer: "return=representation",
       ...init.headers,
     },

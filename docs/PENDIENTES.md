@@ -1,8 +1,57 @@
 # Pendientes — Deli-Gastro
 
-Estado al 2026-10-12, rama `feat/demo-local` (parte de `fix/security-design-cloudflare-supabase`).
-Sin push. El trabajo del 2026-10-12 (sección siguiente) está **sin commitear**; lo anterior
-está commiteado en local (último: `d2d97f9`).
+## Estado al 2026-10-29 (lo vigente; lo de abajo es historial y puede estar desactualizado)
+
+En producción (`dely.opsyn.app`): PRs #6 a #12 fusionados. El ingreso de repartidores con PIN anda
+(probado el 28-oct por la noche, hora de Argentina, con claves de Supabase sin BOM y redeploy). Están
+abiertos el PR #13 (redirect sin `/api` en 307, `cleanEnv` unificado, `trim` en los Workers) y el PR #14
+(pantalla admin de mapeo de Fudo).
+
+**Hecho (no repetir):** migraciones 001–020 presentes en el repo. La 011 figura como aplicada el
+2026-10-19 en la memoria del bot, pero no se pudo comprobar en Supabase: verificar con
+`select name from supabase_migrations.schema_migrations` y los triggers `wa_*_notify_changed`. Cobro
+con Mercado Pago (código), Conversaciones sobre OpenWA, app Android del repartidor (APK de release
+v1.0, versionCode 1, firmada con esquema v2, en `public/descargas/`), gateway Fudo (código).
+
+**Pendiente, por orden:**
+1. **Usuario:** instalar la APK en el Samsung (el mensaje exacto del bloqueo sigue sin confirmarse).
+   Causas probables: "Instalar apps desconocidas" para el navegador, Auto Blocker (Ajustes > Seguridad
+   y privacidad > Auto Blocker, desactivar "Bloquear instalaciones no autorizadas") y Play Protect
+   ("Instalar de todos modos").
+2. **Vercel (faltan, el código las lee):** `CRON_SECRET` (sin ella los dos endpoints de cron dan 401),
+   `UPLOADS_WORKER_URL` y `UPLOADS_WORKER_TOKEN`, `MP_ACCESS_TOKEN`/`MP_WEBHOOK_SECRET`/`PUBLIC_URL`,
+   `RESEND_API_KEY` y `RESUMEN_EMAIL_FROM`, `OPENAI_API_KEY`. Las `WHATSAPP_*` son opcionales si ya
+   están en `integration_secrets` (el entorno gana). Si Conversaciones usa OpenWA en producción:
+   `WHATSAPP_PROVIDER` y `OPENWA_URL`/`OPENWA_API_KEY`/`OPENWA_SESSION_ID`/`OPENWA_WEBHOOK_SECRET`.
+   Confirmar `UPSTASH_REDIS_REST_*` (sin ellas el rate limit cae a memoria y se debilita el tope del
+   PIN). Confirmar que `NEXT_PUBLIC_APP_URL` valga `https://dely.opsyn.app`. `NEXT_PUBLIC_DEMO_MODE` no
+   debe estar definida (hoy no lo está).
+3. **`encuestas-cron`:** generar `CRON_SECRET`, cargarlo igual en Vercel y en el Worker, `BASE_URL` =
+   `https://dely.opsyn.app`, `wrangler secret bulk` y `wrangler deploy`. Los endpoints
+   `/api/cron/*` los dispara este Worker, no Vercel Cron (`vercel.json` no define crons).
+4. **Fudo** (mail de solicitud enviado, falta el `Fudo-Integrator-Token`): crear un KV propio y poner su
+   id en `workers/fudo-gateway/wrangler.toml` (hoy tiene un placeholder). El `account_id` de ese
+   archivo es `53d56863…` (cuenta "Opsyn Dely", la misma de `whatsapp-bot`); confirmar que es donde
+   debe vivir antes de desplegar. Los `FUDO_KV` que aparecen en la cuenta Proyectos OPSYN son de otro
+   Worker: no reutilizarlos ni tocarlos. Cargar los secretos y desplegar. La pantalla de mapeo está en
+   el PR #14 (abierto). Cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en Vercel **al final**, porque
+   desde ahí cada pedido intenta sincronizar.
+5. **PIN de repartidores:** son 4 dígitos con tope de 5 intentos por IP y 60 globales cada 15 min.
+   Decidir: 6 dígitos, o PIN más identificador, o atar el PIN a dispositivos. Definir
+   `COURIER_PIN_SECRET` propio obliga a regenerar todos los PIN, y rotar `SUPABASE_SERVICE_ROLE_KEY`
+   sin definirlo también los invalida (hoy el hash cae a esa clave).
+6. **Meta / bot de WhatsApp (al final):** webhook de Meta a `bot-dely.opsyn.app/webhook`, fase 5
+   (tomador de pedidos), publicar la app, número real con coexistencia, rotar los secretos que
+   pasaron por el chat (`deli_bot`, Meta, Cloudflare) y las claves de Supabase de `datos.txt`.
+7. **Menores:** decidir los canales privados de la 011; Leaked Password Protection; pasar el redirect a
+   `permanent: true` cuando todo esté estable; `.gitattributes` con `*.gradle text eol=lf` para el ruido
+   de fin de línea de `cap sync`.
+
+---
+
+## Historial (estado al 2026-10-12, rama `feat/demo-local`)
+
+El trabajo de esa fecha ya está commiteado y fusionado a `main`.
 
 ## Actualización 2026-10-21: OpenWA y Conversaciones (rama `feat/conversaciones-openwa`, sin push)
 
