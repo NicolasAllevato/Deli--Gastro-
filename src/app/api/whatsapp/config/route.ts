@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
-import { canReceive, canSend, loadWhatsAppSettings, saveWhatsAppSettings } from "@/lib/whatsapp/config";
+import { canReceive, canSend, isCoexistenceEnabled, loadWhatsAppSettings, saveWhatsAppSettings } from "@/lib/whatsapp/config";
 import { maskSecret } from "@/lib/whatsapp/mask";
 
 const field = z.string().trim().max(512).optional();
@@ -17,6 +17,7 @@ const putSchema = z
     verifyToken: field,
     appId: field,
     configId: field,
+    coexistence: z.enum(["0", "1"]).optional(),
   })
   .strict();
 
@@ -41,6 +42,7 @@ async function currentState() {
     verifyToken: settings.verifyToken ?? "",
     appId: settings.appId ?? "",
     configId: settings.configId ?? "",
+    coexistence: isCoexistenceEnabled(settings),
     accessTokenHint: maskSecret(settings.accessToken),
     appSecretHint: maskSecret(settings.appSecret),
     canSend: canSend(settings),

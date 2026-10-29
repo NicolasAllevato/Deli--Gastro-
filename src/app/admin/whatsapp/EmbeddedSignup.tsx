@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { LogIn } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
-import { parseSignupMessage } from "@/lib/whatsapp/embedded-signup";
+import { buildSignupExtras, parseSignupMessage } from "@/lib/whatsapp/embedded-signup";
 
 const GRAPH_VERSION = "v26.0";
 const SDK_URL = "https://connect.facebook.net/en_US/sdk.js";
@@ -26,6 +26,8 @@ declare global {
 interface Props {
   appId: string;
   configId: string;
+  /** true: onboarding de la app WhatsApp Business (sin PIN). false: número nuevo con PIN. */
+  coexistence: boolean;
   canConnect: boolean;
   onConnected: (message: string) => void;
   onError: (message: string) => void;
@@ -49,16 +51,18 @@ function loadSdk(appId: string): Promise<FacebookSdk> {
 }
 
 /** Botón «Conectar con Facebook»: Embedded Signup de WhatsApp (el servidor guarda token e ids). */
-export function EmbeddedSignup({ appId, configId, canConnect, onConnected, onError }: Props) {
+export function EmbeddedSignup({ appId, configId, coexistence, canConnect, onConnected, onError }: Props) {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
-  const ids = useRef<{ phoneNumberId: string; wabaId: string } | null>(null);
+  const ids = useRef<{ phoneNumberId?: string; wabaId: string } | null>(null);
   const cancelled = useRef(false);
 
   useEffect(() => {
     const listener = (event: MessageEvent) => {
       const parsed = parseSignupMessage(event);
       if (parsed?.kind === "finish") ids.current = { phoneNumberId: parsed.phoneNumberId, wabaId: parsed.wabaId };
+      // Coexistencia: Meta solo informa el waba_id; el servidor resuelve el número.
+      if (parsed?.kind === "finish_coexistence") ids.current = { wabaId: parsed.wabaId };
       if (parsed?.kind === "cancel") cancelled.current = true;
     };
     window.addEventListener("message", listener);
@@ -73,7 +77,9 @@ export function EmbeddedSignup({ appId, configId, canConnect, onConnected, onErr
     const res = await fetch("/api/whatsapp/embedded-signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, ...ids.current, pin: pinValue }),
+      body: JSON.stringify(
+        coexistence ? { mode: "coexistence", code, ...ids.current } : { mode: "standard", code, ...ids.current, pin: pinValue },
+      ),
     });
     const json = (await res.json().catch(() => ({}))) as { error?: string; ready?: boolean };
     if (!res.ok) throw new Error(json.error ?? "No se pudo completar la conexión.");
@@ -102,7 +108,7 @@ export function EmbeddedSignup({ appId, configId, canConnect, onConnected, onErr
           config_id: configId,
           response_type: "code",
           override_default_response_type: true,
-          extras: { setup: {}, sessionInfoVersion: "3" },
+          extras: buildSignupExtras(coexistence),
         },
       );
     } catch (e: unknown) {
@@ -118,26 +124,30 @@ export function EmbeddedSignup({ appId, configId, canConnect, onConnected, onErr
       <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Conectar con Facebook</h2>
       <p className="text-xs text-gray-500">
         Iniciá sesión con tu cuenta de Meta, elegí o creá el número y listo: el token, la cuenta y la suscripción se cargan solos.
-        Elegí un PIN de 6 dígitos para el número (queda como verificación en dos pasos).
+        {coexistence
+          ? "Modo coexistencia: el número sigue en la app WhatsApp Business del celular; vas a escanear un código con esa app. No hace falta PIN."
+          : "Elegí un PIN de 6 dígitos para el número (queda como verificación en dos pasos)."}
       </p>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-40">
-          <Field
-            label="PIN de 6 dígitos"
-            type="password"
-            autoComplete="off"
-            inputMode="numeric"
-            maxLength={6}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-          />
-        </div>
+        {!coexistence && (
+          <div className="w-40">
+            <Field
+              label="PIN de 6 dígitos"
+              type="password"
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            />
+          </div>
+        )}
         <Button
           size="sm"
           leftIcon={<LogIn size={14} aria-hidden />}
           onClick={connect}
           loading={busy}
-          disabled={missing || !canConnect || pin.length !== 6}
+          disabled={missing || !canConnect || (!coexistence && pin.length !== 6)}
         >
           Conectar con Facebook
         </Button>

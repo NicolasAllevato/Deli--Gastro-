@@ -178,3 +178,22 @@ export async function exchangeCodeForToken(
   if (!json.access_token) throw new WhatsAppApiError(502, "Meta no devolvió el token de acceso.");
   return json.access_token;
 }
+
+export interface WabaPhoneNumber {
+  id: string;
+  display_phone_number?: string;
+}
+
+/** Números de una WABA (para resolver el phone_number_id cuando Meta solo informa el waba_id). */
+export async function listWabaPhoneNumbers(
+  { accessToken, wabaId }: { accessToken: string; wabaId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<WabaPhoneNumber[]> {
+  const res = await fetchImpl(`${GRAPH_URL}/${wabaId}/phone_numbers?fields=id,display_phone_number&limit=25`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const json = (await res.json().catch(() => ({}))) as { data?: WabaPhoneNumber[] } & GraphError;
+  if (!res.ok) throw new WhatsAppApiError(res.status, json.error?.message ?? `Error ${res.status} de Meta`);
+  return (json.data ?? []).filter((n) => typeof n.id === "string");
+}

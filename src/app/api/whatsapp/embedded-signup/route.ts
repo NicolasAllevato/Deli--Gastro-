@@ -4,16 +4,15 @@ import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { isDemoMode } from "@/lib/demo/mode";
 import { clientFor, loadWhatsAppSettings, saveWhatsAppSettings } from "@/lib/whatsapp/config";
-import { exchangeCodeForToken, WhatsAppApiError } from "@/lib/whatsapp/client";
+import { WhatsAppApiError } from "@/lib/whatsapp/client";
 import { diagnose } from "@/lib/whatsapp/diagnose";
 import { signupBodySchema } from "@/lib/whatsapp/embedded-signup";
-
-const ALREADY_REGISTERED = /already|registrad/i;
+import { completeSignup } from "@/lib/whatsapp/signup-flow";
 
 /**
  * Cierra el alta con Facebook (Embedded Signup): canjea el código por el token del negocio,
- * guarda token + ids, registra el número con el PIN y suscribe la app al webhook.
- * El código y el token nunca se loguean ni se devuelven.
+ * guarda token + ids y suscribe la app a la WABA. En modo estándar registra el número con el PIN;
+ * en coexistencia no (el número ya está registrado). El código y el token nunca se loguean ni se devuelven.
  */
 export async function POST(req: NextRequest) {
   if (!(await rateLimit(getClientIp(req), 5, 60_000))) {
@@ -27,7 +26,6 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Body inválido." }, { status: 400 });
   }
-  const { code, phoneNumberId, wabaId, pin } = parsed.data;
 
   const db = createAdminClient();
   const before = await loadWhatsAppSettings(db);
@@ -36,26 +34,24 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const accessToken = isDemoMode()
-      ? "demo-token"
-      : await exchangeCodeForToken({ appId: before.appId, appSecret: before.appSecret, code });
-    await saveWhatsAppSettings(db, { accessToken, phoneNumberId, wabaId });
-
-    const settings = await loadWhatsAppSettings(db);
-    const client = clientFor(settings);
-    if (!client) throw new WhatsAppApiError(500, "No se pudo armar el cliente de WhatsApp.");
-
-    try {
-      await client.registerPhone(pin);
-    } catch (error: unknown) {
-      // Registrar dos veces el mismo número no es un error para el dueño.
-      if (!(error instanceof Error && ALREADY_REGISTERED.test(error.message))) throw error;
-    }
-    await client.subscribeApp();
-
+    const { client } = await completeSignup(parsed.data, {
+      appId: before.appId,
+      appSecret: before.appSecret,
+      demo: isDemoMode(),
+      save: (patch) => saveWhatsAppSettings(db, patch),
+      // En demo se usa el cliente simulado; si no, el real que arma completeSignup.
+      buildClient: isDemoMode()
+        ? async () => {
+            const demo = clientFor(await loadWhatsAppSettings(db));
+            if (!demo) throw new WhatsAppApiError(500, "No se pudo armar el cliente de WhatsApp.");
+            return demo;
+          }
+        : undefined,
+    });
     return NextResponse.json(await diagnose(client, true));
   } catch (error: unknown) {
     const message = error instanceof WhatsAppApiError ? error.message : "No se pudo completar la conexión con Meta.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    const status = error instanceof WhatsAppApiError && error.status === 409 ? 409 : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }

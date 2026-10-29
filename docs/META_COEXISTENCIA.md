@@ -76,11 +76,20 @@ Lo marcado **verificar a mano** o **orientativo** no está confirmado.
    terceros, **no oficial**: confirmar que Argentina entra viendo si el flujo de Embedded Signup ofrece el número.
    Prerrequisito de Solution Partner / Tech Provider: **verificar a mano** en la página oficial de onboarding de
    usuarios de la app WhatsApp Business si aplica a esta integración.
-2. **Embedded Signup** con `featureType: "whatsapp_business_app_onboarding"`. En la versión 5 el `featureType` viene
-   activado por defecto; en v2 a v4 hay que ponerlo a mano. **v2 y v3 están deprecadas desde el 15-oct-2026**, así que
-   usar v4 o superior (preferible v5). Se crea una *configuration* de Facebook Login for Business para esa variante;
-   su **`config_id`** va en la llamada `FB.login`. Ver `src/lib/whatsapp/embedded-signup.ts` y
-   `docs/META_REVISION_APP.md` para el flujo actual del repo y adaptarlo (hoy es el flujo estándar).
+2. **Embedded Signup v5.** **v2 y v3 están deprecadas desde el 15-oct-2026.** El panel (`/admin/whatsapp`) llama
+   `FB.login` con `extras: { version: "v5" }` (sin `setup`, `featureType` ni `sessionInfoVersion`: según la página de
+   versiones de Meta, `sessionInfoVersion` ya no es un input y los productos salen de la *configuration*). En v5 el
+   onboarding de la app WhatsApp Business (coexistencia) viene **activado por defecto**; con el interruptor
+   «Coexistencia» apagado se manda además `features: [{ name: "whatsapp_business_app_onboarding", enabled: false }]`.
+   El `config_id` (de Facebook Login for Business) se carga en el panel («Config ID»); no está en el código.
+   Ver `buildSignupExtras` en `src/lib/whatsapp/embedded-signup.ts`.
+   - En coexistencia el evento `postMessage` es `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING` y, según la doc de Meta,
+     trae **solo `waba_id`** (no `phone_number_id`). **No se pide PIN ni se registra el número** (ya está registrado).
+     El servidor (`src/lib/whatsapp/signup-flow.ts`) canjea el `code` por el token, resuelve el `phone_number_id`
+     con `GET /<WABA_ID>/phone_numbers` (**verificar** en vivo; si hay 0 o varios números responde 409 y se carga a
+     mano), guarda token + ids y suscribe la app a la WABA (`POST /<WABA_ID>/subscribed_apps`; la doc de Meta no
+     nombra este paso para coexistencia, se mantiene por compatibilidad: **verificar**).
+   - Fuera de coexistencia (interruptor apagado) sigue el flujo estándar con PIN de 6 dígitos y registro.
 3. **Escanear el código** que muestra el flujo con la app WhatsApp Business del celular y aceptar.
 4. **Sincronizar contactos e historial: se decide en ese momento y debe hacerse dentro de las 24 h** del
    onboarding. Es **una sola vez por tipo**: si se rechaza o se deja vencer no se puede volver a pedir sin
@@ -132,3 +141,58 @@ Lo marcado **verificar a mano** o **orientativo** no está confirmado.
 - [ ] En el log del Worker aparece `ALERTA coexistencia` si se desvincula o reconecta la cuenta.
 - [ ] App Review aprobada, app publicada, token de sistema cargado, plantillas aprobadas.
 - [ ] OpenWA apagado para este número.
+
+## Multi-cliente (diseño propuesto, NO implementado)
+
+### Cómo se guarda hoy (solo lectura)
+
+- Un único negocio. Token, ids y secretos viven en `integration_secrets (key text pk, value text)` con RLS activada
+  y sin políticas (solo el service role; migración 007). Claves: `whatsapp_access_token`, `whatsapp_phone_number_id`,
+  `whatsapp_waba_id`, `whatsapp_app_secret`, `whatsapp_verify_token`, `whatsapp_app_id`, `whatsapp_config_id`
+  (`src/lib/whatsapp/config.ts`; una variable de entorno `WHATSAPP_*` gana sobre la fila).
+- `global_config` es de lectura pública por RLS: nunca lleva secretos (solo ajustes del bot como
+  `bot_human_takeover_minutes`).
+- El Worker (rol `deli_bot`, migración 015) no lee `integration_secrets`: la migración 016 le da la vista
+  `bot_secrets` (`security_barrier`) con una lista fija de claves (`whatsapp_access_token`, `whatsapp_app_secret`,
+  `whatsapp_verify_token`, `whatsapp_phone_number_id`, `mp_access_token`). **`whatsapp_waba_id` no está en la vista**:
+  hoy el Worker no lo necesita. Todo es clave global: no hay forma de tener dos negocios.
+
+### Diseño propuesto
+
+Tabla nueva `public.tenant_whatsapp` (una fila por cliente/local):
+
+| Columna | Tipo | Nota |
+|---|---|---|
+| `id` | uuid pk | |
+| `tenant_id` | uuid not null unique | negocio dueño (FK a la tabla de tenants que se cree; hoy no existe) |
+| `phone_number_id` | text not null unique | clave de ruteo del webhook |
+| `waba_id` | text not null | |
+| `access_token_enc` | bytea not null | token cifrado (ver abajo) |
+| `coexistence` | boolean not null default true | |
+| `status` | text | `active` / `offboarded` (lo marca `account_update`) |
+| `created_at`, `updated_at` | timestamptz | |
+
+Secretos de la app de Meta (`app_secret`, `verify_token`, `app_id`, `config_id`) siguen **globales**: la app de Meta es
+una sola (la del proveedor); solo el token, la WABA y el número son por cliente.
+
+- **Cifrado:** el token se guarda cifrado con una clave maestra (secret del Worker y de la app, nunca en la base),
+  por ejemplo AES-GCM con IV por fila. Alternativa: `pgsodium`/Vault de Supabase (**verificar** disponibilidad en el
+  plan). Sin la clave maestra la fila no sirve.
+- **RLS:** `enable row level security` sin políticas para `anon`/`authenticated`; el panel accede por service role
+  filtrando por tenant. Si más adelante el dueño lee su propia fila, política `using (tenant_id = auth_tenant())` y
+  solo columnas no secretas (vista sin `access_token_enc`).
+- **Lectura desde el Worker:** el webhook de Meta trae `metadata.phone_number_id` (y `entry[].id` = WABA). El Worker
+  busca la fila por `phone_number_id` (índice único), descifra el token en memoria y arma el cliente de ese tenant;
+  un `phone_number_id` desconocido se ignora con 200 y log. Se expone a `deli_bot` una **vista**
+  `bot_tenant_whatsapp (tenant_id, phone_number_id, waba_id, access_token_enc, status)` con `security_barrier` y
+  `grant select` solo a `deli_bot`, igual que `bot_secrets` (migración 016). El descifrado ocurre en el Worker.
+- **Caché:** `phone_number_id -> {token, tenant}` en memoria del isolate con TTL corto (60 s) para no consultar por
+  cada mensaje; invalidar por TTL al rotar tokens.
+- **Aislamiento de datos:** esto solo resuelve credenciales. `wa_conversations`, `orders`, `clients` y demás hoy no
+  tienen `tenant_id`; multi-cliente real exige agregarlo a cada tabla y a sus políticas (trabajo mayor, fuera de
+  este diseño).
+- **Alta:** `completeSignup` (`signup-flow.ts`) recibiría el `tenant_id` del admin autenticado y haría `upsert` en
+  `tenant_whatsapp` en vez de `saveWhatsAppSettings`. Token: el del canje de `code` es de negocio; para producción
+  usar un token de usuario del sistema por cliente (**verificar** la política de Meta para tokens de Embedded Signup).
+- **Migración de lo actual:** copiar las claves globales a una fila del primer tenant y dejar el fallback a las
+  claves globales mientras exista un solo negocio.
