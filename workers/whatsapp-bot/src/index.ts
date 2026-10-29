@@ -5,6 +5,7 @@ import { sqlInboundRepo } from "./repo/inbound.ts";
 import { parseWebhook } from "../../../src/lib/whatsapp/payload.ts";
 import { verifySignature } from "../../../src/lib/whatsapp/signature.ts";
 import { processTurn } from "./bot/turn.ts";
+import { createOrdersClient } from "./orders/client.ts";
 import { audioTranscriber, whatsappClient } from "./bot/channels.ts";
 import { sqlBotRepo } from "./repo/bot.ts";
 import type { RunModel } from "./ai/models.ts";
@@ -21,6 +22,8 @@ export interface Env {
   INBOUND: Queue<InboundTurn>;
   /** URL pública de la app (links permitidos en las respuestas del bot). */
   APP_URL: string;
+  /** Secret (wrangler secret put BOT_INTERNAL_SECRET, >= 32 caracteres, igual al de Vercel). Sin él los pedidos quedan apagados. */
+  BOT_INTERNAL_SECRET?: string;
 }
 
 const WEBHOOK_PATH = "/webhook";
@@ -128,6 +131,13 @@ async function receiveWebhook(req: Request, env: Env, ctx: ExecutionContext): Pr
   return new Response("OK");
 }
 
+/** Cliente de pedidos solo si hay un secreto utilizable (>= 32 caracteres, igual que exige la app). */
+function ordersClientFor(env: Env) {
+  const secret = env.BOT_INTERNAL_SECRET?.trim() ?? "";
+  if (secret.length < 32) return undefined;
+  return createOrdersClient({ baseUrl: env.APP_URL, secret, log: (message, detail) => console.log(message, detail) });
+}
+
 /** Consumidor de `wa-inbound` (fase 4): un turno agrupado → una respuesta. */
 async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
   const sql = connect(env);
@@ -146,6 +156,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),
       appUrl: env.APP_URL,
+      orders: ordersClientFor(env),
       log: (message: string, detail?: unknown) => console.error(message, detail),
     };
     // En orden: dos turnos de la misma conversación nunca se responden a la vez dentro del lote.

@@ -73,6 +73,15 @@ function paramsFor(notice: OrderNotice, target: Target, estimatedMinutes: number
 }
 
 /**
+ * Los pedidos hechos por WhatsApp ya se confirman dentro del chat, salvo los pagados online: con Mercado Pago el
+ * pedido nace al acreditarse el pago (webhook) y el chat no vio ninguna confirmación, así que SÍ se avisa.
+ */
+export function skipCreatedNotice(order: Pick<OrderRow, "channel" | "payment_method">): boolean {
+  if (order.channel !== "whatsapp") return false;
+  return String(order.payment_method ?? "").trim().toLowerCase() !== "mercado pago";
+}
+
+/**
  * Avisa al cliente por WhatsApp (plantillas de utilidad). No hace nada si WhatsApp no está
  * conectado o si el cliente nunca le escribió al local. Nunca lanza: un aviso fallido no
  * debe afectar al pedido.
@@ -81,8 +90,7 @@ export async function notifyOrderEvent(db: Db, orderId: string, notice: OrderNot
   try {
     const { data: order } = await db.from("orders").select("*").eq("id", orderId).maybeSingle();
     if (!order) return;
-    // Los pedidos hechos por WhatsApp ya se confirman dentro del chat.
-    if (notice === "created" && order.channel === "whatsapp") return;
+    if (notice === "created" && skipCreatedNotice(order)) return;
 
     const target = await loadTarget(db, order);
     if (!target) return;
