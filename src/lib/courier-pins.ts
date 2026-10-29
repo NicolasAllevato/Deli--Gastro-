@@ -1,5 +1,6 @@
 import { createHmac, randomInt } from "node:crypto";
 import { z } from "zod";
+import { cleanEnv } from "@/lib/clean-env";
 import type { createAdminClient } from "@/utils/supabase/admin";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -40,7 +41,7 @@ const PIN_TAKEN = "Ese PIN ya lo usa otro repartidor. Elegí otro o generá uno.
 
 /** Clave del HMAC. Sin COURIER_PIN_SECRET usa la service role (solo existe en el servidor). */
 export function pinSecret(env: NodeJS.ProcessEnv = process.env): string {
-  const secret = env.COURIER_PIN_SECRET || env.SUPABASE_SERVICE_ROLE_KEY;
+  const secret = cleanEnv(env.COURIER_PIN_SECRET) || cleanEnv(env.SUPABASE_SERVICE_ROLE_KEY);
   if (secret) return secret;
   if (env.NEXT_PUBLIC_DEMO_MODE === "true") return DEMO_PIN_SECRET;
   throw new Error("Falta COURIER_PIN_SECRET o SUPABASE_SERVICE_ROLE_KEY para los PIN de repartidores.");

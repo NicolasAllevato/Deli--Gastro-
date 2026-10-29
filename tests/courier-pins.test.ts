@@ -93,6 +93,8 @@ describe("PIN de repartidores", () => {
     assert.equal(pinSecret({ SUPABASE_SERVICE_ROLE_KEY: "b" } as unknown as NodeJS.ProcessEnv), "b");
     assert.equal(pinSecret({ NEXT_PUBLIC_DEMO_MODE: "true" } as unknown as NodeJS.ProcessEnv), DEMO_PIN_SECRET);
     assert.throws(() => pinSecret({} as unknown as NodeJS.ProcessEnv));
+    // Vercel puede guardar la clave con BOM: el hash tiene que ser el mismo que sin él.
+    assert.equal(pinSecret({ SUPABASE_SERVICE_ROLE_KEY: "﻿b\n" } as unknown as NodeJS.ProcessEnv), "b");
     assert.notEqual(hashPin("1234", "a"), hashPin("1234", "b"));
   });
 });

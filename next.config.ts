@@ -74,6 +74,17 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        // Un solo enlace público: el dominio viejo de Vercel manda todo a dely.opsyn.app.
+        source: "/:path*",
+        has: [{ type: "host", value: "deli-gastro.vercel.app" }],
+        destination: "https://dely.opsyn.app/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
