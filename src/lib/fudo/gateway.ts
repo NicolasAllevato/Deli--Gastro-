@@ -49,6 +49,8 @@ export async function requestFudoSync(orderId: string, config = fudoGatewayConfi
   }
 }
 
+const CATALOG_MAX_BYTES = 1_000_000;
+
 /**
  * Catálogo de productos de Fudo vía el Worker (la app firma el path). Sirve para sugerir ids en la
  * pantalla de mapeo; nunca tira: devuelve [] si la integración está apagada o el Worker no responde.
@@ -61,8 +63,19 @@ export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<Fu
       cache: "no-store",
       signal: AbortSignal.timeout(6000),
     });
-    return res.ok ? parseFudoCatalog(await res.json()) : [];
+    if (!res.ok) {
+      console.warn(`[fudo] el Worker respondió ${res.status} al pedir el catálogo`);
+      return [];
+    }
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    const text = declared > CATALOG_MAX_BYTES ? "" : await res.text();
+    if (declared > CATALOG_MAX_BYTES || text.length > CATALOG_MAX_BYTES) {
+      console.warn("[fudo] el catálogo supera el tamaño máximo permitido");
+      return [];
+    }
+    return parseFudoCatalog(JSON.parse(text));
   } catch {
+    console.warn("[fudo] no se pudo leer el catálogo del Worker");
     return [];
   }
 }

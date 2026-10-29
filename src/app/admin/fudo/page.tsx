@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Save, Trash2 } from "lucide-react";
+import { Modal } from "@/components/ui";
 import type { FudoCatalogItem, MappingState, SaveInput } from "@/lib/fudo/mapping";
 
 interface MapResponse extends MappingState {
@@ -23,10 +24,15 @@ async function request<T>(method: "GET" | "PUT", body?: unknown): Promise<T> {
   return json;
 }
 
+const MAX_FUDO_ID = 2_147_483_647;
+
 function toId(value: string): number | null {
   const n = Number(value);
-  return /^\d+$/.test(value.trim()) && Number.isSafeInteger(n) && n > 0 ? n : null;
+  return /^\d+$/.test(value.trim()) && Number.isSafeInteger(n) && n > 0 && n <= MAX_FUDO_ID ? n : null;
 }
+
+const isInvalidDraft = (value: string): boolean => value.trim() !== "" && toId(value) === null;
+const invalidRing = "ring-2 ring-red-400";
 
 export default function FudoMapPage() {
   const [data, setData] = useState<MapResponse | null>(null);
@@ -34,6 +40,8 @@ export default function FudoMapPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [requeued, setRequeued] = useState(0);
 
   const load = (next: MapResponse) => {
     setData(next);
@@ -43,9 +51,22 @@ export default function FudoMapPage() {
     setDrafts(d);
   };
 
+  const fetchState = async (): Promise<void> => {
+    try {
+      load(await request<MapResponse>("GET"));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al cargar.");
+    }
+  };
+
   useEffect(() => {
     request<MapResponse>("GET").then(load).catch((e: unknown) => setError(e instanceof Error ? e.message : "Error al cargar."));
   }, []);
+
+  const retry = () => {
+    setError(null);
+    void fetchState();
+  };
 
   const catalogById = useMemo(() => new Map((data?.catalog ?? []).map((c) => [c.id, c.name])), [data]);
 
@@ -78,20 +99,30 @@ export default function FudoMapPage() {
 
   const changes = diff ? diff.input.products.length + diff.input.payments.length + diff.input.removeProducts.length + diff.input.removePayments.length : 0;
 
-  const save = async () => {
+  const removals = diff ? diff.input.removeProducts.length + diff.input.removePayments.length : 0;
+
+  const runSave = async () => {
     if (!diff || diff.invalid || changes === 0) return;
+    setConfirming(false);
     setBusy(true);
     setError(null);
     setSaved(false);
+    setRequeued(0);
     try {
-      load(await request<MapResponse>("PUT", diff.input).then((r) => ({ ...r, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false })));
+      const res = await request<MapResponse & { requeued: number }>("PUT", diff.input);
+      load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false });
+      setRequeued(res.requeued ?? 0);
       setSaved(true);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+      const message = e instanceof Error ? e.message : "No se pudo guardar.";
+      await fetchState(); // vuelve al estado real de la base
+      setError(message);
     } finally {
       setBusy(false);
     }
   };
+
+  const onSaveClick = () => (removals > 0 ? setConfirming(true) : void runSave());
 
   const setDraft = (key: string, value: string) => {
     setSaved(false);
@@ -107,7 +138,14 @@ export default function FudoMapPage() {
         </p>
       </header>
 
-      {error && <p role="alert" className="text-xs font-bold text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-100">{error}</p>}
+      {error && (
+        <div role="alert" className="badge-red text-xs font-bold px-3 py-2 rounded-lg flex flex-wrap items-center gap-3">
+          <span>{error}</span>
+          {!data && (
+            <button type="button" onClick={retry} className="underline">Reintentar</button>
+          )}
+        </div>
+      )}
 
       {!data && !error && (
         <p className="text-sm text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden /> Cargando…</p>
@@ -136,7 +174,7 @@ export default function FudoMapPage() {
           </section>
 
           <datalist id="fudo-catalog">
-            {data.catalog.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {data.catalog.map((c) => <option key={c.id} value={c.id} label={`${c.id} · ${c.name}`} />)}
           </datalist>
 
           <section className="neumorphic rounded-2xl p-4 space-y-3" aria-labelledby="pagos-title">
@@ -151,7 +189,8 @@ export default function FudoMapPage() {
                     inputMode="numeric"
                     placeholder="Id en Fudo"
                     aria-label={`Id de Fudo para ${m.method}`}
-                    className={inputClass}
+                    aria-invalid={isInvalidDraft(drafts[`m:${m.method}`] ?? "") || undefined}
+                    className={`${inputClass} ${isInvalidDraft(drafts[`m:${m.method}`] ?? "") ? invalidRing : ""}`}
                   />
                 </li>
               ))}
@@ -185,14 +224,15 @@ export default function FudoMapPage() {
                         list="fudo-catalog"
                         placeholder="Id en Fudo"
                         aria-label={`Id de Fudo para ${p.name}`}
-                        className={inputClass}
+                        aria-invalid={isInvalidDraft(draft) || undefined}
+                        className={`${inputClass} ${isInvalidDraft(draft) ? invalidRing : ""}`}
                       />
                       <button
                         type="button"
                         onClick={() => setDraft(`p:${p.id}`, "")}
                         disabled={draft === ""}
                         aria-label={`Quitar el mapeo de ${p.name}`}
-                        className="p-2 rounded-xl neumorphic-inset text-gray-500 disabled:opacity-40"
+                        className="inline-flex items-center justify-center min-w-11 min-h-11 rounded-xl neumorphic-inset text-gray-500 disabled:opacity-40"
                       >
                         <Trash2 size={14} aria-hidden />
                       </button>
@@ -206,16 +246,44 @@ export default function FudoMapPage() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={save}
+              onClick={onSaveClick}
               disabled={busy || changes === 0 || diff?.invalid}
               className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl btn-glow text-white font-black text-sm disabled:opacity-50"
             >
               {busy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Save size={16} aria-hidden />}
               Guardar cambios{changes > 0 ? ` (${changes})` : ""}
             </button>
-            {diff?.invalid && <p role="alert" className="text-xs font-bold text-red-600">Hay ids inválidos: tienen que ser números enteros.</p>}
-            {saved && <p role="status" className="text-xs font-bold text-green-600">Mapeo guardado.</p>}
+            {diff?.invalid && (
+              <p role="alert" className="badge-red text-xs font-bold px-2.5 py-1 rounded-full">
+                Hay ids inválidos: tienen que ser enteros entre 1 y {MAX_FUDO_ID.toLocaleString("es-AR")}.
+              </p>
+            )}
+            {saved && (
+              <p role="status" className="badge-green text-xs font-bold px-2.5 py-1 rounded-full">
+                Mapeo guardado.{requeued > 0 ? ` ${requeued} ${requeued === 1 ? "pedido se reenviará" : "pedidos se reenviarán"} a Fudo.` : ""}
+              </p>
+            )}
           </div>
+
+          <Modal
+            open={confirming}
+            onClose={() => setConfirming(false)}
+            title="Quitar mapeos"
+            description={`${removals === 1 ? "Se quitará 1 mapeo" : `Se quitarán ${removals} mapeos`}. Los pedidos con esos productos o medios de pago no se enviarán a Fudo hasta volver a mapearlos.`}
+            size="sm"
+            footer={
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setConfirming(false)} className="px-4 py-2 rounded-xl neumorphic-inset text-sm font-black text-gray-600">
+                  Cancelar
+                </button>
+                <button type="button" onClick={() => void runSave()} className="px-4 py-2 rounded-xl btn-glow text-white text-sm font-black">
+                  Guardar igual
+                </button>
+              </div>
+            }
+          >
+            <p className="text-sm text-gray-600">¿Querés guardar los cambios?</p>
+          </Modal>
         </>
       )}
     </div>

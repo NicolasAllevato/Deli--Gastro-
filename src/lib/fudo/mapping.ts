@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PAYMENT_METHODS } from "@/lib/orders";
 import type { createAdminClient } from "@/utils/supabase/admin";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -9,8 +10,13 @@ type Db = ReturnType<typeof createAdminClient>;
  * tablas para armar el pedido; sin mapeo el pedido queda `skipped`. Ver docs/FUDO_INTEGRACION.md.
  */
 
-export const PAYMENT_METHODS = ["Efectivo", "Tarjeta", "Mercado Pago"] as const;
 export type MappedPaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+export const FUDO_NAME_MAX = 120;
+export const CATALOG_MAX_ITEMS = 5000;
+const REQUEUE_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Texto con el que el Worker marca `fudo_error` cuando falta mapear productos (workers/fudo-gateway/src/payload.ts). */
+export const UNMAPPED_ERROR_PREFIX = "Productos sin mapear a Fudo";
 
 const fudoId = z
   .number()
@@ -24,7 +30,7 @@ export const saveSchema = z
       .array(z.object({
         productId: z.string().uuid("Producto inválido."),
         fudoProductId: fudoId,
-        fudoName: z.string().trim().max(120).nullish(),
+        fudoName: z.string().trim().transform((v) => v.slice(0, FUDO_NAME_MAX)).nullish(),
       }))
       .max(500)
       .default([]),
@@ -34,6 +40,9 @@ export const saveSchema = z
       .default([]),
     removeProducts: z.array(z.string().uuid()).max(500).default([]),
     removePayments: z.array(z.enum(PAYMENT_METHODS)).max(PAYMENT_METHODS.length).default([]),
+  })
+  .refine((v) => !v.products.some((p) => v.removeProducts.includes(p.productId)), {
+    message: "Un mismo producto no puede guardarse y quitarse a la vez.",
   })
   .refine((v) => v.products.length + v.payments.length + v.removeProducts.length + v.removePayments.length > 0, {
     message: "No hay cambios para guardar.",
@@ -117,19 +126,44 @@ export function buildMappingState(products: ProductRow[], productMap: ProductMap
   };
 }
 
-/** Lee el catálogo crudo de Fudo (JSON:API `{data:[{id,attributes:{name}}]}` o lista plana) sin asumir la forma. */
+/**
+ * Lee el catálogo de Fudo. La spec real (GET /products) responde `{ products: [{ id, name, active, ... }] }`;
+ * también se acepta una lista plana o JSON:API (`data[].attributes.name`). Se saltean los inactivos.
+ */
 export function parseFudoCatalog(raw: unknown): FudoCatalogItem[] {
-  const list = Array.isArray(raw) ? raw : (raw as { data?: unknown } | null)?.data;
+  const root = raw as { products?: unknown; data?: unknown } | null;
+  const list = Array.isArray(raw) ? raw : (root?.products ?? root?.data);
   if (!Array.isArray(list)) return [];
   const items: FudoCatalogItem[] = [];
-  for (const entry of list) {
+  for (const entry of list.slice(0, CATALOG_MAX_ITEMS)) {
     if (!entry || typeof entry !== "object") continue;
-    const e = entry as { id?: unknown; name?: unknown; attributes?: { name?: unknown } };
+    const e = entry as { id?: unknown; name?: unknown; active?: unknown; attributes?: { name?: unknown } };
+    if (e.active === false) continue;
     const id = Number(e.id);
     const name = typeof e.attributes?.name === "string" ? e.attributes.name : e.name;
-    if (Number.isInteger(id) && id > 0 && typeof name === "string" && name.trim()) items.push({ id, name: name.trim() });
+    if (Number.isInteger(id) && id > 0 && typeof name === "string" && name.trim()) {
+      items.push({ id, name: name.trim().slice(0, FUDO_NAME_MAX) });
+    }
   }
   return items.sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+/** Ids de `products` que no figuran en un catálogo no vacío (sin catálogo no se puede decidir). */
+export function findUnknownFudoIds(products: SaveInput["products"], catalog: FudoCatalogItem[]): number[] {
+  if (catalog.length === 0) return [];
+  const known = new Set(catalog.map((c) => c.id));
+  return [...new Set(products.filter((p) => !known.has(p.fudoProductId)).map((p) => p.fudoProductId))];
+}
+
+/** El servidor no confía en el nombre del cliente: con catálogo usa el de Fudo; sin él, el del cliente truncado. */
+export function applyCatalogNames(products: SaveInput["products"], catalog: FudoCatalogItem[]): SaveInput["products"] {
+  const names = new Map(catalog.map((c) => [c.id, c.name]));
+  return products.map((p) => ({ ...p, fudoName: names.get(p.fudoProductId) ?? p.fudoName ?? null }));
+}
+
+/** Límite de antigüedad de los pedidos omitidos que se reencolan (evita reenviar pedidos viejos). */
+export function requeueCutoff(now: number = Date.now()): string {
+  return new Date(now - REQUEUE_WINDOW_MS).toISOString();
 }
 
 export async function loadMapping(db: Db): Promise<MappingState> {
@@ -147,10 +181,14 @@ export async function loadMapping(db: Db): Promise<MappingState> {
   );
 }
 
-export async function saveMapping(db: Db, input: SaveInput): Promise<void> {
+/**
+ * Guarda el mapeo y devuelve cuántos pedidos omitidos por falta de mapeo se reencolaron a `pending`
+ * (una sola query; `fudo_attempts` vuelve a 0 porque el Worker descarta los que llegaron al máximo).
+ */
+export async function saveMapping(db: Db, input: SaveInput, now: number = Date.now()): Promise<number> {
   const productRows = buildProductRows(input.products);
   const paymentRows = buildPaymentRows(input.payments);
-  const stamp = new Date().toISOString();
+  const stamp = new Date(now).toISOString();
   const steps = [
     productRows.length ? db.from("fudo_product_map").upsert(productRows.map((r) => ({ ...r, updated_at: stamp })), { onConflict: "product_id" }) : null,
     paymentRows.length ? db.from("fudo_payment_map").upsert(paymentRows.map((r) => ({ ...r, updated_at: stamp })), { onConflict: "payment_method" }) : null,
@@ -162,4 +200,15 @@ export async function saveMapping(db: Db, input: SaveInput): Promise<void> {
     const { error } = await step;
     if (error) throw new Error(error.message);
   }
+  if (productRows.length === 0) return 0;
+  const { data, error } = await db
+    .from("orders")
+    .update({ fudo_sync_status: "pending", fudo_error: null, fudo_attempts: 0 })
+    .eq("fudo_sync_status", "skipped")
+    .is("fudo_order_id", null)
+    .ilike("fudo_error", `${UNMAPPED_ERROR_PREFIX}%`)
+    .gte("created_at", requeueCutoff(now))
+    .select("id");
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
 }
