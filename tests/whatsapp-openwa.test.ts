@@ -127,7 +127,9 @@ const START = "POST /api/sessions/dely/start";
 const AUDIT = "GET /api/audit";
 const audit = (...actions: string[]) => json({ data: actions.map(action => ({ action, sessionId: "dely" })) });
 const SEND = "POST /api/sessions/dely/messages/send-text";
-const fast = { pollMs: 1, maxWaitMs: 50 };
+// maxWaitMs holgado: con 50 ms, una máquina cargada agotaba el tope antes de ver "ready" y el test era inestable.
+// Ningún test depende de que el tope se agote, así que el margen no los vuelve más lentos.
+const fast = { pollMs: 1, maxWaitMs: 5000 };
 
 test("ensureActive: con la sesión lista no hace nada más", async () => {
   const wa = fakeOpenWA({ [SESSION]: [json({ status: "ready" })] });
