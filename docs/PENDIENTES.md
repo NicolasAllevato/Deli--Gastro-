@@ -18,24 +18,25 @@ v1.0, versionCode 1, firmada con esquema v2, en `public/descargas/`), gateway Fu
    Causas probables: "Instalar apps desconocidas" para el navegador, Auto Blocker (Ajustes > Seguridad
    y privacidad > Auto Blocker, desactivar "Bloquear instalaciones no autorizadas") y Play Protect
    ("Instalar de todos modos").
-2. **Vercel (faltan, el código las lee):** `CRON_SECRET` (sin ella los dos endpoints de cron dan 401),
-   `UPLOADS_WORKER_URL` y `UPLOADS_WORKER_TOKEN`, `MP_ACCESS_TOKEN`/`MP_WEBHOOK_SECRET`/`PUBLIC_URL`,
+2. **Vercel (faltan, el código las lee):** `UPLOADS_WORKER_URL` y `UPLOADS_WORKER_TOKEN`, `MP_ACCESS_TOKEN`/`MP_WEBHOOK_SECRET`/`PUBLIC_URL`,
    `RESEND_API_KEY` y `RESUMEN_EMAIL_FROM`, `OPENAI_API_KEY`. Las `WHATSAPP_*` son opcionales si ya
    están en `integration_secrets` (el entorno gana). Si Conversaciones usa OpenWA en producción:
    `WHATSAPP_PROVIDER` y `OPENWA_URL`/`OPENWA_API_KEY`/`OPENWA_SESSION_ID`/`OPENWA_WEBHOOK_SECRET`.
    Confirmar `UPSTASH_REDIS_REST_*` (sin ellas el rate limit cae a memoria y se debilita el tope del
    PIN). Confirmar que `NEXT_PUBLIC_APP_URL` valga `https://dely.opsyn.app`. `NEXT_PUBLIC_DEMO_MODE` no
    debe estar definida (hoy no lo está).
-3. **`encuestas-cron`:** generar `CRON_SECRET`, cargarlo igual en Vercel y en el Worker, `BASE_URL` =
-   `https://dely.opsyn.app`, `wrangler secret bulk` y `wrangler deploy`. Los endpoints
-   `/api/cron/*` los dispara este Worker, no Vercel Cron (`vercel.json` no define crons).
-4. **Fudo** (mail de solicitud enviado, falta el `Fudo-Integrator-Token`): crear un KV propio y poner su
-   id en `workers/fudo-gateway/wrangler.toml` (hoy tiene un placeholder). El `account_id` de ese
-   archivo es `53d56863…` (cuenta "Opsyn Dely", la misma de `whatsapp-bot`); confirmar que es donde
-   debe vivir antes de desplegar. Los `FUDO_KV` que aparecen en la cuenta Proyectos OPSYN son de otro
-   Worker: no reutilizarlos ni tocarlos. Cargar los secretos y desplegar. La pantalla de mapeo está en
-   el PR #14 (abierto). Cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en Vercel **al final**, porque
-   desde ahí cada pedido intenta sincronizar.
+3. **`encuestas-cron`: HECHO el 2026-10-29.** `CRON_SECRET` generado y cargado en Vercel (producción) y
+   en el Worker (cuenta Proyectos OPSYN, cron cada 15 min, `BASE_URL=https://dely.opsyn.app`). Probado:
+   `/api/cron/surveys` da 200 con el Bearer y 401 sin él. Los endpoints `/api/cron/*` los dispara este
+   Worker, no Vercel Cron. Para que envíe algo faltan las claves de WhatsApp y Resend (ítem 2).
+4. **Fudo** (mail de solicitud enviado, falta el `Fudo-Integrator-Token`): el KV propio `FUDO_KV` ya está
+   creado en la cuenta "Opsyn Dely" (`53d56863…`, la misma de `whatsapp-bot`; el `account_id` del
+   `wrangler.toml` es correcto) y su id está en `workers/fudo-gateway/wrangler.toml`. Los `FUDO_KV` de la
+   cuenta Proyectos OPSYN son de otro Worker: no tocarlos. Falta desplegar el Worker con los secretos
+   `FUDO_CLIENT_ID`, `FUDO_CLIENT_SECRET` (usuario de integración, no están en `.env.local`),
+   `FUDO_INTEGRATOR_TOKEN`, `FUDO_GATEWAY_SECRET`, `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`. La
+   pantalla de mapeo `/admin/fudo` ya está en producción. Cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET`
+   en Vercel **al final**, porque desde ahí cada pedido intenta sincronizar.
 5. **PIN de repartidores:** son 4 dígitos con tope de 5 intentos por IP y 60 globales cada 15 min.
    Decidir: 6 dígitos, o PIN más identificador, o atar el PIN a dispositivos. Definir
    `COURIER_PIN_SECRET` propio obliga a regenerar todos los PIN, y rotar `SUPABASE_SERVICE_ROLE_KEY`
