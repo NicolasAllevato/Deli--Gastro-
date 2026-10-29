@@ -17,7 +17,8 @@ import { settingsFromConfig, type BotSettings } from "./settings.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import {
-  cancelAfterPrompt, CANCEL_MARKER, confirmAfterSummary, disabledReply, isAffirmation, newOrderState, QUOTE_MARKER, type OrderTurn,
+  cancelAfterPrompt, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
+  pendingOperation, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -83,6 +84,14 @@ async function answer(
     return "answered";
   }
 
+  // Con pedidos encendidos, un texto libre del modelo no puede imitar una plantilla (resumen, cancelar, reintento):
+  // esos textos habilitan un SÍ posterior y solo los manda el Worker.
+  if (order && imitatesTemplate(draft)) {
+    deps.log("[whatsapp-bot] el modelo imitó una plantilla de pedidos", { conversation: conversation.id });
+    await reply(deps, conversation, ORDER_REPLIES.unavailable);
+    return "output_blocked";
+  }
+
   const appHost = new URL(deps.appUrl).host;
   const check = inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] });
   if (!draft || check.verdict === "block") {
@@ -138,13 +147,14 @@ export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<Tu
     settings.ordersEnabled && deps.orders && wamid
       ? {
           client: deps.orders, repo: deps.repo, conversation, inboundWamid: wamid, inboundText: text,
-          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, appUrl: deps.appUrl, state: newOrderState(),
+          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, appUrl: deps.appUrl, hours: settings.hours, state: newOrderState(),
         }
       : undefined;
 
   // Camino determinista: SÍ literal justo después del resumen (o de la pregunta de cancelar) no pasa por el clasificador.
   if (order && isAffirmation(text) && !order.hasAudio) {
-    const direct = lastBot?.startsWith(QUOTE_MARKER) ? confirmAfterSummary : lastBot?.startsWith(CANCEL_MARKER) ? cancelAfterPrompt : null;
+    const pending = pendingOperation(lastBot);
+    const direct = pending === "confirm" ? confirmAfterSummary : pending === "cancel" ? cancelAfterPrompt : null;
     if (direct) {
       await direct(order);
       await reply(deps, conversation, order.state.fixedReply ?? REPLIES.failure);
@@ -165,6 +175,11 @@ export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<Tu
   if (ORDER_INTENTS.includes(intent) && !order) {
     // Flag apagado (o sin cliente): camino de siempre, derivar a la web.
     await reply(deps, conversation, settings.ordersEnabled ? disabledReply(deps.appUrl) : orderReply(deps.appUrl, settings));
+    return "order_redirect";
+  }
+  // Un número fuera del piloto (allowlist) recibe «no disponible» sin gastar el modelo.
+  if (order && (intent === "pedido_nuevo" || intent === "pedido_datos") && (await isOutsidePilot(order))) {
+    await reply(deps, conversation, disabledReply(deps.appUrl));
     return "order_redirect";
   }
   return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order);

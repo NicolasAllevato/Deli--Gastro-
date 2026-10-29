@@ -2,7 +2,7 @@ import type { BotTool } from "../ai/responder.ts";
 import { toolsForIntent } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
-import { runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
+import { LEGACY_STATUS, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
 const PAYMENT_METHODS = ["Efectivo", "Transferencia", "Mercado Pago"];
@@ -72,7 +72,11 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
       description: "Estado del último pedido del cliente de esta conversación.",
       parameters: EMPTY,
       run: async () => {
-        if (order) return runStatus(order);
+        if (order) {
+          const viaApp = await runStatus(order);
+          if (viaApp !== LEGACY_STATUS) return viaApp;
+          // Fuera de la allowlist de pedidos: se consulta como antes, directo en la base.
+        }
         // Siempre el cliente de ESTA conversación: el modelo no elige de quién es el pedido.
         const latest = conversation.clientId ? await repo.latestOrder(conversation.clientId) : null;
         if (!latest) return { found: false };

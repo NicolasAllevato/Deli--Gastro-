@@ -31,7 +31,7 @@ Intenciones:
 - pedido_nuevo: quiere pedir o agrega/cambia productos
 - pedido_datos: responde un dato que el bot le pidió (dirección, nombre, forma de pago, aclaración)
 - pedido_confirmar: acepta una cotización que el bot le mostró
-- pedido_estado: pregunta por un pedido ya hecho o demoras
+- pedido_estado: pregunta por un pedido ya hecho o demoras; también «no me llega el link» o «ya pagué»
 - pedido_cancelar: quiere cancelar
 - humano: queja o pide hablar con una persona
 - saludo: saludo o agradecimiento

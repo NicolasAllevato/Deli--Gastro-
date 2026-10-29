@@ -3,15 +3,39 @@
  * Lo que ve el cliente (resumen, link de pago, errores) sale de estas plantillas y de los datos del servidor,
  * nunca de texto libre del modelo. Las compuertas viven acá, no en el prompt.
  */
-import { isTrustedPaymentUrl } from "../guardrails.ts";
+import { trustedPaymentUrl } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import type { OrderFailure, OrderResponse, OrdersClient } from "./client.ts";
 
 export const QUOTE_MARKER = "Resumen de tu pedido";
 export const CANCEL_MARKER = "¿Confirmás que querés cancelar tu pedido?";
+/** Fallo transitorio de confirm/cancel: la plantilla dice qué operación se reintenta con un SÍ. */
+export const RETRY_MARKER = "Tuve un problema al ";
+export const RETRY_CONFIRM = `${RETRY_MARKER}confirmar tu pedido.`;
+export const RETRY_CANCEL = `${RETRY_MARKER}cancelar tu pedido.`;
+const RETRY_SUFFIX = "Respondé SÍ para reintentar.";
 export const CANCEL_PROMPT = `${CANCEL_MARKER}\nRespondé SÍ para cancelarlo. Si no, seguimos como estaba.`;
 
-const AFFIRMATIONS: ReadonlySet<string> = new Set(["si", "confirmo", "dale", "ok", "listo", "de acuerdo"]);
+const AFFIRMATIONS: ReadonlySet<string> = new Set(["si", "confirmo", "dale"]);
+
+/** Textos de plantilla: el modelo nunca puede mandar un mensaje que los contenga (el cuerpo guardado es la única "marca"). */
+export const TEMPLATE_MARKERS: readonly string[] = [QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para"];
+
+const foldText = (text: string): string => text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/** true si un texto libre del modelo imita una plantilla (resumen, pregunta de cancelar, reintento). */
+export function imitatesTemplate(draft: string): boolean {
+  const folded = foldText(draft);
+  return TEMPLATE_MARKERS.some((m) => folded.includes(foldText(m)));
+}
+
+/** Qué operación habilita un SÍ según el último mensaje del bot (null = ninguna). */
+export function pendingOperation(lastBot: string | null): "confirm" | "cancel" | null {
+  if (!lastBot) return null;
+  if (lastBot.startsWith(QUOTE_MARKER) || lastBot.startsWith(RETRY_CONFIRM)) return "confirm";
+  if (lastBot.startsWith(CANCEL_MARKER) || lastBot.startsWith(RETRY_CANCEL)) return "cancel";
+  return null;
+}
 const MAX_AFFIRMATION_CHARS = 24;
 
 /** Minúsculas, sin tildes ni puntuación, espacios colapsados. */
@@ -64,7 +88,11 @@ export function renderPaymentMessage(paymentUrl: string, total: number | null): 
 export const ORDER_REPLIES = {
   cancelled: "Listo, cancelamos tu pedido.",
   unavailable: "Tuve un problema, probá de nuevo en un momento.",
-  handoff: "Para este pedido te va a atender una persona del local, en breve te responde.",
+  retryLater: "Reintentá en un momento.",
+  humanHas: "Ya te está atendiendo una persona del local, en breve te responde.",
+  noOrder: "No tenés un pedido en curso.",
+  productNotFound: "Ese producto no lo encontré, ¿me decís cuál querés?",
+  startOver: "Decime qué querés pedir y la dirección de entrega, y te armo el resumen.",
   requote: "Ese resumen ya no está vigente. Decime de nuevo qué querés pedir y la dirección, y te armo uno nuevo.",
   invalidQuote: "No pude armar el resumen con esos datos. Decime qué productos querés y a qué dirección te lo mandamos.",
   mpOnly: "Por WhatsApp solo se puede pagar con Mercado Pago.",
@@ -73,29 +101,43 @@ export const ORDER_REPLIES = {
 export const disabledReply = (appUrl: string): string =>
   `Por ahora los pedidos por WhatsApp no están disponibles, hacelo desde la web: ${appUrl}/cliente`;
 
-export interface ErrorReply {
-  text: string;
-  /** Pasar la conversación a una persona. */
-  handoff: boolean;
+const EXPLAIN_CODES = new Set(["out_of_zone", "min_order", "total_changed"]);
+const REQUOTE_CODES = new Set(["no_draft", "expired", "not_confirmed", "claim_lost"]);
+/** Códigos con los que el servidor rechaza una operación con un motivo ya redactado en español. */
+const REASON_CODES = new Set(["rejected", "http_409"]);
+
+export interface ErrorContext {
+  appUrl: string;
+  hours?: { open: string; close: string };
+  op?: "quote" | "confirm" | "cancel" | "status";
 }
 
-const HANDOFF_CODES = new Set(["limit_exceeded", "payment_not_supported", "human_takeover", "forbidden"]);
-const EXPLAIN_CODES = new Set(["out_of_zone", "min_order", "closed", "product_unavailable", "total_changed"]);
-const REQUOTE_CODES = new Set(["no_draft", "expired", "not_confirmed", "claim_lost"]);
+/** Falla que vale la pena reintentar (red, timeout, 5xx, 429, `unavailable`). */
+export function isTransient(failure: OrderFailure): boolean {
+  return failure.kind === "network" || failure.kind === "timeout" || failure.kind === "bad_response" ||
+    failure.status >= 500 || failure.status === 429 || failure.code === "unavailable";
+}
 
-/** Mensaje en español para cada rechazo del servidor (o falla de red). */
-export function errorReply(failure: OrderFailure, appUrl: string): ErrorReply {
+/** Mensaje en español para cada rechazo del servidor (o falla de red). Nada de esto pasa la conversación a una persona. */
+export function errorReply(failure: OrderFailure, ctx: ErrorContext | string): string {
+  const { appUrl, hours, op } = typeof ctx === "string" ? ({ appUrl: ctx } as ErrorContext) : ctx;
   const { code, kind } = failure;
-  if (kind === "not_configured" || code === "orders_disabled" || code === "not_configured") {
-    return { text: disabledReply(appUrl), handoff: false };
+  const why = oneLine(failure.error, 200);
+  if (kind === "not_configured" || code === "orders_disabled" || code === "not_configured") return disabledReply(appUrl);
+  if (code === "limit_exceeded") return `${why} También podés hacer tu pedido desde la web: ${appUrl}/cliente`;
+  if (code === "forbidden") return ORDER_REPLIES.retryLater;
+  if (code === "human_takeover") return ORDER_REPLIES.humanHas;
+  if (code === "payment_not_supported") return ORDER_REPLIES.mpOnly;
+  if (code === "closed") {
+    return hours ? `Ahora estamos cerrados. Atendemos de ${hours.open} a ${hours.close}.` : "Ahora estamos cerrados.";
   }
-  if (HANDOFF_CODES.has(code)) return { text: ORDER_REPLIES.handoff, handoff: true };
-  if (EXPLAIN_CODES.has(code)) {
-    const why = oneLine(failure.error, 200);
-    return { text: `${why} Si querés, armamos el pedido de nuevo.`, handoff: false };
+  if (code === "product_unavailable") return ORDER_REPLIES.productNotFound;
+  if (EXPLAIN_CODES.has(code)) return `${why} Si querés, armamos el pedido de nuevo.`;
+  if (REQUOTE_CODES.has(code)) return ORDER_REPLIES.requote;
+  if (REASON_CODES.has(code) && failure.error) {
+    return op === "cancel" && /no encontr/i.test(failure.error) ? ORDER_REPLIES.noOrder : why;
   }
-  if (REQUOTE_CODES.has(code)) return { text: ORDER_REPLIES.requote, handoff: false };
-  return { text: ORDER_REPLIES.unavailable, handoff: false };
+  return ORDER_REPLIES.unavailable;
 }
 
 /** Estado mutable de UN turno (se crea por turno; nunca se comparte entre conversaciones). */
@@ -118,6 +160,7 @@ export interface OrderTurn {
   /** Último mensaje que el bot le mandó al cliente. */
   lastBotMessage: string | null;
   appUrl: string;
+  hours: { open: string; close: string };
   state: OrderTurnState;
 }
 
@@ -126,10 +169,13 @@ export const newOrderState = (): OrderTurnState => ({ quoted: false, fixedReply:
 const common = (t: OrderTurn) => ({ conversationId: t.conversation.id, inboundWamid: t.inboundWamid });
 const SENT = { ok: false, note: "El cliente ya recibió la respuesta. No agregues nada más." } as const;
 
-async function fail(t: OrderTurn, response: OrderFailure): Promise<typeof SENT> {
-  const reply = errorReply(response, t.appUrl);
-  if (reply.handoff) await t.repo.setTakeover(t.conversation.id);
-  t.state.fixedReply = reply.text;
+function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm" | "cancel" | "status"): typeof SENT {
+  // Fallo transitorio de confirm/cancel: se ofrece reintentar con un SÍ (la plantilla dice cuál operación).
+  if ((op === "confirm" || op === "cancel") && isTransient(response)) {
+    t.state.fixedReply = `${op === "confirm" ? RETRY_CONFIRM : RETRY_CANCEL} ${RETRY_SUFFIX}`;
+    return SENT;
+  }
+  t.state.fixedReply = errorReply(response, { appUrl: t.appUrl, hours: t.hours, op });
   return SENT;
 }
 
@@ -163,7 +209,7 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty y address. No envíes precios ni totales." };
   t.state.quoted = true;
   const response = await t.client.quote({ ...common(t), ...parsed });
-  if (!response.ok) return fail(t, response);
+  if (!response.ok) return fail(t, response, "quote");
   const summary = renderQuoteSummary(response.data);
   t.state.fixedReply = summary ?? ORDER_REPLIES.invalidQuote;
   return summary ? { ok: true, note: "El resumen con el total ya se le envía al cliente. No lo repitas ni lo cambies." } : SENT;
@@ -173,7 +219,11 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
 function confirmGate(t: OrderTurn): string | null {
   if (t.state.quoted) return "En este mismo turno se cotizó: esperá a que el cliente responda SÍ al resumen.";
   if (t.hasAudio || !isAffirmation(t.inboundText)) return "El último mensaje del cliente no es una confirmación literal (SÍ, dale, ok...). Pedile que responda SÍ al resumen.";
-  if (!t.lastBotMessage?.startsWith(QUOTE_MARKER)) return "El cliente todavía no vio un resumen para confirmar.";
+  if (pendingOperation(t.lastBotMessage) !== "confirm") {
+    // Un SÍ suelto sin resumen a la vista no deja al cliente en un callejón: se le pide empezar de nuevo.
+    t.state.fixedReply = ORDER_REPLIES.startOver;
+    return "El cliente todavía no vio un resumen para confirmar.";
+  }
   return null;
 }
 
@@ -191,10 +241,11 @@ export async function runConfirm(t: OrderTurn, args: unknown): Promise<unknown> 
 }
 
 async function handleConfirm(t: OrderTurn, response: OrderResponse): Promise<unknown> {
-  if (!response.ok) return fail(t, response);
-  const { awaiting_payment: awaiting, payment_url: url, total } = response.data;
-  // El link es EXACTAMENTE el del servidor, y solo si es https de Mercado Pago.
-  if (awaiting !== true || typeof url !== "string" || !isTrustedPaymentUrl(url)) {
+  if (!response.ok) return fail(t, response, "confirm");
+  const { awaiting_payment: awaiting, payment_url: raw, total } = response.data;
+  // El link es el del servidor (normalizado por URL), y solo si es https de Mercado Pago.
+  const url = typeof raw === "string" ? trustedPaymentUrl(raw) : null;
+  if (awaiting !== true || !url) {
     t.state.fixedReply = ORDER_REPLIES.unavailable;
     return SENT;
   }
@@ -207,7 +258,7 @@ export const confirmAfterSummary = (t: OrderTurn): Promise<unknown> => runConfir
 
 export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!ownKeys(args, ["confirmed"])) return { ok: false, error: "Argumentos inválidos." };
-  const asked = t.lastBotMessage?.startsWith(CANCEL_MARKER) === true;
+  const asked = pendingOperation(t.lastBotMessage) === "cancel";
   const confirmedNow = asked && !t.hasAudio && isAffirmation(t.inboundText) && args.confirmed === true;
   if (!confirmedNow) {
     // Primero se pregunta con plantilla fija; recién el mensaje siguiente del cliente puede cancelar.
@@ -215,7 +266,7 @@ export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
     return { ok: false, note: "Se le preguntó al cliente si confirma la cancelación. Esperá su respuesta." };
   }
   const response = await t.client.cancel({ ...common(t), confirmed: true });
-  if (!response.ok) return fail(t, response);
+  if (!response.ok) return fail(t, response, "cancel");
   t.state.fixedReply = ORDER_REPLIES.cancelled;
   return { ok: true, note: "Ya se le avisó al cliente que el pedido quedó cancelado." };
 }
@@ -223,8 +274,18 @@ export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
 /** Camino determinista: el cliente respondió SÍ a la pregunta de cancelación. */
 export const cancelAfterPrompt = (t: OrderTurn): Promise<unknown> => runCancel(t, { confirmed: true });
 
+/** ¿Este número está fuera del piloto (allowlist)? Chequeo barato, sin modelo. */
+export async function isOutsidePilot(t: OrderTurn): Promise<boolean> {
+  const response = await t.client.status(common(t));
+  return !response.ok && response.code === "orders_disabled";
+}
+
+/** Señal para que `order_status` caiga al camino legacy (el teléfono no está en la allowlist de pedidos). */
+export const LEGACY_STATUS = Symbol("legacy_status");
+
 export async function runStatus(t: OrderTurn): Promise<unknown> {
   const response = await t.client.status(common(t));
-  if (!response.ok) return fail(t, response);
+  if (!response.ok && response.code === "orders_disabled") return LEGACY_STATUS;
+  if (!response.ok) return fail(t, response, "status");
   return Object.fromEntries(Object.entries(response.data).filter(([key]) => key !== "ok"));
 }

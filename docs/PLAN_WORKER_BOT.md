@@ -90,7 +90,7 @@ amablemente qué necesita en vez de adivinar.
 | Intención | Respondedor | Herramientas |
 |---|---|---|
 | `consulta_local`, `consulta_menu`, `saludo` | Informativo (respuesta corta) | `get_business_info`, `get_menu` (solo lectura) |
-| `pedido_*` | Tomador de pedidos (máquina de estados, ver abajo) | `get_menu`, `get_customer`, `quote_order`, `confirm_order`, `cancel_order` |
+| `pedido_*` | Tomador de pedidos (máquina de estados, ver abajo) | `get_menu`, `quote_order`, `confirm_order`, `cancel_order` |
 | `pedido_estado` | Seguimiento | `order_status` |
 | `humano` | Traspaso | `handoff_to_human` (avisa en `/admin/conversaciones`) |
 
@@ -260,7 +260,36 @@ Falta (no se hizo ni se despliega desde el código):
 1. `BOT_INTERNAL_SECRET` en Vercel (Production y Preview) y en el Worker (`wrangler secret put`), idéntico y ≥ 32 caracteres.
 2. Activar `bot_orders_enabled` con `bot_orders_allowlist` (teléfonos del piloto) y topes explícitos.
 3. Probar el pago con Mercado Pago sandbox de punta a punta y desplegar el Worker.
-4. `get_customer` figura en la lista blanca de `guardrails.ts` pero no existe como herramienta (la dirección se pregunta siempre).
+4. `get_customer` se sacó de la lista blanca de `guardrails.ts` (no existía como herramienta): la dirección se pregunta siempre. Es lo más simple y seguro; se puede implementar después vía `status`.
+
+### Ajustes tras la revisión de experiencia
+- Ningún error del servidor pasa la conversación a una persona: `limit_exceeded` muestra el motivo del servidor y ofrece la web; `forbidden` pide reintentar; `human_takeover` avisa que ya la atiende una persona; `closed` dice el horario; `product_unavailable` pide aclarar el producto; `rejected`/`http_409` muestran el motivo en español del servidor.
+- Falla transitoria (red, timeout, 5xx, `unavailable`) en confirm/cancel: el bot manda «Tuve un problema al confirmar/cancelar tu pedido… Respondé SÍ para reintentar»; el SÍ siguiente reintenta SOLO esa operación (el texto de la plantilla define cuál). El wamid del nuevo SÍ es otro y el servidor devuelve el link vigente (`pendingPaymentLink`).
+- Plantillas no falsificables: no existe columna de metadata en `wa_messages` sin migración, así que la marca es el prefijo del cuerpo guardado, y un texto libre del modelo que contenga cualquiera de esos marcadores se bloquea (no se envía, sin takeover).
+- Solo «sí», «confirmo» y «dale» confirman pago o cancelación. Un SÍ sin resumen a la vista pide empezar de nuevo (no queda en un callejón).
+- Fuera de la allowlist con el flag encendido: `pedido_nuevo`/`pedido_datos` responde «no disponible» sin gastar modelo (consulta barata a `status`), y `order_status` cae a la lectura legacy.
+- El flag acepta `true` y `"true"` igual que el servidor. El link de pago se envía normalizado (`URL.href`); el cliente HTTP usa `redirect: "error"` y espera 250 ms antes del reintento de `claim_lost`.
+- **App (`src/lib/whatsapp/notify.ts`)**: el aviso «pedido creado» ya no se omite para pedidos del canal WhatsApp pagados con Mercado Pago (el pedido nace al acreditarse el pago por webhook y el chat no vio ninguna confirmación). Efectivo en el chat no cambia. Efecto colateral: también aplica a pedidos MP creados por el agente de Next en producción (antes tampoco recibían aviso).
+
+### Guion de prueba del piloto
+Con el teléfono del dueño en `bot_orders_allowlist` y `bot_orders_enabled = true`:
+1. Escribir «hola»: responde saludo (sin pedido).
+2. «¿Qué pizzas tienen?»: lista el menú real.
+3. «Quiero 2 muzzas a Av. Corrientes 1234»: llega el resumen con plantilla fija (líneas, subtotal, envío, total, dirección, «Respondé SÍ para continuar al pago»).
+4. Cambiar algo («mejor 3»): llega un resumen NUEVO (no un «listo, agregué»).
+5. Responder «sí»: llega el link de Mercado Pago (dominio mercadopago/mpago.la) y el total.
+6. Pagar en sandbox: llega el aviso «pedido confirmado» y el pedido aparece en Recibidos de `/admin/tablero`.
+7. Preguntar «¿cómo va mi pedido?»: informa el estado real.
+8. Pedir un pedido y no pagar; preguntar «no me llega el link»: reenvía el link vigente y dice que falta pagar (sin decir «confirmado»).
+9. Responder «sí pero sin cebolla» a un resumen: NO confirma, vuelve a cotizar o aclara.
+10. Escribir «quiero cancelar»: pregunta con plantilla; responder «sí» cancela (solo en Recibidos); con el pedido ya en preparación explica el motivo.
+11. Con un pedido fuera de zona o por debajo del mínimo: explica el motivo y ofrece rearmar.
+12. Apagar `bot_orders_enabled`: «quiero una pizza» deriva a la web como antes.
+13. Desde otro número fuera de la allowlist: «quiero una pizza» responde «no disponible, hacelo desde la web» y `¿y mi pedido?` sigue funcionando.
+14. Cortar la red del Worker o poner un secreto incorrecto un momento: el bot ofrece «Respondé SÍ para reintentar» y, restablecido, el SÍ completa la operación sin duplicar el pedido.
+
+### Diferido (revisión de experiencia)
+Resumen con tiempo estimado y notas, plantillas nuevas de Meta, alerta al local por takeover y pruebas contra Mercado Pago sandbox.
 
 ### Corte de emergencia
 Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;

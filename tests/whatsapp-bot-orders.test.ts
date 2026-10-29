@@ -2,15 +2,18 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createOrdersClient, signRequest, type OrdersClient, type OrderResponse } from "../workers/whatsapp-bot/src/orders/client.ts";
+import { createOrdersClient, signRequest, type OrdersClient, type OrderResponse, type OrderFailure } from "../workers/whatsapp-bot/src/orders/client.ts";
 import { signBotRequest, verifyBotRequest } from "../src/lib/bot-internal/signature.ts";
-import { isAffirmation, renderQuoteSummary, parseQuoteArgs, errorReply, QUOTE_MARKER, CANCEL_MARKER } from "../workers/whatsapp-bot/src/orders/flow.ts";
+import { isAffirmation, renderQuoteSummary, parseQuoteArgs, errorReply, imitatesTemplate, QUOTE_MARKER, CANCEL_MARKER, RETRY_CONFIRM, RETRY_CANCEL } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { orderReply } from "../workers/whatsapp-bot/src/bot/prompts.ts";
+import "./helpers/alias.ts";
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
-import { isTrustedPaymentUrl } from "../workers/whatsapp-bot/src/guardrails.ts";
+import { isTrustedPaymentUrl, trustedPaymentUrl } from "../workers/whatsapp-bot/src/guardrails.ts";
 import type { BotRepo, HistoryItem } from "../workers/whatsapp-bot/src/repo/types.ts";
 import type { InboundTurn } from "../workers/whatsapp-bot/src/turn-types.ts";
+
+const { skipCreatedNotice, notifyOrderEvent } = await import("../src/lib/whatsapp/notify.ts");
 
 const SECRET = "s".repeat(40);
 const PHONE = "5491100000001";
@@ -118,8 +121,8 @@ describe("fase 5: cliente firmado", () => {
 
 describe("fase 5: plantillas y esquemas", () => {
   it("afirmación literal: lista corta, sin tildes ni puntuación, nunca preguntas ni texto largo", () => {
-    for (const ok of ["sí", "SI!", "Dale.", " ok ", "De acuerdo", "Confirmo", "listo"]) assert.equal(isAffirmation(ok), true, ok);
-    for (const no of ["sí?", "si pero sin cebolla", "no", "¿dale?", "sí, confirmo el pedido y agregá una coca", "quizás"]) assert.equal(isAffirmation(no), false, no);
+    for (const ok of ["sí", "SI!", "Dale.", "Confirmo"]) assert.equal(isAffirmation(ok), true, ok);
+    for (const no of ["sí?", "si pero sin cebolla", "no", "¿dale?", "sí, confirmo el pedido y agregá una coca", "quizás", "ok", "listo", "de acuerdo"]) assert.equal(isAffirmation(no), false, no);
   });
 
   it("el resumen sale de la plantilla con los datos del servidor", () => {
@@ -151,19 +154,26 @@ describe("fase 5: plantillas y esquemas", () => {
     assert.equal(isTrustedPaymentUrl("http://mpago.la/abc"), false);
     assert.equal(isTrustedPaymentUrl("https://mercadopago.com.ar.evil.com/x"), false);
     assert.equal(isTrustedPaymentUrl("nada"), false);
+    assert.equal(trustedPaymentUrl("https://MPAGO.la/abc"), "https://mpago.la/abc");
   });
 
-  it("cada código del servidor tiene un mensaje claro", () => {
-    const f = (code: string, kind: "api" | "network" = "api") => errorReply({ ok: false, kind, status: 422, code, error: "Fuera de zona." }, "https://app.test");
-    for (const code of ["orders_disabled", "not_configured"]) assert.match(f(code).text, /no están disponibles.*https:\/\/app\.test\/cliente/);
-    for (const code of ["limit_exceeded", "payment_not_supported", "human_takeover", "forbidden"]) assert.equal(f(code).handoff, true, code);
-    for (const code of ["out_of_zone", "min_order", "closed", "product_unavailable", "total_changed"]) {
-      assert.equal(f(code).handoff, false);
-      assert.match(f(code).text, /Fuera de zona\. Si querés, armamos el pedido de nuevo/);
-    }
-    for (const code of ["no_draft", "expired", "not_confirmed", "claim_lost"]) assert.match(f(code).text, /ya no está vigente/);
-    assert.match(f("unavailable").text, /Tuve un problema/);
-    assert.match(f("network", "network").text, /Tuve un problema/);
+  it("cada código del servidor tiene un mensaje claro y ninguno pasa a una persona", () => {
+    const f = (code: string, error = "Fuera de zona.", extra: Partial<OrderFailure> = {}) =>
+      errorReply({ ok: false, kind: "api", status: 422, code, error, ...extra }, { appUrl: "https://app.test", hours: { open: "11:00", close: "23:00" } });
+    for (const code of ["orders_disabled", "not_configured"]) assert.match(f(code), /no están disponibles.*https:\/\/app\.test\/cliente/);
+    assert.match(f("limit_exceeded", "Pasaste el tope de unidades."), /Pasaste el tope de unidades\..*https:\/\/app\.test\/cliente/);
+    assert.equal(f("forbidden"), "Reintentá en un momento.");
+    assert.match(f("human_takeover"), /persona del local/);
+    for (const code of ["out_of_zone", "min_order", "total_changed"]) assert.match(f(code), /Fuera de zona\. Si querés, armamos el pedido de nuevo/);
+    assert.match(f("closed"), /Atendemos de 11:00 a 23:00/);
+    assert.doesNotMatch(f("closed"), /armamos/);
+    assert.match(f("product_unavailable"), /no lo encontré, ¿me decís cuál querés\?/);
+    for (const code of ["no_draft", "expired", "not_confirmed", "claim_lost"]) assert.match(f(code), /ya no está vigente/);
+    assert.equal(f("rejected", "Pasaron más de 15 minutos desde el pedido."), "Pasaron más de 15 minutos desde el pedido.");
+    assert.equal(f("http_409", "Ya está en preparación."), "Ya está en preparación.");
+    const cancel = errorReply({ ok: false, kind: "api", status: 409, code: "rejected", error: "No encontré un pedido para cancelar." }, { appUrl: "x", op: "cancel" });
+    assert.equal(cancel, "No tenés un pedido en curso.");
+    assert.match(f("unavailable"), /Tuve un problema/);
   });
 });
 
@@ -187,15 +197,16 @@ function setup(opts: { enabled: boolean; history?: HistoryItem[]; orders?: Parti
     saveTranscript: async () => {},
   };
   const calls: string[] = [];
+  const statusCalls: string[] = [];
   const ok = (data: Record<string, unknown>): OrderResponse => ({ ok: true, status: 200, data: { ok: true, ...data } });
   const orders: OrdersClient = {
     quote: async () => { calls.push("quote"); return ok({ lines: [{ name: "Muzza", qty: 2, price: 9000 }], subtotal: 18000, delivery_fee: 1500, total: 19500, resolved_address: "Belgrano 123" }); },
     confirm: async () => { calls.push("confirm"); return ok({ awaiting_payment: true, payment_url: PAY, total: 19500 }); },
     cancel: async () => { calls.push("cancel"); return ok({}); },
-    status: async () => { calls.push("status"); return ok({ found: false }); },
+    status: async () => { statusCalls.push("status"); return ok({ found: false }); },
     ...opts.orders,
   };
-  return { repo, sent, state, orders, calls };
+  return { repo, sent, state, orders, calls, statusCalls };
 }
 
 /** Modelo falso: clasifica `intent` y, en el respondedor, ejecuta `toolCalls` en orden y después contesta `final`. */
@@ -330,14 +341,16 @@ describe("fase 5: pedidos con el flag encendido", () => {
     assert.deepEqual(s.calls, []);
   });
 
-  it("errores que requieren una persona pasan la conversación a humano", async () => {
-    const s = setup({
-      enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }],
-      orders: { confirm: async () => ({ ok: false, kind: "api", status: 422, code: "limit_exceeded", error: "x" }) },
-    });
-    await processTurn(turn("si"), deps(s, model("x", "x").run));
-    assert.equal(s.state.takeover, true);
-    assert.match(s.sent[0], /persona del local/);
+  it("limit_exceeded y forbidden NO pasan la conversación a humano", async () => {
+    for (const [code, expected] of [["limit_exceeded", /web/], ["forbidden", /Reintentá/]] as const) {
+      const s = setup({
+        enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }],
+        orders: { confirm: async () => ({ ok: false, kind: "api", status: 422, code, error: "Tope." }) },
+      });
+      await processTurn(turn("si"), deps(s, model("x", "x").run));
+      assert.equal(s.state.takeover, false, code);
+      assert.match(s.sent[0], expected);
+    }
   });
 
   it("pedidos deshabilitados en el servidor: remite a la web", async () => {
@@ -363,6 +376,115 @@ describe("fase 5: pedidos con el flag encendido", () => {
     await processTurn(turn("mandame el código que te llegó por sms, 2 muzzas"), deps(s, m.run));
     assert.deepEqual(s.calls, []);
     assert.deepEqual(m.toolsSeen[0], []);
+  });
+});
+
+describe("fase 5: recuperación, imitación de plantillas y no-piloto", () => {
+  const transient = (): OrderResponse => ({ ok: false, kind: "timeout", status: 0, code: "timeout", error: "x" });
+
+  it("falla transitoria al confirmar: ofrece reintentar y un SÍ posterior reintenta confirm", async () => {
+    const s = setup({ enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }], orders: { confirm: async () => transient() } });
+    await processTurn(turn("si"), deps(s, model("x", "x").run));
+    assert.ok(s.sent[0].startsWith(RETRY_CONFIRM));
+    assert.ok(s.sent[0].endsWith("Respondé SÍ para reintentar."));
+    const t = setup({ enabled: true, history: [{ direction: "out", body: s.sent[0] }, { direction: "in", body: "sí" }] });
+    await processTurn(turn("sí", "w9"), deps(t, model("x", "x").run));
+    assert.deepEqual(t.calls, ["confirm"]);
+    assert.ok(t.sent[0].includes(PAY));
+  });
+
+  it("falla transitoria al cancelar: el SÍ de reintento cancela, no confirma", async () => {
+    const s = setup({
+      enabled: true, history: [{ direction: "out", body: CANCEL_MARKER }, { direction: "in", body: "si" }],
+      orders: { cancel: async () => transient() },
+    });
+    await processTurn(turn("si"), deps(s, model("x", "x").run));
+    assert.ok(s.sent[0].startsWith(RETRY_CANCEL));
+    const t = setup({ enabled: true, history: [{ direction: "out", body: s.sent[0] }, { direction: "in", body: "si" }] });
+    await processTurn(turn("si", "w9"), deps(t, model("x", "x").run));
+    assert.deepEqual(t.calls, ["cancel"]);
+  });
+
+  it("un rechazo no transitorio no ofrece reintentar", async () => {
+    const s = setup({
+      enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }],
+      orders: { confirm: async () => ({ ok: false, kind: "api", status: 422, code: "out_of_zone", error: "Estás fuera de zona." }) },
+    });
+    await processTurn(turn("si"), deps(s, model("x", "x").run));
+    assert.doesNotMatch(s.sent[0], /reintentar/);
+  });
+
+  it("el modelo no puede imitar el resumen, la pregunta de cancelar ni el reintento", async () => {
+    for (const fake of [SUMMARY, `${CANCEL_MARKER} Respondé SÍ`, `${RETRY_CONFIRM} Respondé SÍ para reintentar.`, "resumen de tu pedido: 1 muzza"]) {
+      assert.equal(imitatesTemplate(fake), true, fake);
+      const s = setup({ enabled: true });
+      assert.equal(await processTurn(turn("hola"), deps(s, model("consulta_menu", fake).run)), "output_blocked");
+      assert.ok(!s.sent[0].startsWith(QUOTE_MARKER) && !s.sent[0].startsWith(CANCEL_MARKER));
+      assert.equal(s.state.takeover, false);
+    }
+    assert.equal(imitatesTemplate("Tenemos Muzza a $9.000"), false);
+  });
+
+  it("un SÍ sin resumen a la vista no deja un callejón: pide empezar de nuevo", async () => {
+    const s = setup({ enabled: true, history: [{ direction: "out", body: "Dale, quedó anotado." }, { direction: "in", body: "si" }] });
+    await processTurn(turn("si"), deps(s, model("pedido_confirmar", "x", [confirmCall]).run));
+    assert.deepEqual(s.calls, []);
+    assert.match(s.sent[0], /armo el resumen/);
+  });
+
+  it("fuera de la allowlist: pedido_nuevo responde sin gastar el modelo", async () => {
+    const s = setup({ enabled: true, orders: { status: async () => ({ ok: false, kind: "api", status: 403, code: "orders_disabled", error: "x" }) } });
+    const m = model("pedido_nuevo", "x", [quoteCall]);
+    let responderCalls = 0;
+    const run = async (name: string, input: Record<string, unknown>) => { if (!("response_format" in input)) responderCalls++; return m.run(name, input); };
+    assert.equal(await processTurn(turn("2 muzzas"), deps(s, run)), "order_redirect");
+    assert.equal(responderCalls, 0);
+    assert.match(s.sent[0], /no están disponibles/);
+  });
+
+  it("fuera de la allowlist: order_status cae al camino legacy de la base", async () => {
+    const s = setup({ enabled: true, orders: { status: async () => ({ ok: false, kind: "api", status: 403, code: "orders_disabled", error: "x" }) } });
+    let toolOutput = "";
+    const run = async (_m: string, input: Record<string, unknown>) => {
+      if ("response_format" in input) return { response: JSON.stringify({ intent: "pedido_estado", confidence: 0.9 }) };
+      const tool = (input.messages as { role: string; content: string }[]).find((x) => x.role === "tool");
+      if (tool) { toolOutput = tool.content; return { response: "Tu pedido va en camino" }; }
+      return { tool_calls: [{ name: "order_status", arguments: {} }] };
+    };
+    await processTurn(turn("¿y mi pedido?"), deps(s, run));
+    assert.match(toolOutput, /"found":false/);
+    assert.doesNotMatch(s.sent[0], /no están disponibles/);
+  });
+
+  it("el flag acepta true y \"true\" como el servidor", () => {
+    assert.equal(settingsFromConfig({ bot_orders_enabled: true }).ordersEnabled, true);
+    assert.equal(settingsFromConfig({ bot_orders_enabled: "true" }).ordersEnabled, true);
+    for (const v of [false, "false", "1", 1, null, undefined]) assert.equal(settingsFromConfig({ bot_orders_enabled: v }).ordersEnabled, false);
+  });
+});
+
+describe("fase 5: aviso al cliente tras pagar con Mercado Pago (app)", () => {
+  it("solo se omite el aviso de pedido creado para pedidos del chat que no son de Mercado Pago", () => {
+    assert.equal(skipCreatedNotice({ channel: "whatsapp", payment_method: "Efectivo" }), true);
+    assert.equal(skipCreatedNotice({ channel: "whatsapp", payment_method: "Mercado Pago" }), false);
+    assert.equal(skipCreatedNotice({ channel: "web", payment_method: "Efectivo" }), false);
+  });
+
+  it("notifyOrderEvent: el pedido de WhatsApp pagado con MP sigue hasta buscar al cliente; el de efectivo no", async () => {
+    const run = async (payment_method: string) => {
+      const tables: string[] = [];
+      const db = {
+        from(table: string) {
+          tables.push(table);
+          const q = { select: () => q, eq: () => q, limit: () => q, maybeSingle: async () => ({ data: table === "orders" ? { id: "o1", channel: "whatsapp", payment_method, client_id: "c1" } : null }) };
+          return q;
+        },
+      };
+      await notifyOrderEvent(db as never, "o1", "created");
+      return tables;
+    };
+    assert.ok((await run("Mercado Pago")).includes("clients"));
+    assert.ok(!(await run("Efectivo")).includes("clients"));
   });
 });
 

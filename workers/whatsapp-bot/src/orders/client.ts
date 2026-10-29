@@ -145,7 +145,7 @@ export function createOrdersClient(options: OrdersClientOptions): OrdersClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await doFetch(`${base}${path}`, { method: "POST", headers, body: rawBody, signal: controller.signal });
+      const response = await doFetch(`${base}${path}`, { method: "POST", headers, body: rawBody, signal: controller.signal, redirect: "error" });
       return await judge(response);
     } catch (error: unknown) {
       const aborted = controller.signal.aborted || (error instanceof Error && error.name === "AbortError");
@@ -178,6 +178,7 @@ export function createOrdersClient(options: OrdersClientOptions): OrdersClient {
       if (verdict.retry === "claim_lost") {
         if (claimRetried) break;
         claimRetried = true;
+        await sleep(BACKOFF_MS[0]);
         continue;
       }
       if (transientRetries >= MAX_RETRIES) break;

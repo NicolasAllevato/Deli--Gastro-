@@ -112,14 +112,16 @@ function hostAllowed(host: string, allowed: readonly string[]): boolean {
 }
 
 /** El link de pago es https y de un dominio de Mercado Pago: cualquier otra cosa no se le manda al cliente. */
-export function isTrustedPaymentUrl(raw: string): boolean {
+export function trustedPaymentUrl(raw: string): string | null {
   try {
     const url = new globalThis.URL(raw);
-    return url.protocol === "https:" && hostAllowed(url.hostname, PAYMENT_HOSTS);
+    return url.protocol === "https:" && hostAllowed(url.hostname, PAYMENT_HOSTS) ? url.href : null;
   } catch {
-    return false;
+    return null;
   }
 }
+
+export const isTrustedPaymentUrl = (raw: string): boolean => trustedPaymentUrl(raw) !== null;
 
 /** Respuesta del modelo antes de enviarla: `block` se reemplaza por un mensaje seguro y queda registrado. */
 export function inspectOutbound(text: string, ctx: OutboundContext): Inspection<OutboundReason> {
@@ -152,9 +154,9 @@ const TOOLS_BY_INTENT: Readonly<Record<string, readonly string[]>> = {
   consulta_local: ["get_business_info"],
   consulta_menu: ["get_menu", "get_business_info"],
   saludo: ["get_business_info"],
-  pedido_nuevo: ["get_menu", "get_customer", "quote_order"],
-  pedido_datos: ["get_menu", "get_customer", "quote_order"],
-  pedido_confirmar: ["get_customer", "quote_order", "confirm_order"],
+  pedido_nuevo: ["get_menu", "quote_order"],
+  pedido_datos: ["get_menu", "quote_order"],
+  pedido_confirmar: ["quote_order", "confirm_order"],
   pedido_estado: ["order_status"],
   pedido_cancelar: ["order_status", "cancel_order"],
   humano: ["handoff_to_human"],
