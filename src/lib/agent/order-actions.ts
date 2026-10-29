@@ -9,6 +9,7 @@ import { cancelPendingIntent, latestPendingIntent, startOnlinePayment } from "@/
 import { SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { ensureClientForConversation } from "@/lib/whatsapp/clients";
 import { loadDeliverySettings } from "@/lib/zones-server";
+import { updateConversationState } from "./conversation-state.ts";
 import { mayConfirm, parseDraft, withDraft, type OrderDraft } from "./draft.ts";
 import { isOpenNow } from "./hours.ts";
 import { loadAgentSettings } from "./settings.ts";
@@ -28,7 +29,12 @@ const HISTORY_ORDERS = 3;
 /** Lo que las acciones necesitan del entorno. Los campos opcionales existen para poder inyectarlos en tests. */
 export interface OrderActionDeps {
   db: Db;
-  conversation: Conversation;
+  /** Conversación ya cargada (agente en Next). Alternativa a `conversationId`. */
+  conversation?: Conversation;
+  /** Solo el id: la conversación se carga de la base en cada acción (endpoints internos del bot). */
+  conversationId?: string;
+  /** Quién actúa en la bitácora de pedidos. Por defecto `agente`; los endpoints del bot pasan `bot`. */
+  actor?: string;
   /** Mensaje entrante que se está respondiendo (para la guardia de confirmación). */
   messageId: string;
   /** Prueba del panel: lee todo pero no crea ni cancela pedidos ni deriva la conversación. */
@@ -39,10 +45,33 @@ export interface OrderActionDeps {
   geocode?: (address: string, local: Parameters<typeof geocodeAddress>[1]) => Promise<GeocodeResult[]>;
   /** Pasarela de cobro. Por defecto: `getGateway()`. */
   gateway?: () => PaymentGateway | null;
+  /** Topes de quien llama sobre lo cotizado, evaluados antes de guardar el borrador. */
+  checkQuote?: (quote: { units: number; total: number }) => ActionError | null;
+  /** Topes sobre el borrador que `confirmOrder` va a reclamar, evaluados antes del claim. */
+  checkDraft?: (draft: OrderDraft) => ActionError | null | Promise<ActionError | null>;
 }
+
+/** Motivo estable de un rechazo, para que quien llama (el Worker) decida sin leer el texto. */
+export type ActionErrorCode =
+  | "closed"
+  | "no_draft"
+  | "expired"
+  | "not_confirmed"
+  | "claim_lost"
+  | "out_of_zone"
+  | "min_order"
+  | "product_unavailable"
+  | "total_changed"
+  | "orders_disabled"
+  | "payment_not_supported"
+  | "limit_exceeded"
+  | "forbidden"
+  | "human_takeover"
+  | "unavailable";
 
 export interface ActionError {
   error: string;
+  code?: ActionErrorCode;
 }
 
 export interface QuoteInput {
@@ -100,6 +129,17 @@ function demoGeocode(query: string): GeocodeResult[] {
 }
 
 const clock = (deps: OrderActionDeps): Date => (deps.now ?? (() => new Date()))();
+const actorOf = (deps: OrderActionDeps): string => deps.actor ?? "agente";
+
+export const isActionError = (value: unknown): value is ActionError =>
+  typeof value === "object" && value !== null && typeof (value as { error?: unknown }).error === "string";
+
+const FAILURE_CODES: readonly ActionErrorCode[] = ["closed", "out_of_zone", "min_order", "product_unavailable", "total_changed"];
+/** Pasa el `code` de una falla de negocio solo si es uno de los conocidos. */
+function failure(out: { message: string; code?: string }): ActionError {
+  const code = FAILURE_CODES.find((c) => c === out.code);
+  return code ? { error: out.message, code } : { error: out.message };
+}
 
 /** El servidor, no el modelo, decide si se pueden tomar pedidos: cerrado o en pausa = no. */
 export async function closedReason(db: Db, now: Date = new Date()): Promise<string | null> {
@@ -111,9 +151,16 @@ export async function closedReason(db: Db, now: Date = new Date()): Promise<stri
   return null;
 }
 
-export async function reloadConversation(deps: OrderActionDeps): Promise<Conversation> {
-  const { data } = await deps.db.from("wa_conversations").select("*").eq("id", deps.conversation.id).maybeSingle();
-  return data ?? deps.conversation;
+/**
+ * Relee la conversación de la base. Si no se puede leer (error o sin fila) devuelve un error:
+ * nunca cae al valor que se tenía en memoria, que puede estar viejo (borrador ya reclamado).
+ */
+export async function reloadConversation(deps: OrderActionDeps): Promise<Conversation | ActionError> {
+  const id = deps.conversationId ?? deps.conversation?.id;
+  if (!id) return { error: "Falta la conversación." };
+  const { data, error } = await deps.db.from("wa_conversations").select("*").eq("id", id).maybeSingle();
+  if (error || !data) return { error: "No pude leer la conversación. Probá de nuevo en un momento." };
+  return data;
 }
 
 async function latestOrder(deps: OrderActionDeps, clientId: string | null) {
@@ -127,9 +174,10 @@ async function latestOrder(deps: OrderActionDeps, clientId: string | null) {
   return data?.[0] ?? null;
 }
 
-export async function customerInfo(deps: OrderActionDeps): Promise<CustomerResult> {
+export async function customerInfo(deps: OrderActionDeps): Promise<CustomerResult | ActionError> {
   const { db } = deps;
   const conversation = await reloadConversation(deps);
+  if (isActionError(conversation)) return conversation;
   if (!conversation.client_id) return { known: false, name: conversation.contact_name };
   const [{ data: client }, { data: orders }] = await Promise.all([
     db.from("clients").select("name, address").eq("id", conversation.client_id).maybeSingle(),
@@ -143,11 +191,17 @@ export async function customerInfo(deps: OrderActionDeps): Promise<CustomerResul
   return { known: true, name: client?.name ?? conversation.contact_name, saved_address: client?.address ?? null, recent_orders: orders ?? [] };
 }
 
+/**
+ * Cotiza y guarda el borrador en la conversación. OJO: escribe el borrador AUN con `dryRun`
+ * (la prueba del panel necesita ese borrador para probar la confirmación); `dryRun` solo
+ * evita crear/cancelar pedidos en `confirmOrder`/`cancelOrder`.
+ */
 export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Promise<QuoteResult | ActionError> {
   const { db } = deps;
   const closed = await closedReason(db, clock(deps));
-  if (closed) return { error: closed };
+  if (closed) return { error: closed, code: "closed" };
   const conversation = await reloadConversation(deps);
+  if (isActionError(conversation)) return conversation;
   const local = (await loadDeliverySettings(db)).quoteOptions.local;
   const found = deps.geocode
     ? await deps.geocode(input.address, local).catch(() => [])
@@ -159,9 +213,12 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
 
   const items = input.items.map((i) => ({ productId: i.product_id, qty: i.qty }));
   const priced = await priceOrder(db, items, { address: place.label, lat: place.lat, lng: place.lng });
-  if (!priced.ok) return { error: priced.message };
+  if (!priced.ok) return failure(priced);
 
   const { lines, subtotal, fee, minOrder, zone } = priced.value;
+  // Topes de quien llama: se evalúan ANTES de guardar, así un borrador fuera de tope nunca existe.
+  const rejected = deps.checkQuote?.({ units: lines.reduce((sum, l) => sum + l.qty, 0), total: subtotal + fee });
+  if (rejected) return rejected;
   const draft: OrderDraft = {
     items: lines.map((l) => ({ productId: l.productId, qty: l.qty })),
     address: place.label.slice(0, 200),
@@ -173,7 +230,9 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     quotedByMessageId: deps.messageId,
     quotedAt: clock(deps).toISOString(),
   };
-  await db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
+  // Si el borrador no quedó guardado, no se ofrece la cotización: confirmar después daría "sin cotización".
+  const saved = await updateConversationState(db, conversation.id, (state) => withDraft(state, draft)).catch(() => false);
+  if (!saved) return { error: "No pude guardar la cotización. Probá de nuevo.", code: "unavailable" };
 
   return {
     lines: lines.map((l) => ({ name: l.name, qty: l.qty, price: l.price })),
@@ -189,10 +248,14 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
 export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): Promise<ConfirmResult> {
   const { db } = deps;
   const closed = await closedReason(db, clock(deps));
-  if (closed) return { error: closed };
+  if (closed) return { error: closed, code: "closed" };
   const conversation = await reloadConversation(deps);
+  if (isActionError(conversation)) return conversation;
   const check = mayConfirm(parseDraft(conversation.state), deps.messageId, clock(deps));
-  if (!check.ok) return { error: check.reason };
+  if (!check.ok) return { error: check.reason, code: check.code };
+  // Sobre el borrador que se va a reclamar (recién releído), no sobre uno leído antes.
+  const rejected = await deps.checkDraft?.(check.draft);
+  if (rejected) return rejected;
   if (deps.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pedido no se creó." };
 
   const { draft } = check;
@@ -206,8 +269,33 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
     .eq("updated_at", conversation.updated_at)
     .select("id")
     .maybeSingle();
-  if (!claimed) return { error: "Ya se está procesando tu confirmación. Esperá un momento." };
+  if (!claimed) return { error: "Ya se está procesando tu confirmación. Esperá un momento.", code: "claim_lost" };
 
+  // Condicionado por updated_at y mergeado sobre el estado actual: no pisa marcas de idempotencia ajenas.
+  const restoreDraft = async () => {
+    const restored = await updateConversationState(db, conversation.id, (state) => withDraft(state, draft)).catch(() => false);
+    if (!restored) console.error("[order-actions] no se pudo restaurar el borrador", conversation.id);
+  };
+
+  // Pasado el claim, cualquier excepción devuelve el borrador: si no, el cliente pierde la cotización.
+  try {
+    const result = await createFromDraft(deps, conversation, draft, input);
+    if ("error" in result) await restoreDraft();
+    return result;
+  } catch (error: unknown) {
+    console.error("[order-actions] confirmOrder falló después del claim", error);
+    await restoreDraft();
+    return { error: "No pude crear el pedido. Probá de nuevo en un momento." };
+  }
+}
+
+async function createFromDraft(
+  deps: OrderActionDeps,
+  conversation: Conversation,
+  draft: OrderDraft,
+  input: ConfirmInput,
+): Promise<ConfirmResult> {
+  const { db } = deps;
   const order = {
     clientId: await ensureClientForConversation(db, conversation),
     items: draft.items,
@@ -215,7 +303,7 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
     paymentMethod: input.payment_method,
     notes: input.notes,
     channel: "whatsapp" as const,
-    actor: "agente",
+    actor: actorOf(deps),
     expectedTotal: draft.subtotal + draft.fee,
   };
 
@@ -225,10 +313,7 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
     const started = gateway
       ? await startOnlinePayment(db, gateway, order)
       : ({ ok: false, message: "El pago con Mercado Pago todavía no está habilitado. Ofrecé efectivo o tarjeta." } as const);
-    if (!started.ok) {
-      await db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
-      return { error: started.message };
-    }
+    if (!started.ok) return failure(started);
     return {
       ok: true,
       awaiting_payment: true,
@@ -239,11 +324,8 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
   }
 
   const created = await createDeliveryOrder(db, order);
-  if (!created.ok) {
-    // No se creó: se devuelve el borrador para poder reintentar o recotizar.
-    await db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
-    return { error: created.message };
-  }
+  // No se creó: el borrador vuelve (lo hace quien llama) para poder reintentar o recotizar.
+  if (!created.ok) return failure(created);
 
   return {
     ok: true,
@@ -253,9 +335,11 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
   };
 }
 
-export async function orderStatus(deps: OrderActionDeps): Promise<OrderStatusResult> {
+export async function orderStatus(deps: OrderActionDeps): Promise<OrderStatusResult | ActionError> {
   const { db } = deps;
-  const clientId = (await reloadConversation(deps)).client_id;
+  const conversation = await reloadConversation(deps);
+  if (isActionError(conversation)) return conversation;
+  const clientId = conversation.client_id;
   const pending = clientId ? await latestPendingIntent(db, clientId, clock(deps)) : null;
   if (pending) {
     return { found: true, awaiting_payment: true, total: Number(pending.total), payment_url: pending.checkout_url, expires_at: pending.expires_at };
@@ -269,13 +353,14 @@ export async function orderStatus(deps: OrderActionDeps): Promise<OrderStatusRes
     items: order.items_desc,
     total: Number(order.total),
     courier: order.courier_name,
-    minutes_since_order: minutesSince(order.created_at),
+    minutes_since_order: minutesSince(order.created_at, clock(deps).getTime()),
   };
 }
 
 export async function cancelOrder(deps: OrderActionDeps): Promise<CancelResult> {
   const { db } = deps;
   const conversation = await reloadConversation(deps);
+  if (isActionError(conversation)) return conversation;
   const pending = conversation.client_id ? await latestPendingIntent(db, conversation.client_id, clock(deps)) : null;
   if (pending && conversation.client_id) {
     if (deps.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pago no se canceló." };
@@ -287,6 +372,6 @@ export async function cancelOrder(deps: OrderActionDeps): Promise<CancelResult> 
   if (!order || !conversation.client_id) return { error: "No encontré un pedido para cancelar." };
   if (deps.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pedido no se canceló." };
 
-  const result = await cancelOrderForClient(db, order.id, conversation.client_id, "agente");
+  const result = await cancelOrderForClient(db, order.id, conversation.client_id, actorOf(deps));
   return result.ok ? { ok: true } : { error: result.message };
 }

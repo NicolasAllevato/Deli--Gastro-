@@ -174,6 +174,101 @@ se separa la parte pura (cálculo de totales, validación) de la de base.
 
 Cada fase termina con tests en verde y se puede desplegar sola; hasta la fase 6 el bot real sigue en Next.
 
+## Fase 5: endpoints internos del tomador de pedidos
+El Worker **no escribe pedidos por SQL**: llama a endpoints internos firmados de la app, que usan
+`src/lib/agent/order-actions.ts` (las mismas reglas que el agente de Next y la web). Código en
+`src/lib/bot-internal/` (firma, esquemas, handlers testeables) y `src/app/api/internal/bot/{quote,confirm,cancel,status}/route.ts` (finos).
+
+### Decisiones de la v1
+Solo pago con **Mercado Pago**; **sin canje de puntos**; el bot solo cancela pedidos en `Recibidos` y con confirmación explícita del cliente.
+
+### Autenticación
+`POST` con headers `x-bot-timestamp` (segundos Unix) y `x-bot-signature` = HMAC-SHA256 hex, con `BOT_INTERNAL_SECRET`, de
+`${timestamp}.${METHOD}.${path}.${sha256hex(cuerpo)}` (`path` sin query, p. ej. `/api/internal/bot/quote`).
+Ventana de ±60 s, comparación en tiempo constante, cuerpo máximo 16 KB. La firma se verifica **antes** de parsear el cuerpo.
+Respuestas: 401 firma inválida/vencida, 413 cuerpo grande, 429 rate limit (por IP y por conversación), 503 sin secreto.
+
+### Variables de entorno (Vercel; nunca en el repo)
+| Variable | Uso |
+|---|---|
+| `BOT_INTERNAL_SECRET` | Secreto compartido con el Worker. **Si falta, el endpoint responde 503 en todo** |
+| `BOT_INTERNAL_SECRET_PREV` | Opcional. Secreto anterior aceptado durante una rotación |
+
+Rotación: poner el nuevo en `BOT_INTERNAL_SECRET` y el viejo en `BOT_INTERNAL_SECRET_PREV`, actualizar el Worker, y después borrar `_PREV`.
+
+### Claves de `global_config` (se leen en el servidor en cada llamada, sin caché)
+| Clave | Default | Efecto |
+|---|---|---|
+| `bot_orders_enabled` | `false` | Apagado: `quote` y `confirm` responden 403 `orders_disabled`. **No** afecta a `status` ni `cancel` |
+| `bot_orders_allowlist` | ausente | Ver reglas abajo. Aplica a `quote`, `confirm`, `status` y `cancel` (403 `orders_disabled`) |
+| `bot_max_units` | 12 | Unidades totales por pedido |
+| `bot_max_total` | 80000 | Importe máximo por pedido (ARS, subtotal + envío). Default conservador para el piloto: se sube desde `global_config` |
+| `bot_max_active_orders` | 1 | Pedidos en curso del cliente (activos recientes + pago pendiente vigente) |
+| `bot_active_window_hours` | 3 | Un pedido activo más viejo que esto no cuenta (un «En Camino» olvidado no bloquea al cliente para siempre) |
+
+Pasar un tope devuelve 422 `limit_exceeded` con mensaje en español para derivar a una persona. En `quote` el tope se evalúa
+**antes** de guardar el borrador (uno fuera de tope nunca se persiste) y en `confirm` sobre el borrador que realmente se reclama, antes del claim.
+
+**Allowlist (fail-closed):** valor ausente, `null`, `[]` o texto vacío = sin restricción. `"*"` (texto o dentro de la lista) = todos, explícito.
+Cualquier otro valor definido que no dé ningún teléfono (objeto, número, typo, entradas sin dígitos) = **nadie** pasa. Los teléfonos se
+comparan por los últimos 10 dígitos.
+
+**Gates por operación:** `quote` y `confirm` exigen `bot_orders_enabled` + allowlist. `status` y `cancel` siguen solo la allowlist: con los pedidos
+apagados el cliente igual puede consultar y cancelar un pedido en curso.
+
+**`human_takeover`:** si la conversación está tomada por una persona, `quote` y `confirm` responden 409 `human_takeover` (`status` y `cancel` quedan libres).
+**Pedidos activos:** si la consulta falla responde 503 `unavailable` (no cuenta 0). Con `client_id` nulo se cuenta 0: la conversación nunca confirmó
+un pedido y el cliente recién se crea al confirmar.
+
+**`confirm` con link perdido:** si no hay borrador y el cliente tiene un pago pendiente vigente de WhatsApp, `confirm` devuelve 200
+`{awaiting_payment:true, payment_url, total, replayed:true}` en vez de chocar con el tope de pedidos activos. El replay por `Idempotency-Key` se
+resuelve antes del chequeo de ≤ 10 min del wamid (la pertenencia y que sea entrante se verifican siempre).
+
+**Formato de la allowlist:** cargar los teléfonos como **array** (`["5491155550101", "5491122223333"]`) o como texto separado por comas **sin espacios**.
+Un solo string con espacios dentro de un número (p. ej. `"+54 9 11 5555-0101"` entre otros) no coincide con nadie y, por ser fail-closed, bloquea a todos.
+
+**Replay de idempotencia:** la marca guarda `at` y se descarta pasados 30 minutos. El replay **no respeta `bot_orders_enabled` a propósito**
+(es la respuesta ya calculada de un reintento); el link de pago igual vence solo a los 30 minutos y se valida contra la intención vigente.
+
+**Errores de lectura:** si falla la lectura de `global_config` o de `wa_messages`, toda operación responde 503 `unavailable` (no se trata como vacío).
+Si no se puede guardar el borrador, `quote` responde 503 `unavailable` en vez de ofrecer una cotización que no se podría confirmar.
+
+### Reglas para el Worker
+- Firmar con un `x-bot-timestamp` **nuevo en cada reintento** (la ventana es de 60 s).
+- 403 y 422 **no son reintentables**; 400/401 tampoco. 409 `claim_lost` **sí** es reintentable (con la misma `Idempotency-Key`); 429 y 5xx también.
+- 409 `human_takeover`, `not_confirmed`, `expired`, `no_draft`: se resuelven en la conversación, no reintentando.
+
+### Antes del piloto
+- `BOT_INTERNAL_SECRET` (≥ 32 caracteres) **idéntico** en Vercel (Production **y** Preview) y en el Worker, sin BOM ni espacios.
+- Cargar explícitos en `global_config`: `bot_orders_enabled`, `bot_orders_allowlist` (con los teléfonos del piloto), `bot_max_units`, `bot_max_total`, `bot_max_active_orders`.
+- Plantillas de Meta aprobadas (confirmación, seguimiento, link de pago).
+- Monitorear `payment_intents` con `refund_error` o `approved` sin `order_id`.
+
+### Diferido
+Anular la preferencia de Mercado Pago al cancelar (depende del gateway), tabla de idempotencia propia, rate limit distribuido y pago de una intención vencida. Límite conocido: si tras un fallo de `confirm` no se puede restaurar el borrador
+(`restoreDraft` condicionado por `updated_at` falla dos veces), se loguea y el cliente debe volver a cotizar; no hay update incondicional de último recurso.
+
+### Corte de emergencia
+Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;
+(2) `bot_orders_enabled = false` en `global_config` (efecto inmediato, el bot sigue informando y puede consultar/cancelar).
+
+### Contrato común
+Cuerpo JSON estricto (campos de más → 400 `invalid_body`). Siempre trae `conversationId` e `inboundWamid`; **nunca** `clientId`, precios, totales ni `rewardId`.
+El servidor carga la conversación y verifica que `inboundWamid` exista en `wa_messages` de esa conversación, sea `in` y tenga ≤ 10 min; si no, 403 `forbidden`.
+Cliente y teléfono se derivan de la conversación. Errores: `{ ok:false, code, error }`; éxito: `{ ok:true, ... }`.
+Códigos: `closed`, `no_draft`, `expired`, `not_confirmed`, `claim_lost`, `out_of_zone`, `min_order`, `product_unavailable`, `total_changed`, `orders_disabled`, `payment_not_supported`, `limit_exceeded`, `forbidden`.
+
+| Endpoint | Cuerpo | Éxito |
+|---|---|---|
+| `quote` | `items[1..30]{product_id, qty 1..20}`, `address` (5..200) | `lines, subtotal, delivery_fee, total, zone, resolved_address`. Guarda el borrador (30 min) con el `inboundWamid` |
+| `confirm` | `payment_method` (solo `"Mercado Pago"`, otro → 400 `payment_not_supported`), `notes` ≤ 300. Header `Idempotency-Key` = `inboundWamid` | `awaiting_payment:true, payment_url, total`. El pedido se crea al acreditarse el pago |
+| `cancel` | `confirmed: true` (si no → 400 `not_confirmed`). Header `Idempotency-Key` = `inboundWamid` | Cancela el pago pendiente o un pedido en `Recibidos` |
+| `status` | solo los comunes | `found`, estado del último pedido o pago pendiente |
+
+`confirm` exige un `inboundWamid` distinto **y posterior** (por `created_at` en `wa_messages`) al que cotizó. Idempotencia: el resultado de `confirm`/`cancel`
+se guarda en `wa_conversations.state.botIdem`; repetir la misma clave devuelve el mismo resultado con `replayed:true`. Cada llamada deja un `console.info`
+con ids (sin datos personales); los pedidos y cancelaciones quedan en `order_events` con actor `bot`.
+
 ## Verificación
 - Unit + contrato: `npm test` y `vitest` del Worker (repo en memoria y SQL).
 - `wrangler dev --remote` con Hyperdrive real + número de prueba de Meta: «hola» → menú → pedido → aparece en

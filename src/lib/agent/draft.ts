@@ -37,21 +37,22 @@ export function withDraft(state: unknown, draft: OrderDraft | null): Record<stri
   return draft ? { ...rest, draft } : rest;
 }
 
-export type ConfirmCheck = { ok: true; draft: OrderDraft } | { ok: false; reason: string };
+export type ConfirmCheck = { ok: true; draft: OrderDraft } | { ok: false; reason: string; code: "no_draft" | "expired" | "not_confirmed" };
 
 /**
  * Un pedido solo se crea si el cliente respondió DESPUÉS de ver la cotización:
  * el turno que cotizó no puede ser el mismo que confirma.
  */
 export function mayConfirm(draft: OrderDraft | null, currentMessageId: string, now: Date = new Date()): ConfirmCheck {
-  if (!draft) return { ok: false, reason: "No hay un pedido cotizado. Usá quote_order primero." };
+  if (!draft) return { ok: false, reason: "No hay un pedido cotizado. Usá quote_order primero.", code: "no_draft" };
   if (now.getTime() - new Date(draft.quotedAt).getTime() > DRAFT_TTL_MS) {
-    return { ok: false, reason: "La cotización venció. Volvé a cotizar el pedido con quote_order." };
+    return { ok: false, reason: "La cotización venció. Volvé a cotizar el pedido con quote_order.", code: "expired" };
   }
   if (draft.quotedByMessageId === currentMessageId) {
     return {
       ok: false,
       reason: "El cliente todavía no confirmó. Mostrale el resumen con el total y esperá su respuesta.",
+      code: "not_confirmed",
     };
   }
   return { ok: true, draft };
