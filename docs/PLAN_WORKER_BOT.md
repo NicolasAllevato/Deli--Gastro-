@@ -174,6 +174,60 @@ se separa la parte pura (cálculo de totales, validación) de la de base.
 
 Cada fase termina con tests en verde y se puede desplegar sola; hasta la fase 6 el bot real sigue en Next.
 
+## Fase 5: endpoints internos del tomador de pedidos
+El Worker **no escribe pedidos por SQL**: llama a endpoints internos firmados de la app, que usan
+`src/lib/agent/order-actions.ts` (las mismas reglas que el agente de Next y la web). Código en
+`src/lib/bot-internal/` (firma, esquemas, handlers testeables) y `src/app/api/internal/bot/{quote,confirm,cancel,status}/route.ts` (finos).
+
+### Decisiones de la v1
+Solo pago con **Mercado Pago**; **sin canje de puntos**; el bot solo cancela pedidos en `Recibidos` y con confirmación explícita del cliente.
+
+### Autenticación
+`POST` con headers `x-bot-timestamp` (segundos Unix) y `x-bot-signature` = HMAC-SHA256 hex, con `BOT_INTERNAL_SECRET`, de
+`${timestamp}.${METHOD}.${path}.${sha256hex(cuerpo)}` (`path` sin query, p. ej. `/api/internal/bot/quote`).
+Ventana de ±60 s, comparación en tiempo constante, cuerpo máximo 16 KB. La firma se verifica **antes** de parsear el cuerpo.
+Respuestas: 401 firma inválida/vencida, 413 cuerpo grande, 429 rate limit (por IP y por conversación), 503 sin secreto.
+
+### Variables de entorno (Vercel; nunca en el repo)
+| Variable | Uso |
+|---|---|
+| `BOT_INTERNAL_SECRET` | Secreto compartido con el Worker. **Si falta, el endpoint responde 503 en todo** |
+| `BOT_INTERNAL_SECRET_PREV` | Opcional. Secreto anterior aceptado durante una rotación |
+
+Rotación: poner el nuevo en `BOT_INTERNAL_SECRET` y el viejo en `BOT_INTERNAL_SECRET_PREV`, actualizar el Worker, y después borrar `_PREV`.
+
+### Claves de `global_config` (se leen en el servidor en cada llamada, sin caché)
+| Clave | Default | Efecto |
+|---|---|---|
+| `bot_orders_enabled` | `false` | Apagado: `quote` y `confirm` responden 403 `orders_disabled` (`status` y `cancel` siguen) |
+| `bot_orders_allowlist` | vacía | Lista de teléfonos; si no está vacía, solo esos pueden cotizar/confirmar (403 `orders_disabled`) |
+| `bot_max_units` | 12 | Unidades totales por pedido |
+| `bot_max_total` | 150000 | Importe máximo por pedido (ARS, subtotal + envío) |
+| `bot_max_active_orders` | 1 | Pedidos en curso del cliente (activos + pago pendiente) |
+
+Pasar un tope devuelve 422 `limit_exceeded` con mensaje en español para derivar a una persona.
+
+### Corte de emergencia
+Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;
+(2) `bot_orders_enabled = false` en `global_config` (efecto inmediato, el bot sigue informando y puede consultar/cancelar).
+
+### Contrato común
+Cuerpo JSON estricto (campos de más → 400 `invalid_body`). Siempre trae `conversationId` e `inboundWamid`; **nunca** `clientId`, precios, totales ni `rewardId`.
+El servidor carga la conversación y verifica que `inboundWamid` exista en `wa_messages` de esa conversación, sea `in` y tenga ≤ 10 min; si no, 403 `forbidden`.
+Cliente y teléfono se derivan de la conversación. Errores: `{ ok:false, code, error }`; éxito: `{ ok:true, ... }`.
+Códigos: `closed`, `no_draft`, `expired`, `not_confirmed`, `claim_lost`, `out_of_zone`, `min_order`, `product_unavailable`, `total_changed`, `orders_disabled`, `payment_not_supported`, `limit_exceeded`, `forbidden`.
+
+| Endpoint | Cuerpo | Éxito |
+|---|---|---|
+| `quote` | `items[1..30]{product_id, qty 1..20}`, `address` (5..200) | `lines, subtotal, delivery_fee, total, zone, resolved_address`. Guarda el borrador (30 min) con el `inboundWamid` |
+| `confirm` | `payment_method` (solo `"Mercado Pago"`, otro → 400 `payment_not_supported`), `notes` ≤ 300. Header `Idempotency-Key` = `inboundWamid` | `awaiting_payment:true, payment_url, total`. El pedido se crea al acreditarse el pago |
+| `cancel` | `confirmed: true` (si no → 400 `not_confirmed`). Header `Idempotency-Key` = `inboundWamid` | Cancela el pago pendiente o un pedido en `Recibidos` |
+| `status` | solo los comunes | `found`, estado del último pedido o pago pendiente |
+
+`confirm` exige un `inboundWamid` distinto **y posterior** (por `created_at` en `wa_messages`) al que cotizó. Idempotencia: el resultado de `confirm`/`cancel`
+se guarda en `wa_conversations.state.botIdem`; repetir la misma clave devuelve el mismo resultado con `replayed:true`. Cada llamada deja un `console.info`
+con ids (sin datos personales); los pedidos y cancelaciones quedan en `order_events` con actor `bot`.
+
 ## Verificación
 - Unit + contrato: `npm test` y `vitest` del Worker (repo en memoria y SQL).
 - `wrangler dev --remote` con Hyperdrive real + número de prueba de Meta: «hola» → menú → pedido → aparece en

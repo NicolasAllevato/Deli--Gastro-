@@ -13,13 +13,10 @@ type Db = ReturnType<typeof createAdminClient>;
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 
 /** Resultado de una operación de negocio: el mensaje es apto para mostrarle al cliente. */
-export type Outcome<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
+export type Outcome<T> = { ok: true; value: T } | { ok: false; status: number; message: string; code?: string };
 
-const fail = (status: number, message: string): { ok: false; status: number; message: string } => ({
-  ok: false,
-  status,
-  message,
-});
+const fail = (status: number, message: string, code?: string): { ok: false; status: number; message: string; code?: string } =>
+  code ? { ok: false, status, message, code } : { ok: false, status, message };
 
 export interface OrderItemInput {
   productId: string;
@@ -62,11 +59,11 @@ export async function priceOrder(
   const { config, zones, quoteOptions } = await loadDeliverySettings(db);
 
   if (config.modo_pausa === true || config.tienda_activa === false) {
-    return fail(409, "El local no está tomando pedidos en este momento.");
+    return fail(409, "El local no está tomando pedidos en este momento.", "closed");
   }
 
   const quote = quoteDelivery(point, zones, quoteOptions);
-  if (!quote.covered) return fail(400, quote.reason);
+  if (!quote.covered) return fail(400, quote.reason, "out_of_zone");
 
   const qtyByProduct = new Map<string, number>();
   for (const item of items) {
@@ -90,7 +87,7 @@ export async function priceOrder(
   let subtotal = 0;
   for (const [productId, qty] of qtyByProduct) {
     const product = (products ?? []).find((p) => p.id === productId);
-    if (!product || !product.is_active) return fail(400, "Un producto del carrito ya no está disponible.");
+    if (!product || !product.is_active) return fail(400, "Un producto del carrito ya no está disponible.", "product_unavailable");
     const price = Number(product.price);
     subtotal += price * qty;
     lines.push({
@@ -105,7 +102,7 @@ export async function priceOrder(
   }
 
   if (subtotal < quote.minOrder) {
-    return fail(400, `El pedido mínimo para tu zona es ${formatMoney(quote.minOrder)}.`);
+    return fail(400, `El pedido mínimo para tu zona es ${formatMoney(quote.minOrder)}.`, "min_order");
   }
   return { ok: true, value: { lines, subtotal, fee: quote.fee, minOrder: quote.minOrder, zone: quote.zone } };
 }
@@ -216,7 +213,7 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
   }
   const total = subtotal - (applied?.discount ?? 0) + fee;
   if (input.expectedTotal !== undefined && total !== input.expectedTotal) {
-    return fail(409, "El precio cambió desde la cotización. Hay que volver a cotizar.");
+    return fail(409, "El precio cambió desde la cotización. Hay que volver a cotizar.", "total_changed");
   }
   const notes = [input.notes?.trim(), applied && rewardNote(applied.reward, applied.discount)].filter(Boolean).join(" · ");
 

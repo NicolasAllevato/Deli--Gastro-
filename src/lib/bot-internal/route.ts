@@ -1,0 +1,35 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { createAdminClient } from "@/utils/supabase/admin";
+import { getClientIp, rateLimit } from "@/utils/rate-limit";
+import { cleanEnv } from "@/lib/clean-env";
+import { handleBot } from "./handlers.ts";
+import { MAX_BODY_BYTES } from "./signature.ts";
+import type { BotOperation } from "./schemas.ts";
+
+/** Adaptador fino entre un `route.ts` de Next y los handlers testeables. */
+export async function runBotRoute(op: BotOperation, req: NextRequest): Promise<NextResponse> {
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_BYTES) {
+    return NextResponse.json({ ok: false, code: "too_large", error: "Cuerpo demasiado grande." }, { status: 413 });
+  }
+  const rawBody = await req.text();
+  const result = await handleBot(
+    op,
+    {
+      method: req.method,
+      path: new URL(req.url).pathname,
+      headers: req.headers,
+      rawBody,
+      ip: getClientIp(req),
+    },
+    {
+      db: createAdminClient(),
+      secrets: {
+        current: cleanEnv(process.env.BOT_INTERNAL_SECRET),
+        previous: cleanEnv(process.env.BOT_INTERNAL_SECRET_PREV),
+      },
+      rateLimit,
+    },
+  );
+  return NextResponse.json(result.body, { status: result.status });
+}

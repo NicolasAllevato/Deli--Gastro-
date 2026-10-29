@@ -148,14 +148,14 @@ describe("quoteOrder", () => {
   it("local en pausa o cerrado: no cotiza", async () => {
     const paused = newDemo((s) => setConfig(s, "modo_pausa", true));
     const input = { items: [{ product_id: "x", qty: 1 }], address: "Av. Corrientes 1234" };
-    assert.deepEqual(await quoteOrder(depsFor(paused, "m1"), input), { error: "El local pausó los pedidos por ahora." });
+    assert.deepEqual(await quoteOrder(depsFor(paused, "m1"), input), { error: "El local pausó los pedidos por ahora.", code: "closed" });
 
     const closed = newDemo((s) => {
       setConfig(s, "horario_apertura", "10:00");
       setConfig(s, "horario_cierre", "11:00");
     });
     // 15:00 UTC = 12:00 en Buenos Aires: fuera de 10:00–11:00.
-    assert.deepEqual(await quoteOrder(depsFor(closed, "m1"), input), { error: "El local está cerrado. Abre de 10:00 a 11:00." });
+    assert.deepEqual(await quoteOrder(depsFor(closed, "m1"), input), { error: "El local está cerrado. Abre de 10:00 a 11:00.", code: "closed" });
   });
 });
 
@@ -164,7 +164,7 @@ describe("confirmOrder", () => {
     const demo = newDemo();
     const before = demo.store.orders.length;
     const out = await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
-    assert.deepEqual(out, { error: "No hay un pedido cotizado. Usá quote_order primero." });
+    assert.deepEqual(out, { error: "No hay un pedido cotizado. Usá quote_order primero.", code: "no_draft" });
     assert.equal(demo.store.orders.length, before);
   });
 
@@ -172,7 +172,7 @@ describe("confirmOrder", () => {
     const demo = newDemo();
     await quoted(demo, "m1");
     const out = await confirmOrder(depsFor(demo, "m1"), { payment_method: "Efectivo" });
-    assert.deepEqual(out, { error: "El cliente todavía no confirmó. Mostrale el resumen con el total y esperá su respuesta." });
+    assert.deepEqual(out, { error: "El cliente todavía no confirmó. Mostrale el resumen con el total y esperá su respuesta.", code: "not_confirmed" });
     assert.ok(draftOf(demo), "el borrador se conserva");
   });
 
@@ -181,7 +181,7 @@ describe("confirmOrder", () => {
     await quoted(demo, "m1");
     const later = new Date(T0.getTime() + DRAFT_TTL_MS + 1000);
     const out = await confirmOrder(depsFor(demo, "m2", { now: () => later }), { payment_method: "Efectivo" });
-    assert.deepEqual(out, { error: "La cotización venció. Volvé a cotizar el pedido con quote_order." });
+    assert.deepEqual(out, { error: "La cotización venció. Volvé a cotizar el pedido con quote_order.", code: "expired" });
   });
 
   it("total cambiado desde la cotización: conflicto, no se crea el pedido y el borrador vuelve", async () => {
@@ -246,7 +246,7 @@ describe("confirmOrder", () => {
     await quoted(demo, "m1");
     setConfig(demo.store, "modo_pausa", true);
     const out = await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
-    assert.deepEqual(out, { error: "El local pausó los pedidos por ahora." });
+    assert.deepEqual(out, { error: "El local pausó los pedidos por ahora.", code: "closed" });
   });
 });
 
