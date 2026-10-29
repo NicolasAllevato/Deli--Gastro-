@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-const ID_PATTERN = /^\d{5,32}$/;
-const idField = (message: string) => z.string().regex(ID_PATTERN, message);
-const codeField = z.string().trim().min(1, "Falta el código de Meta.").max(2048);
+export const ID_PATTERN = /^\d{5,32}$/;
+const idField = (message: string) => z.string({ error: message }).regex(ID_PATTERN, message);
+const codeField = z.string({ error: "Falta el código de Meta." }).trim().min(1, "Falta el código de Meta.").max(2048);
+const INVALID_BODY = "Solicitud inválida: falta o es incorrecto el tipo de alta (mode).";
 
 /**
  * Cuerpo que el navegador manda al servidor al terminar el alta con Facebook.
@@ -10,25 +11,31 @@ const codeField = z.string().trim().min(1, "Falta el código de Meta.").max(2048
  * - `coexistence`: número que sigue en la app WhatsApp Business; ya está registrado, así que no hay PIN y
  *   el evento de Meta solo trae el waba_id (el phone_number_id es opcional: si falta lo resuelve el servidor).
  */
-export const signupBodySchema = z.discriminatedUnion("mode", [
-  z
-    .object({
-      mode: z.literal("standard"),
-      code: codeField,
-      phoneNumberId: idField("El Phone Number ID no es válido."),
-      wabaId: idField("El WABA ID no es válido."),
-      pin: z.string().regex(/^\d{6}$/, "El PIN tiene que ser de 6 dígitos."),
-    })
-    .strict(),
-  z
-    .object({
-      mode: z.literal("coexistence"),
-      code: codeField,
-      wabaId: idField("El WABA ID no es válido."),
-      phoneNumberId: idField("El Phone Number ID no es válido.").optional(),
-    })
-    .strict(),
-]);
+export const signupBodySchema = z.discriminatedUnion(
+  "mode",
+  [
+    z.strictObject(
+      {
+        mode: z.literal("standard"),
+        code: codeField,
+        phoneNumberId: idField("El Phone Number ID no es válido."),
+        wabaId: idField("El WABA ID no es válido."),
+        pin: z.string({ error: "Falta el PIN de 6 dígitos." }).regex(/^\d{6}$/, "El PIN tiene que ser de 6 dígitos."),
+      },
+      { error: "Solicitud inválida: hay campos que no corresponden." },
+    ),
+    z.strictObject(
+      {
+        mode: z.literal("coexistence"),
+        code: codeField,
+        wabaId: idField("El WABA ID no es válido."),
+        phoneNumberId: idField("El Phone Number ID no es válido.").optional(),
+      },
+      { error: "Solicitud inválida: hay campos que no corresponden." },
+    ),
+  ],
+  { error: INVALID_BODY },
+);
 
 export type SignupBody = z.infer<typeof signupBodySchema>;
 
@@ -36,6 +43,11 @@ export type SignupMessage =
   | { kind: "finish"; phoneNumberId: string; wabaId: string }
   | { kind: "finish_coexistence"; wabaId: string }
   | { kind: "cancel"; step: string | null };
+
+/** Valor guardado del interruptor de coexistencia: solo "1"/"true"/"si" lo activan; vacío o ausente = no. */
+export function isCoexistenceValue(value: string | null | undefined): boolean {
+  return /^(1|true|yes|si|sí)$/i.test(value?.trim() ?? "");
+}
 
 /** Versión de Embedded Signup que pedimos a Meta (v2 y v3 quedaron deprecadas el 15-oct-2026). */
 export const SIGNUP_VERSION = "v5";

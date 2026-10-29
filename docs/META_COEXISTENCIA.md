@@ -83,13 +83,27 @@ Lo marcado **verificar a mano** o **orientativo** no está confirmado.
    «Coexistencia» apagado se manda además `features: [{ name: "whatsapp_business_app_onboarding", enabled: false }]`.
    El `config_id` (de Facebook Login for Business) se carga en el panel («Config ID»); no está en el código.
    Ver `buildSignupExtras` en `src/lib/whatsapp/embedded-signup.ts`.
-   - En coexistencia el evento `postMessage` es `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING` y, según la doc de Meta,
-     trae **solo `waba_id`** (no `phone_number_id`). **No se pide PIN ni se registra el número** (ya está registrado).
-     El servidor (`src/lib/whatsapp/signup-flow.ts`) canjea el `code` por el token, resuelve el `phone_number_id`
-     con `GET /<WABA_ID>/phone_numbers` (**verificar** en vivo; si hay 0 o varios números responde 409 y se carga a
-     mano), guarda token + ids y suscribe la app a la WABA (`POST /<WABA_ID>/subscribed_apps`; la doc de Meta no
-     nombra este paso para coexistencia, se mantiene por compatibilidad: **verificar**).
-   - Fuera de coexistencia (interruptor apagado) sigue el flujo estándar con PIN de 6 dígitos y registro.
+   - Meta ahora llama **«Messaging account»** a la WABA (es el mismo id: `waba_id`).
+   - **El evento que manda Meta decide el modo, no el interruptor.** `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`
+     (coexistencia) trae, según la doc de Meta, **solo `waba_id`** (no `phone_number_id`): **sin PIN y sin registrar
+     el número** (ya está registrado). `FINISH` (con `phone_number_id`) es un número nuevo: **con PIN y registro**,
+     aunque el interruptor esté activo (la UI pide el PIN al llegar ese evento). El servidor acepta `standard` siempre
+     y `coexistence` solo si el interruptor guardado está activo (el interruptor por defecto está apagado: instalaciones
+     existentes siguen con PIN). `WHATSAPP_COEXISTENCE` en el entorno, si está definida, manda y bloquea el interruptor.
+   - Orden en `src/lib/whatsapp/signup-flow.ts`: (1) canjear el `code` por el token; (2) listar
+     `GET /<WABA_ID>/phone_numbers` con ese token (**verificar** en vivo) y exigir que el `phone_number_id` del
+     navegador figure ahí (si no, 400 sin guardar; evita que el navegador apunte a un número ajeno); en coexistencia
+     sin id se usa el único número de la cuenta; (3) con un cliente temporal registrar (solo estándar) y suscribir la
+     app (`POST /<WABA_ID>/subscribed_apps`; la doc de Meta no nombra este paso para coexistencia, se mantiene por
+     compatibilidad: **verificar**); (4) recién entonces persistir en `integration_secrets`. Un alta fallida no pisa
+     una configuración que funciona.
+   - Con 0 o más de 1 números: 409 con `code: "phone_resolution"` (un 409 de Graph sale como 502 sin `code`). Se guardan
+     token y WABA **solo si no existe una configuración completa previa**; si ya hay una, no se toca y el mensaje lo dice.
+     Si se guardaron, se carga el Phone Number ID a mano en «Credenciales» sin repetir el login.
+   - Si una variable `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` o `WHATSAPP_WABA_ID` está definida en el
+     entorno, tapa lo guardado: la respuesta del alta incluye `warnings` y el panel lo muestra.
+   - El canje del `code` usa `GET /oauth/access_token` porque así lo documenta Meta; **no cambiarlo a POST**. Pasarlo
+     a POST sería una mejora a **verificar** (el `client_secret` viaja en la URL de una llamada servidor a servidor).
 3. **Escanear el código** que muestra el flujo con la app WhatsApp Business del celular y aceptar.
 4. **Sincronizar contactos e historial: se decide en ese momento y debe hacerse dentro de las 24 h** del
    onboarding. Es **una sola vez por tipo**: si se rechaza o se deja vencer no se puede volver a pedir sin
@@ -100,7 +114,9 @@ Lo marcado **verificar a mano** o **orientativo** no está confirmado.
    `messages`, `smb_message_echoes`, `history`, `smb_app_state_sync`, `account_update`.
    Además suscribir la app a la WABA del cliente (`POST /<WABA_ID>/subscribed_apps`).
 6. **Qué se pierde / cambia al coexistir:**
-   - No funcionan grupos ni llamadas (voz/video) desde la app; los mensajes temporales y "ver una vez" se desactivan.
+   - No funcionan los grupos; los mensajes temporales y "ver una vez" se desactivan.
+   - **Llamadas (voz/video): NO se pierden.** La tabla oficial de Meta dice «No change» para la app WhatsApp Business
+     (siguen funcionando ahí) y «Not supported» para la Cloud API (el bot no puede llamar). **Confirmar en la prueba real.**
    - Las **listas de difusión quedan en solo lectura**.
    - Se pierden también los mensajes de bienvenida y de ausencia, las respuestas rápidas, las etiquetas, el catálogo
      y los pedidos de la app, los estados, los canales y el perfil de negocio gestionado desde la app.
@@ -115,8 +131,10 @@ Lo marcado **verificar a mano** o **orientativo** no está confirmado.
    verification* hecha. Luego **publicar la app** (modo Live); en modo desarrollo los webhooks de clientes reales
    no llegan. Verificación del negocio con una empresa unipersonal (orientativo, no confirmado por Meta): suele
    pedirse constancia de ARCA, DNI y comprobante de domicilio, y conviene un correo con dominio propio.
-8. **Token de sistema** (usuario del sistema con acceso a la WABA, no el token temporal del Embedded Signup) y
-   cargarlo en `bot_secrets.whatsapp_access_token` junto con `whatsapp_phone_number_id`, `whatsapp_app_secret`
+8. **Token de sistema** (usuario del sistema con acceso a la WABA, no el token temporal del Embedded Signup).
+   Generarlo para la app con los permisos `business_management`, `whatsapp_business_messaging` y
+   `whatsapp_business_management`; el usuario del sistema necesita **Manage app** sobre la app y **control total**
+   sobre la cuenta de mensajería (WABA). Luego cargarlo en `bot_secrets.whatsapp_access_token` junto con `whatsapp_phone_number_id`, `whatsapp_app_secret`
    y `whatsapp_verify_token`. Sin `whatsapp_phone_number_id` el Worker ignora todos los ecos.
 9. **Plantillas:** fuera de la ventana de 24 h solo se puede escribir con plantillas aprobadas; crearlas y
    aprobarlas antes (los mensajes enviados desde la app no tienen esa restricción, pero tampoco abren la ventana).
@@ -175,22 +193,33 @@ Tabla nueva `public.tenant_whatsapp` (una fila por cliente/local):
 Secretos de la app de Meta (`app_secret`, `verify_token`, `app_id`, `config_id`) siguen **globales**: la app de Meta es
 una sola (la del proveedor); solo el token, la WABA y el número son por cliente.
 
-- **Cifrado:** el token se guarda cifrado con una clave maestra (secret del Worker y de la app, nunca en la base),
-  por ejemplo AES-GCM con IV por fila. Alternativa: `pgsodium`/Vault de Supabase (**verificar** disponibilidad en el
-  plan). Sin la clave maestra la fila no sirve.
-- **RLS:** `enable row level security` sin políticas para `anon`/`authenticated`; el panel accede por service role
-  filtrando por tenant. Si más adelante el dueño lee su propia fila, política `using (tenant_id = auth_tenant())` y
-  solo columnas no secretas (vista sin `access_token_enc`).
+- **Cifrado:** el token se guarda cifrado, nunca en claro. AES-GCM con IV aleatorio por fila y **AAD =
+  `tenant_id` + `phone_number_id`** (una fila copiada a otro tenant no descifra), columna `key_version` para rotar la
+  clave maestra, y **clave por tenant derivada con HKDF** de la maestra (secret del Worker y de la app, nunca en la
+  base). Alternativa: Vault/`pgsodium` de Supabase (**verificar** disponibilidad en el plan).
+- **RLS:** `revoke all` sobre la tabla base para `anon` y `authenticated`, `enable row level security` y además
+  `force row level security`; el panel accede por service role filtrando por tenant. Si el dueño lee su propia fila,
+  política `using (tenant_id = auth_tenant())` y solo por una vista sin `access_token_enc`. `auth_tenant()` debe leer un
+  claim firmado en **`app_metadata`**, **nunca `user_metadata`** (el usuario puede editarlo).
+- **Alta y propiedad del número:** antes del `upsert`, verificar con el token recién canjeado que el `phone_number_id`
+  figura en `/<WABA_ID>/phone_numbers` (como ya hace `signup-flow.ts`), y **rechazar con 409 si ese
+  `phone_number_id` ya pertenece a otro tenant** (índice único): si no, un tenant podría secuestrar el ruteo del webhook
+  de otro.
 - **Lectura desde el Worker:** el webhook de Meta trae `metadata.phone_number_id` (y `entry[].id` = WABA). El Worker
-  busca la fila por `phone_number_id` (índice único), descifra el token en memoria y arma el cliente de ese tenant;
-  un `phone_number_id` desconocido se ignora con 200 y log. Se expone a `deli_bot` una **vista**
+  busca la fila por `phone_number_id` (índice único), descifra el token en memoria y arma el cliente de ese tenant.
+  **Orden:** primero se verifica la firma HMAC (`X-Hub-Signature-256`, con el `app_secret` de la app) y recién después
+  se busca el tenant; un `phone_number_id` desconocido se ignora con **200** y log (no 404, para no revelar qué
+  números existen). Se expone a `deli_bot` una **vista**
   `bot_tenant_whatsapp (tenant_id, phone_number_id, waba_id, access_token_enc, status)` con `security_barrier` y
   `grant select` solo a `deli_bot`, igual que `bot_secrets` (migración 016). El descifrado ocurre en el Worker.
 - **Caché:** `phone_number_id -> {token, tenant}` en memoria del isolate con TTL corto (60 s) para no consultar por
-  cada mensaje; invalidar por TTL al rotar tokens.
-- **Aislamiento de datos:** esto solo resuelve credenciales. `wa_conversations`, `orders`, `clients` y demás hoy no
-  tienen `tenant_id`; multi-cliente real exige agregarlo a cada tabla y a sus políticas (trabajo mayor, fuera de
-  este diseño).
+  cada mensaje. **Al hacer offboarding** (`account_update` `PARTNER_REMOVED`/`ACCOUNT_OFFBOARDED` o baja manual)
+  hay que invalidar ese caché (no esperar al TTL de 60 s) y marcar la fila `status = 'offboarded'`.
+- **Aislamiento de datos:** esto solo da **credenciales separadas, no multi-cliente real**. Sin `tenant_id` en
+  `wa_conversations`, `orders`, `clients` y demás tablas (hoy no lo tienen) todos los tenants compartirían datos;
+  agregarlo a cada tabla y a sus políticas es un trabajo mayor, fuera de este diseño.
+- **`app_secret` compartido:** la app de Meta es una sola, así que rotar el `app_secret` afecta a **todos** los
+  tenants a la vez (la firma del webhook y el canje de `code`): coordinar la rotación.
 - **Alta:** `completeSignup` (`signup-flow.ts`) recibiría el `tenant_id` del admin autenticado y haría `upsert` en
   `tenant_whatsapp` en vez de `saveWhatsAppSettings`. Token: el del canje de `code` es de negocio; para producción
   usar un token de usuario del sistema por cliente (**verificar** la política de Meta para tokens de Embedded Signup).

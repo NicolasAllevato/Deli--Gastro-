@@ -14,6 +14,7 @@ interface State {
   appId: string;
   configId: string;
   coexistence: boolean;
+  coexistenceLocked: boolean;
   accessTokenHint: string;
   appSecretHint: string;
   canSend: boolean;
@@ -84,7 +85,7 @@ export default function WhatsAppPage() {
   const [verifyToken, setVerifyToken] = useState("");
   const [appId, setAppId] = useState("");
   const [configId, setConfigId] = useState("");
-  const [coexistence, setCoexistence] = useState(true);
+  const [coexistence, setCoexistence] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -195,7 +196,11 @@ export default function WhatsAppPage() {
       <EmbeddedSignup
         appId={state?.appId ?? ""}
         configId={state?.configId ?? ""}
-        coexistence={state?.coexistence ?? true}
+        coexistence={state ? state.coexistence : null}
+        dirty={
+          state !== null &&
+          (coexistence !== state.coexistence || appId !== state.appId || configId !== state.configId || appSecret !== "")
+        }
         canConnect={Boolean(state?.appSecretHint)}
         onConnected={(message) => {
           setError(null);
@@ -253,7 +258,12 @@ export default function WhatsAppPage() {
           checked={coexistence}
           onChange={setCoexistence}
           label="Coexistencia con la app WhatsApp Business"
-          hint="Conecta un número que el local sigue usando en el celular (sin PIN). Apagalo para un número nuevo solo de la Cloud API. Aplica a la próxima conexión con Facebook."
+          disabled={!state || state.coexistenceLocked}
+          hint={
+            state?.coexistenceLocked
+              ? "Definido por la variable de entorno WHATSAPP_COEXISTENCE: no se puede cambiar desde acá."
+              : "Conecta un número que el local sigue usando en el celular (sin PIN). Apagalo para un número nuevo solo de la Cloud API. Guardá para que aplique a la próxima conexión con Facebook."
+          }
         />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={save} loading={busy}>Guardar</Button>
