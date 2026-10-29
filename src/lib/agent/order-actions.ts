@@ -230,7 +230,9 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     quotedByMessageId: deps.messageId,
     quotedAt: clock(deps).toISOString(),
   };
-  await updateConversationState(db, conversation.id, (state) => withDraft(state, draft));
+  // Si el borrador no quedó guardado, no se ofrece la cotización: confirmar después daría "sin cotización".
+  const saved = await updateConversationState(db, conversation.id, (state) => withDraft(state, draft)).catch(() => false);
+  if (!saved) return { error: "No pude guardar la cotización. Probá de nuevo.", code: "unavailable" };
 
   return {
     lines: lines.map((l) => ({ name: l.name, qty: l.qty, price: l.price })),

@@ -224,6 +224,15 @@ un pedido y el cliente recién se crea al confirmar.
 `{awaiting_payment:true, payment_url, total, replayed:true}` en vez de chocar con el tope de pedidos activos. El replay por `Idempotency-Key` se
 resuelve antes del chequeo de ≤ 10 min del wamid (la pertenencia y que sea entrante se verifican siempre).
 
+**Formato de la allowlist:** cargar los teléfonos como **array** (`["5491155550101", "5491122223333"]`) o como texto separado por comas **sin espacios**.
+Un solo string con espacios dentro de un número (p. ej. `"+54 9 11 5555-0101"` entre otros) no coincide con nadie y, por ser fail-closed, bloquea a todos.
+
+**Replay de idempotencia:** la marca guarda `at` y se descarta pasados 30 minutos. El replay **no respeta `bot_orders_enabled` a propósito**
+(es la respuesta ya calculada de un reintento); el link de pago igual vence solo a los 30 minutos y se valida contra la intención vigente.
+
+**Errores de lectura:** si falla la lectura de `global_config` o de `wa_messages`, toda operación responde 503 `unavailable` (no se trata como vacío).
+Si no se puede guardar el borrador, `quote` responde 503 `unavailable` en vez de ofrecer una cotización que no se podría confirmar.
+
 ### Reglas para el Worker
 - Firmar con un `x-bot-timestamp` **nuevo en cada reintento** (la ventana es de 60 s).
 - 403 y 422 **no son reintentables**; 400/401 tampoco. 409 `claim_lost` **sí** es reintentable (con la misma `Idempotency-Key`); 429 y 5xx también.
@@ -236,7 +245,8 @@ resuelve antes del chequeo de ≤ 10 min del wamid (la pertenencia y que sea ent
 - Monitorear `payment_intents` con `refund_error` o `approved` sin `order_id`.
 
 ### Diferido
-Anular la preferencia de Mercado Pago al cancelar (depende del gateway), tabla de idempotencia propia, rate limit distribuido y pago de una intención vencida.
+Anular la preferencia de Mercado Pago al cancelar (depende del gateway), tabla de idempotencia propia, rate limit distribuido y pago de una intención vencida. Límite conocido: si tras un fallo de `confirm` no se puede restaurar el borrador
+(`restoreDraft` condicionado por `updated_at` falla dos veces), se loguea y el cliente debe volver a cotizar; no hay update incondicional de último recurso.
 
 ### Corte de emergencia
 Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;

@@ -12,8 +12,10 @@ const base = {
 
 /** Sin caracteres de control (salvo saltos de línea) y con a lo sumo un renglón en blanco seguido. */
 export function cleanNotes(raw: string): string {
-  const text = raw.replace(/\r\n?/g, "\n");
-  const printable = Array.from(text).filter((ch) => ch === "\n" || !/\p{C}/u.test(ch)).join("");
+  const text = raw.replace(/\r\n?/g, "\n").replace(/\t/g, " ");
+  // U+200D (ZWJ) y U+FE0F (VS16) se conservan: sin ellos se rompen los emojis compuestos.
+  const keep = (ch: string) => ch === "\n" || ch === "‍" || ch === "️" || !/\p{C}/u.test(ch);
+  const printable = Array.from(text).filter(keep).join("");
   return printable.replace(/\n{3,}/g, "\n\n").trim();
 }
 

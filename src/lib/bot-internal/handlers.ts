@@ -1,7 +1,7 @@
 import type { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
 import { ACTIVE_STATUSES } from "@/lib/orders";
-import { numberConfig, readConfig } from "@/lib/orders-server";
+import { numberConfig } from "@/lib/orders-server";
 import { latestPendingIntent } from "@/lib/payments/intents";
 import { samePhone, normalizePhone } from "@/lib/whatsapp/phone";
 import { parseDraft, type OrderDraft } from "@/lib/agent/draft";
@@ -129,8 +129,14 @@ export function parseAllowlist(raw: unknown): Allowlist {
   return { mode: "list", phones };
 }
 
+/** Una lectura de la base falló: se responde 503 en vez de seguir con datos vacíos (fail-closed). */
+class BotUnavailableError extends Error {}
+
 async function loadBotConfig(db: Db): Promise<BotConfig> {
-  const config = await readConfig(db);
+  // Variante que expone el error: `readConfig` lo traga y dejaría la allowlist abierta si la lectura falla.
+  const { data, error } = await db.from("global_config").select("key, value");
+  if (error) throw new BotUnavailableError("global_config");
+  const config = Object.fromEntries((data ?? []).map((r) => [r.key, r.value])) as Record<string, unknown>;
   return {
     enabled: config.bot_orders_enabled === true || config.bot_orders_enabled === "true",
     allowlist: parseAllowlist(config.bot_orders_allowlist),
@@ -143,7 +149,7 @@ async function loadBotConfig(db: Db): Promise<BotConfig> {
 
 const disabled = () => refuse(403, "orders_disabled", "Los pedidos por WhatsApp no están habilitados por ahora.");
 const takeoverRefusal = () => refuse(409, "human_takeover", "Una persona está atendiendo esta conversación.");
-const unavailable = () => refuse(503, "unavailable", "No pude verificar tus pedidos en curso. Probá de nuevo en un momento.");
+const unavailable = () => refuse(503, "unavailable", "No pude verificar los datos en este momento. Probá de nuevo en un momento.");
 
 /** Solo la allowlist. La usan `status` y `cancel`: el flag `bot_orders_enabled` no los bloquea. */
 function allowlistGate(config: BotConfig, conversation: Conversation): BotResponse | null {
@@ -187,18 +193,35 @@ async function activeOrders(db: Db, clientId: string | null, now: Date, config: 
 // --- Verificación del mensaje entrante ---
 
 async function loadInbound(db: Db, conversationId: string, wamid: string) {
-  const { data } = await db
+  const { data, error } = await db
     .from("wa_messages")
     .select("direction, created_at")
     .eq("conversation_id", conversationId)
     .eq("wamid", wamid)
     .limit(1);
+  // Error de base != "no existe": el primero es 503, el segundo lo decide quien llama.
+  if (error) throw new BotUnavailableError("wa_messages");
   return data?.[0] ?? null;
 }
 
 // --- Idempotencia: el resultado de confirm/cancel se guarda en el estado de la conversación ---
 
-type IdemStore = Partial<Record<"confirm" | "cancel", { key: string; response: BotResponse }>>;
+type IdemStore = Partial<Record<"confirm" | "cancel", { key: string; response: BotResponse; at?: string }>>;
+
+/** Una marca más vieja que esto ya no se reproduce. */
+export const IDEM_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * El replay NO respeta `bot_orders_enabled` a propósito: es la respuesta ya calculada de un reintento
+ * (apagar los pedidos no debe convertir un confirm hecho en un error). El link de pago igual vence solo.
+ */
+function storedReplay(state: unknown, op: "confirm" | "cancel", key: string | null, now: Date): BotResponse | null {
+  const stored = idemOf(state)[op];
+  if (!stored || stored.key !== key) return null;
+  const at = stored.at ? new Date(stored.at).getTime() : NaN;
+  if (!Number.isFinite(at) || now.getTime() - at > IDEM_MAX_AGE_MS) return null;
+  return reply(stored.response.status, { ...stored.response.body, replayed: true });
+}
 
 const idemOf = (state: unknown): IdemStore => {
   const raw = typeof state === "object" && state !== null ? (state as { botIdem?: unknown }).botIdem : null;
@@ -210,7 +233,7 @@ async function saveIdem(ctx: Context, op: "confirm" | "cancel", key: string, res
   try {
     const saved = await updateConversationState(ctx.deps.db, ctx.conversation.id, (state) => {
       const base = typeof state === "object" && state !== null ? (state as Record<string, unknown>) : {};
-      return { ...base, botIdem: { ...idemOf(base), [op]: { key, response } } };
+      return { ...base, botIdem: { ...idemOf(base), [op]: { key, response, at: ctx.now.toISOString() } } };
     });
     if (!saved) console.error("[bot-internal] no se pudo guardar la marca de idempotencia", op, ctx.conversation.id);
   } catch (error: unknown) {
@@ -401,10 +424,8 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
 
   // Replay ANTES de la frescura: un reintento demorado de la cola recibe la respuesta ya calculada.
   if (op === "confirm" || op === "cancel") {
-    const stored = idemOf(conversation.state)[op];
-    if (stored && stored.key === idempotencyKey) {
-      return reply(stored.response.status, { ...stored.response.body, replayed: true });
-    }
+    const replay = storedReplay(conversation.state, op, idempotencyKey, now);
+    if (replay) return replay;
   }
 
   if (now.getTime() - new Date(inbound.created_at).getTime() > INBOUND_MAX_AGE_MS) {
@@ -431,8 +452,13 @@ export async function handleBot(op: BotOperation, req: BotRequest, deps: BotDeps
   try {
     response = await processBot(op, req, deps);
   } catch (error: unknown) {
-    console.error("[bot-internal] error no controlado", op, error);
-    response = refuse(500, "internal_error", "No pude procesar la solicitud.");
+    if (error instanceof BotUnavailableError) {
+      console.error("[bot-internal] lectura fallida", op, error.message);
+      response = unavailable();
+    } else {
+      console.error("[bot-internal] error no controlado", op, error);
+      response = refuse(500, "internal_error", "No pude procesar la solicitud.");
+    }
   }
   const log = deps.log ?? ((event) => console.info("[bot-internal]", JSON.stringify(event)));
   const parsed = parseJson(req.rawBody) as { conversationId?: unknown; inboundWamid?: unknown } | undefined;
