@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
 
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   try {

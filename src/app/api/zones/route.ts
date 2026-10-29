@@ -17,7 +17,7 @@ async function guard(req: NextRequest, limit: number) {
   if (!(await rateLimit(getClientIp(req), limit, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   return isAuthorizationError(auth) ? auth.error : null;
 }
 

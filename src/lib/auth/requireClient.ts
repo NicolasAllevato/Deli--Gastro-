@@ -16,8 +16,8 @@ export type ClientAuthResult = AuthorizedClient | { error: NextResponse };
  * Todo endpoint del portal cliente parte de acá, así cada consulta queda
  * acotada al `client.id` del usuario autenticado (nunca a un id del body).
  */
-export async function requireClient(): Promise<ClientAuthResult> {
-  const auth = await requireRole("cliente");
+export async function requireClient(req?: Request): Promise<ClientAuthResult> {
+  const auth = await requireRole("cliente", req);
   if (isAuthorizationError(auth)) return auth;
 
   const client = await getClientByUserId(createAdminClient(), auth.user.id);

@@ -23,7 +23,7 @@ function filterData(action: string, data: Record<string, unknown>): Record<strin
 }
 
 export async function POST(req: Request) {
-  const auth = await requireRole("admin");
+  const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
   // Rate limiting estricto para el endpoint más sensible

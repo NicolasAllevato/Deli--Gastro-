@@ -52,7 +52,7 @@ function hasMark(req: NextRequest, appMetadata: Record<string, unknown> | undefi
  * navegador, se perdió la cookie o falló al escribirla), se deja ahora para que pueda entrar.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if (isAuthorizationError(auth)) return auth.error;
   try {
     const db = createAdminClient();
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
   if (!(await rateLimit(ip, 20, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const parsed = acceptSchema.safeParse(await req.json().catch(() => null));

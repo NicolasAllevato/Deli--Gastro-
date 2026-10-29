@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   if (!(await rateLimit(getClientIp(req), 120, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireClient();
+  const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const id = idSchema.safeParse((await params).id);
@@ -48,7 +48,7 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   if (!(await rateLimit(getClientIp(req), 20, 60_000))) {
     return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
   }
-  const auth = await requireClient();
+  const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
 
   const id = idSchema.safeParse((await params).id);

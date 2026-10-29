@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/utils/supabase/server";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
+import { rejectCrossOrigin } from "@/lib/auth/requireRole";
 import { isDemoMode } from "@/lib/demo/mode";
 import { buildDemoReply } from "@/lib/demo/chatbot";
 
@@ -22,6 +23,9 @@ function isValidN8nReply(data: unknown): data is { reply: string } {
 }
 
 export async function POST(req: Request) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   // Autenticación requerida
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
