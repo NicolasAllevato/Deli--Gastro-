@@ -9,7 +9,8 @@ export function sqlBotRepo(sql: postgres.Sql): BotRepo {
   return {
     async getConversation(phone) {
       const [row] = await sql<{ id: string; client_phone: string; client_id: string | null; name: string | null; human_takeover: boolean }[]>`
-        select c.id, c.client_phone, c.client_id, coalesce(cl.name, c.contact_name) as name, c.human_takeover
+        select c.id, c.client_phone, c.client_id, coalesce(cl.name, c.contact_name) as name,
+          (c.human_takeover or coalesce(c.bot_paused_until > now(), false)) as human_takeover
         from public.wa_conversations c
         left join public.clients cl on cl.id = c.client_id
         where c.client_phone = ${phone}`;

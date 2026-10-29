@@ -44,6 +44,8 @@ v1.0, versionCode 1, firmada con esquema v2, en `public/descargas/`), gateway Fu
 6. **Meta / bot de WhatsApp (al final):** webhook de Meta a `bot-dely.opsyn.app/webhook`, fase 5
    (tomador de pedidos), publicar la app, número real con coexistencia, rotar los secretos que
    pasaron por el chat (`deli_bot`, Meta, Cloudflare) y las claves de Supabase de `datos.txt`.
+   **Coexistencia (código listo, falta ejecutar):** aplicar la migración `021_bot_paused_until.sql` ANTES
+   de desplegar el Worker, y seguir `docs/META_COEXISTENCIA.md` (Embedded Signup v4+, webhooks, App Review).
 7. **Menores:** decidir los canales privados de la 011; Leaked Password Protection; pasar el redirect a
    `permanent: true` cuando todo esté estable; `.gitattributes` con `*.gradle text eol=lf` para el ruido
    de fin de línea de `cap sync`.

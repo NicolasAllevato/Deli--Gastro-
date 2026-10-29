@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import type { InboundRepo } from "./types.ts";
 
 export type * from "./types.ts";
@@ -22,8 +23,33 @@ export function sqlInboundRepo(sql: postgres.Sql): InboundRepo {
           contact_name = coalesce(public.wa_conversations.contact_name, excluded.contact_name),
           client_id = coalesce(public.wa_conversations.client_id, excluded.client_id),
           last_inbound_at = now()
-        returning id, client_phone, human_takeover`;
+        returning id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as human_takeover`;
       return { id: row.id, phone: row.client_phone, humanTakeover: row.human_takeover };
+    },
+
+    async pauseBot(phone, until) {
+      // No toca last_inbound_at: un eco no es un mensaje del cliente.
+      const [row] = await sql<{ id: string; client_phone: string; human_takeover: boolean }[]>`
+        insert into public.wa_conversations (client_phone, client_id, bot_paused_until)
+        values (${phone}, ${CLIENT_BY_PHONE(sql, phone)}, ${until})
+        on conflict (client_phone) do update set
+          bot_paused_until = greatest(public.wa_conversations.bot_paused_until, excluded.bot_paused_until)
+        returning id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as human_takeover`;
+      return { id: row.id, phone: row.client_phone, humanTakeover: row.human_takeover };
+    },
+
+    async saveEcho(conversationId, message) {
+      const rows = await sql`
+        insert into public.wa_messages (conversation_id, wamid, direction, type, body, status)
+        values (${conversationId}, ${message.wamid}, 'out', ${message.type}, ${message.body}, 'sent')
+        on conflict (wamid) do nothing
+        returning id`;
+      return rows.length > 0;
+    },
+
+    async takeoverMinutes() {
+      const [row] = await sql<{ value: unknown }[]>`select value from public.global_config where key = ${TAKEOVER_KEY}`;
+      return takeoverMinutesFromConfig({ [TAKEOVER_KEY]: row?.value });
     },
 
     async saveInbound(conversationId, message) {

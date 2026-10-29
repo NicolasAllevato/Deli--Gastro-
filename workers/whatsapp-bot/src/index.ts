@@ -3,6 +3,7 @@ import { verifyChallenge } from "./verify.ts";
 import { handleWebhookEvents } from "./entry.ts";
 import { sqlInboundRepo } from "./repo/inbound.ts";
 import { parseWebhook } from "../../../src/lib/whatsapp/payload.ts";
+import { parseCoexistence } from "../../../src/lib/whatsapp/coexistence.ts";
 import { verifySignature } from "../../../src/lib/whatsapp/signature.ts";
 import { processTurn } from "./bot/turn.ts";
 import { createOrdersClient } from "./orders/client.ts";
@@ -89,7 +90,8 @@ async function verifyWebhook(url: URL, env: Env): Promise<Response> {
 
 /** Procesa en segundo plano lo que ya respondimos con 200 (Meta no espera). */
 async function processEvents(rawBody: string, phoneNumberId: string | null, env: Env): Promise<void> {
-  const events = parseWebhook(JSON.parse(rawBody) as unknown);
+  const payload = JSON.parse(rawBody) as unknown;
+  const events = [...parseWebhook(payload), ...parseCoexistence(payload)];
   if (events.length === 0) return;
   const sql = connect(env);
   try {

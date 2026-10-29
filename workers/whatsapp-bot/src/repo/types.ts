@@ -7,7 +7,7 @@ import type { DeliveryStatus } from "../../../../src/lib/whatsapp/payload.ts";
 export interface StoredConversation {
   id: string;
   phone: string;
-  /** true = un humano tomó la conversación desde el panel: el bot no responde. */
+  /** true = un humano tomó la conversación (panel, o app WhatsApp Business con pausa vigente): el bot no responde. */
   humanTakeover: boolean;
 }
 
@@ -23,6 +23,15 @@ export interface InboundRepo {
   /** Guarda el mensaje entrante; false si ese wamid ya estaba (reintento de Meta). */
   saveInbound(conversationId: string, message: InboundRow): Promise<boolean>;
   updateStatus(wamid: string, status: DeliveryStatus): Promise<void>;
+  /**
+   * Eco de la app WhatsApp Business: pausa el bot en el chat hasta `until` (nunca acorta una pausa más larga)
+   * sin tocar `last_inbound_at`, y devuelve la conversación (la crea si no existía).
+   */
+  pauseBot(phone: string, until: Date): Promise<StoredConversation>;
+  /** Guarda el eco como mensaje saliente del local; false si ese wamid ya estaba (reintento de Meta). */
+  saveEcho(conversationId: string, message: InboundRow): Promise<boolean>;
+  /** Minutos de pausa tras un eco (`bot_human_takeover_minutes`, 120 por defecto). */
+  takeoverMinutes(): Promise<number>;
 }
 
 export interface BotConversation {

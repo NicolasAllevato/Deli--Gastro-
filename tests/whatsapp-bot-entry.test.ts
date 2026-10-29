@@ -27,6 +27,15 @@ function memoryRepo(initial: { takeover?: boolean } = {}) {
       const row = messages.get(wamid);
       if (row) row.status = status;
     },
+    async pauseBot() {
+      throw new Error("no se usa en estos tests");
+    },
+    async saveEcho() {
+      throw new Error("no se usa en estos tests");
+    },
+    async takeoverMinutes() {
+      return 120;
+    },
   };
   return { repo, conversations, messages };
 }
