@@ -10,7 +10,14 @@ const base = {
   inboundWamid: z.string().trim().min(1).max(200),
 };
 
-const quoteLine = z.object({ product_id: z.string().trim().min(1).max(64), qty: z.number().int().min(1).max(MAX_QTY) }).strict();
+/** Sin caracteres de control (salvo saltos de línea) y con a lo sumo un renglón en blanco seguido. */
+export function cleanNotes(raw: string): string {
+  const text = raw.replace(/\r\n?/g, "\n");
+  const printable = Array.from(text).filter((ch) => ch === "\n" || !/\p{C}/u.test(ch)).join("");
+  return printable.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+const quoteLine = z.object({ product_id: z.string().uuid(), qty: z.number().int().min(1).max(MAX_QTY) }).strict();
 
 // `.strict()`: un campo de más (clientId, price, total, rewardId…) es un 400, no se ignora en silencio.
 export const quoteSchema = z
@@ -25,7 +32,7 @@ export const confirmSchema = z
   .object({
     ...base,
     payment_method: z.string().trim().min(1).max(40),
-    notes: z.string().trim().max(300).optional(),
+    notes: z.string().max(600).transform(cleanNotes).pipe(z.string().max(300)).optional(),
   })
   .strict();
 

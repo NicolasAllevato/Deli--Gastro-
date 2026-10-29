@@ -9,6 +9,7 @@ import { cancelPendingIntent, latestPendingIntent, startOnlinePayment } from "@/
 import { SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { ensureClientForConversation } from "@/lib/whatsapp/clients";
 import { loadDeliverySettings } from "@/lib/zones-server";
+import { updateConversationState } from "./conversation-state.ts";
 import { mayConfirm, parseDraft, withDraft, type OrderDraft } from "./draft.ts";
 import { isOpenNow } from "./hours.ts";
 import { loadAgentSettings } from "./settings.ts";
@@ -44,6 +45,10 @@ export interface OrderActionDeps {
   geocode?: (address: string, local: Parameters<typeof geocodeAddress>[1]) => Promise<GeocodeResult[]>;
   /** Pasarela de cobro. Por defecto: `getGateway()`. */
   gateway?: () => PaymentGateway | null;
+  /** Topes de quien llama sobre lo cotizado, evaluados antes de guardar el borrador. */
+  checkQuote?: (quote: { units: number; total: number }) => ActionError | null;
+  /** Topes sobre el borrador que `confirmOrder` va a reclamar, evaluados antes del claim. */
+  checkDraft?: (draft: OrderDraft) => ActionError | null | Promise<ActionError | null>;
 }
 
 /** Motivo estable de un rechazo, para que quien llama (el Worker) decida sin leer el texto. */
@@ -60,7 +65,9 @@ export type ActionErrorCode =
   | "orders_disabled"
   | "payment_not_supported"
   | "limit_exceeded"
-  | "forbidden";
+  | "forbidden"
+  | "human_takeover"
+  | "unavailable";
 
 export interface ActionError {
   error: string;
@@ -209,6 +216,9 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   if (!priced.ok) return failure(priced);
 
   const { lines, subtotal, fee, minOrder, zone } = priced.value;
+  // Topes de quien llama: se evalúan ANTES de guardar, así un borrador fuera de tope nunca existe.
+  const rejected = deps.checkQuote?.({ units: lines.reduce((sum, l) => sum + l.qty, 0), total: subtotal + fee });
+  if (rejected) return rejected;
   const draft: OrderDraft = {
     items: lines.map((l) => ({ productId: l.productId, qty: l.qty })),
     address: place.label.slice(0, 200),
@@ -220,7 +230,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     quotedByMessageId: deps.messageId,
     quotedAt: clock(deps).toISOString(),
   };
-  await db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
+  await updateConversationState(db, conversation.id, (state) => withDraft(state, draft));
 
   return {
     lines: lines.map((l) => ({ name: l.name, qty: l.qty, price: l.price })),
@@ -241,6 +251,9 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
   if (isActionError(conversation)) return conversation;
   const check = mayConfirm(parseDraft(conversation.state), deps.messageId, clock(deps));
   if (!check.ok) return { error: check.reason, code: check.code };
+  // Sobre el borrador que se va a reclamar (recién releído), no sobre uno leído antes.
+  const rejected = await deps.checkDraft?.(check.draft);
+  if (rejected) return rejected;
   if (deps.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pedido no se creó." };
 
   const { draft } = check;
@@ -256,8 +269,11 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
     .maybeSingle();
   if (!claimed) return { error: "Ya se está procesando tu confirmación. Esperá un momento.", code: "claim_lost" };
 
-  const restoreDraft = () =>
-    db.from("wa_conversations").update({ state: withDraft(conversation.state, draft) as Json }).eq("id", conversation.id);
+  // Condicionado por updated_at y mergeado sobre el estado actual: no pisa marcas de idempotencia ajenas.
+  const restoreDraft = async () => {
+    const restored = await updateConversationState(db, conversation.id, (state) => withDraft(state, draft)).catch(() => false);
+    if (!restored) console.error("[order-actions] no se pudo restaurar el borrador", conversation.id);
+  };
 
   // Pasado el claim, cualquier excepción devuelve el borrador: si no, el cliente pierde la cotización.
   try {
@@ -266,7 +282,7 @@ export async function confirmOrder(deps: OrderActionDeps, input: ConfirmInput): 
     return result;
   } catch (error: unknown) {
     console.error("[order-actions] confirmOrder falló después del claim", error);
-    await restoreDraft().then(undefined, () => undefined);
+    await restoreDraft();
     return { error: "No pude crear el pedido. Probá de nuevo en un momento." };
   }
 }

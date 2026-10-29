@@ -1,10 +1,11 @@
 import type { createAdminClient } from "@/utils/supabase/admin";
-import type { Database, Json } from "@/types/database";
+import type { Database } from "@/types/database";
 import { ACTIVE_STATUSES } from "@/lib/orders";
 import { numberConfig, readConfig } from "@/lib/orders-server";
 import { latestPendingIntent } from "@/lib/payments/intents";
 import { samePhone, normalizePhone } from "@/lib/whatsapp/phone";
-import { parseDraft, withDraft } from "@/lib/agent/draft";
+import { parseDraft, type OrderDraft } from "@/lib/agent/draft";
+import { updateConversationState } from "@/lib/agent/conversation-state";
 import {
   cancelOrder,
   confirmOrder,
@@ -20,6 +21,7 @@ import {
   BOT_SIGNATURE_HEADER,
   BOT_TIMESTAMP_HEADER,
   MAX_BODY_BYTES,
+  isUsableSecret,
   verifyBotRequest,
 } from "./signature.ts";
 
@@ -33,9 +35,11 @@ const CONVERSATION_LIMIT = { max: 40, windowMs: 60_000 };
 
 /** Valores por defecto de los topes (se pisan con `global_config`). */
 export const DEFAULT_MAX_UNITS = 12;
-/** Importe máximo por pedido del bot, en pesos. Alto a propósito: corta errores y abusos, no pedidos reales. */
-export const DEFAULT_MAX_TOTAL = 150_000;
+/** Importe máximo por pedido del bot, en pesos. Conservador para el piloto: se sube desde `global_config.bot_max_total`. */
+export const DEFAULT_MAX_TOTAL = 80_000;
 export const DEFAULT_MAX_ACTIVE_ORDERS = 1;
+/** Un pedido activo más viejo que esto no bloquea al cliente (un "En Camino" olvidado). */
+export const DEFAULT_ACTIVE_WINDOW_HOURS = 3;
 
 export interface BotRequest {
   method: string;
@@ -78,6 +82,8 @@ const STATUS_BY_CODE: Record<ActionErrorCode, number> = {
   orders_disabled: 403,
   payment_not_supported: 400,
   forbidden: 403,
+  human_takeover: 409,
+  unavailable: 503,
 };
 
 function fromActionError(err: ActionError, fallback: number): BotResponse {
@@ -87,12 +93,21 @@ function fromActionError(err: ActionError, fallback: number): BotResponse {
 
 // --- Interruptores y topes (se leen de la base en CADA llamada, sin caché) ---
 
+/**
+ * Allowlist de `bot_orders_allowlist`:
+ * - ausente, `null`, `[]` o texto vacío explícito = sin restricción (`open`);
+ * - `"*"` (texto o dentro de la lista) = todos, a propósito (`all`);
+ * - cualquier otro valor definido que no dé ningún teléfono (objeto, número, typo, entradas sin dígitos) = NADIE (fail-closed).
+ */
+type Allowlist = { mode: "open" } | { mode: "all" } | { mode: "list"; phones: string[] };
+
 interface BotConfig {
   enabled: boolean;
-  allowlist: string[];
+  allowlist: Allowlist;
   maxUnits: number;
   maxTotal: number;
   maxActive: number;
+  activeWindowMs: number;
 }
 
 function positive(config: Record<string, unknown>, key: string, fallback: number): number {
@@ -100,9 +115,18 @@ function positive(config: Record<string, unknown>, key: string, fallback: number
   return value > 0 ? value : fallback;
 }
 
-function parseAllowlist(raw: unknown): string[] {
-  const list = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[,\s]+/) : [];
-  return list.map((p) => normalizePhone(String(p))).filter((p) => p.length > 0);
+export function parseAllowlist(raw: unknown): Allowlist {
+  if (raw === undefined || raw === null) return { mode: "open" };
+  if (Array.isArray(raw) && raw.length === 0) return { mode: "open" };
+  if (typeof raw === "string" && raw.trim() === "") return { mode: "open" };
+
+  const entries: unknown[] = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[,\s]+/) : [];
+  if (entries.some((e) => typeof e === "string" && e.trim() === "*")) return { mode: "all" };
+  const phones = entries
+    .filter((e): e is string | number => typeof e === "string" || typeof e === "number")
+    .map((e) => normalizePhone(String(e)))
+    .filter((p) => p.length > 0);
+  return { mode: "list", phones };
 }
 
 async function loadBotConfig(db: Db): Promise<BotConfig> {
@@ -113,25 +137,51 @@ async function loadBotConfig(db: Db): Promise<BotConfig> {
     maxUnits: positive(config, "bot_max_units", DEFAULT_MAX_UNITS),
     maxTotal: positive(config, "bot_max_total", DEFAULT_MAX_TOTAL),
     maxActive: positive(config, "bot_max_active_orders", DEFAULT_MAX_ACTIVE_ORDERS),
+    activeWindowMs: positive(config, "bot_active_window_hours", DEFAULT_ACTIVE_WINDOW_HOURS) * 3_600_000,
   };
 }
 
-function ordersGate(config: BotConfig, conversation: Conversation): BotResponse | null {
-  const disabled = refuse(403, "orders_disabled", "Los pedidos por WhatsApp no están habilitados por ahora.");
-  if (!config.enabled) return disabled;
-  if (config.allowlist.length > 0 && !config.allowlist.some((p) => samePhone(p, conversation.client_phone))) return disabled;
-  return null;
+const disabled = () => refuse(403, "orders_disabled", "Los pedidos por WhatsApp no están habilitados por ahora.");
+const takeoverRefusal = () => refuse(409, "human_takeover", "Una persona está atendiendo esta conversación.");
+const unavailable = () => refuse(503, "unavailable", "No pude verificar tus pedidos en curso. Probá de nuevo en un momento.");
+
+/** Solo la allowlist. La usan `status` y `cancel`: el flag `bot_orders_enabled` no los bloquea. */
+function allowlistGate(config: BotConfig, conversation: Conversation): BotResponse | null {
+  const { allowlist } = config;
+  if (allowlist.mode === "open" || allowlist.mode === "all") return null;
+  return allowlist.phones.some((p) => samePhone(p, conversation.client_phone)) ? null : disabled();
 }
+
+/** `quote` y `confirm`: flag de pedidos encendido y teléfono permitido. */
+function ordersGate(config: BotConfig, conversation: Conversation): BotResponse | null {
+  if (!config.enabled) return disabled();
+  return allowlistGate(config, conversation);
+}
+
+const LIMIT_MESSAGE = "El pedido supera lo que puedo tomar por acá. Te paso con una persona.";
+const ACTIVE_MESSAGE = "Ya tenés un pedido en curso. Cuando termine podés hacer otro, o te paso con una persona.";
 
 function limitExceeded(error: string): BotResponse {
   return refuse(422, "limit_exceeded", error);
 }
 
-async function activeOrders(db: Db, clientId: string | null, now: Date): Promise<number> {
+/**
+ * Pedidos en curso del cliente (activos con menos de `bot_active_window_hours` + un pago pendiente vigente).
+ * `null` = no se pudo consultar (el llamador responde 503: fail-closed, no cuenta 0).
+ * Sin `client_id` la conversación nunca confirmó un pedido: no hay nada que contar y el cliente se crea al confirmar.
+ */
+async function activeOrders(db: Db, clientId: string | null, now: Date, config: BotConfig): Promise<number | null> {
   if (!clientId) return 0;
-  const { data } = await db.from("orders").select("id").eq("client_id", clientId).in("status", [...ACTIVE_STATUSES]);
+  const { data, error } = await db
+    .from("orders")
+    .select("id, created_at")
+    .eq("client_id", clientId)
+    .in("status", [...ACTIVE_STATUSES]);
+  if (error) return null;
+  const since = now.getTime() - config.activeWindowMs;
+  const recent = (data ?? []).filter((o) => new Date(o.created_at).getTime() >= since).length;
   const pending = await latestPendingIntent(db, clientId, now);
-  return (data?.length ?? 0) + (pending ? 1 : 0);
+  return recent + (pending ? 1 : 0);
 }
 
 // --- Verificación del mensaje entrante ---
@@ -155,11 +205,17 @@ const idemOf = (state: unknown): IdemStore => {
   return typeof raw === "object" && raw !== null ? (raw as IdemStore) : {};
 };
 
-async function saveIdem(db: Db, conversationId: string, op: "confirm" | "cancel", key: string, response: BotResponse) {
-  const { data } = await db.from("wa_conversations").select("state").eq("id", conversationId).maybeSingle();
-  const state = typeof data?.state === "object" && data.state !== null ? (data.state as Record<string, unknown>) : {};
-  const next = { ...state, botIdem: { ...idemOf(state), [op]: { key, response } } };
-  await db.from("wa_conversations").update({ state: next as unknown as Json }).eq("id", conversationId);
+/** Guarda la marca de idempotencia. Un fallo acá no puede tirar abajo un confirm/cancel que ya se hizo: se loguea. */
+async function saveIdem(ctx: Context, op: "confirm" | "cancel", key: string, response: BotResponse): Promise<void> {
+  try {
+    const saved = await updateConversationState(ctx.deps.db, ctx.conversation.id, (state) => {
+      const base = typeof state === "object" && state !== null ? (state as Record<string, unknown>) : {};
+      return { ...base, botIdem: { ...idemOf(base), [op]: { key, response } } };
+    });
+    if (!saved) console.error("[bot-internal] no se pudo guardar la marca de idempotencia", op, ctx.conversation.id);
+  } catch (error: unknown) {
+    console.error("[bot-internal] error al guardar la marca de idempotencia", op, ctx.conversation.id, error);
+  }
 }
 
 // --- Entrada común ---
@@ -172,6 +228,7 @@ interface Context {
   now: Date;
   conversation: Conversation;
   idempotencyKey: string | null;
+  config: BotConfig;
 }
 
 function actionDeps(ctx: Context, inboundWamid: string): OrderActionDeps {
@@ -189,33 +246,27 @@ function actionDeps(ctx: Context, inboundWamid: string): OrderActionDeps {
 
 async function runQuote(ctx: Context, body: Parsed<"quote">): Promise<BotResponse> {
   const { db } = ctx.deps;
-  const config = await loadBotConfig(db);
+  const { config } = ctx;
   const gate = ordersGate(config, ctx.conversation);
   if (gate) return gate;
+  if (ctx.conversation.human_takeover) return takeoverRefusal();
 
   const units = body.items.reduce((sum, i) => sum + i.qty, 0);
-  if (units > config.maxUnits) {
-    return limitExceeded(`El pedido supera las ${config.maxUnits} unidades que puedo tomar por acá. Te paso con una persona.`);
-  }
-  if ((await activeOrders(db, ctx.conversation.client_id, ctx.now)) >= config.maxActive) {
-    return limitExceeded("Ya tenés un pedido en curso. Cuando termine podés hacer otro, o te paso con una persona.");
-  }
+  if (units > config.maxUnits) return limitExceeded(LIMIT_MESSAGE);
+  const active = await activeOrders(db, ctx.conversation.client_id, ctx.now, config);
+  if (active === null) return unavailable();
+  if (active >= config.maxActive) return limitExceeded(ACTIVE_MESSAGE);
 
-  const result = await quoteOrder(actionDeps(ctx, body.inboundWamid), { items: body.items, address: body.address });
+  // Los topes se evalúan antes de que quoteOrder guarde el borrador: uno fuera de tope nunca se persiste.
+  const checkQuote: OrderActionDeps["checkQuote"] = (q) =>
+    q.units > config.maxUnits || q.total > config.maxTotal ? { error: LIMIT_MESSAGE, code: "limit_exceeded" } : null;
+  const result = await quoteOrder({ ...actionDeps(ctx, body.inboundWamid), checkQuote }, { items: body.items, address: body.address });
   if (isActionError(result)) return fromActionError(result, 422);
-
-  if (result.total > config.maxTotal) {
-    // quoteOrder ya guardó el borrador: un pedido fuera de tope no puede quedar confirmable.
-    await db.from("wa_conversations").update({ state: withDraft(ctx.conversation.state, null) as Json }).eq("id", ctx.conversation.id);
-    return limitExceeded("El importe supera el máximo que puedo tomar por acá. Te paso con una persona.");
-  }
   return reply(200, { ...result, ok: true });
 }
 
 /** El mensaje que confirma tiene que ser posterior al que cotizó (no solo distinto). */
-async function confirmIsAfterQuote(ctx: Context, inboundWamid: string): Promise<boolean> {
-  const draft = parseDraft(ctx.conversation.state);
-  if (!draft) return true; // sin borrador, confirmOrder responde no_draft
+async function confirmIsAfterQuote(ctx: Context, draft: OrderDraft, inboundWamid: string): Promise<boolean> {
   const [quotedBy, current] = await Promise.all([
     loadInbound(ctx.deps.db, ctx.conversation.id, draft.quotedByMessageId),
     loadInbound(ctx.deps.db, ctx.conversation.id, inboundWamid),
@@ -224,51 +275,72 @@ async function confirmIsAfterQuote(ctx: Context, inboundWamid: string): Promise<
   return new Date(current.created_at).getTime() > new Date(quotedBy.created_at).getTime();
 }
 
+/** Validador del borrador que `confirmOrder` reclama de verdad (se evalúa tras releerlo y antes del claim). */
+function draftValidator(ctx: Context, inboundWamid: string): NonNullable<OrderActionDeps["checkDraft"]> {
+  return async (draft) => {
+    if (!(await confirmIsAfterQuote(ctx, draft, inboundWamid))) {
+      return { error: "El cliente todavía no confirmó después de ver la cotización.", code: "not_confirmed" };
+    }
+    const units = draft.items.reduce((sum, i) => sum + i.qty, 0);
+    if (units > ctx.config.maxUnits || draft.subtotal + draft.fee > ctx.config.maxTotal) {
+      return { error: LIMIT_MESSAGE, code: "limit_exceeded" };
+    }
+    return null;
+  };
+}
+
+/** Si el cliente ya tiene un pago abierto (la respuesta del confirm anterior se perdió), se le devuelve el mismo link. */
+async function pendingPaymentLink(ctx: Context): Promise<BotResponse | null> {
+  const clientId = ctx.conversation.client_id;
+  if (!clientId || parseDraft(ctx.conversation.state)) return null;
+  const pending = await latestPendingIntent(ctx.deps.db, clientId, ctx.now);
+  if (!pending?.checkout_url || pending.channel !== "whatsapp") return null;
+  return reply(200, { ok: true, awaiting_payment: true, payment_url: pending.checkout_url, total: Number(pending.total), replayed: true });
+}
+
 async function runConfirm(ctx: Context, body: Parsed<"confirm">): Promise<BotResponse> {
   const { db } = ctx.deps;
-  const config = await loadBotConfig(db);
+  const { config } = ctx;
   const gate = ordersGate(config, ctx.conversation);
   if (gate) return gate;
+  if (ctx.conversation.human_takeover) return takeoverRefusal();
 
   if (body.payment_method !== "Mercado Pago") {
     return refuse(400, "payment_not_supported", "Por WhatsApp solo se puede pagar con Mercado Pago.");
   }
-  if (!(await confirmIsAfterQuote(ctx, body.inboundWamid))) {
-    return refuse(409, "not_confirmed", "El cliente todavía no confirmó después de ver la cotización.");
-  }
-  const draft = parseDraft(ctx.conversation.state);
-  if (draft) {
-    const units = draft.items.reduce((sum, i) => sum + i.qty, 0);
-    if (units > config.maxUnits || draft.subtotal + draft.fee > config.maxTotal) {
-      return limitExceeded("El pedido supera lo que puedo tomar por acá. Te paso con una persona.");
-    }
-  }
-  if ((await activeOrders(db, ctx.conversation.client_id, ctx.now)) >= config.maxActive) {
-    return limitExceeded("Ya tenés un pedido en curso. Cuando termine podés hacer otro, o te paso con una persona.");
-  }
+  const lost = await pendingPaymentLink(ctx);
+  if (lost) return lost;
 
-  const result = await confirmOrder(actionDeps(ctx, body.inboundWamid), {
-    payment_method: "Mercado Pago",
-    notes: body.notes || undefined,
-  });
+  const active = await activeOrders(db, ctx.conversation.client_id, ctx.now, config);
+  if (active === null) return unavailable();
+  if (active >= config.maxActive) return limitExceeded(ACTIVE_MESSAGE);
+
+  const result = await confirmOrder(
+    { ...actionDeps(ctx, body.inboundWamid), checkDraft: draftValidator(ctx, body.inboundWamid) },
+    { payment_method: "Mercado Pago", notes: body.notes || undefined },
+  );
   if (isActionError(result)) return fromActionError(result, 409);
   const response = reply(200, { ...result, ok: true });
-  await saveIdem(db, ctx.conversation.id, "confirm", ctx.idempotencyKey ?? body.inboundWamid, response);
+  await saveIdem(ctx, "confirm", ctx.idempotencyKey ?? body.inboundWamid, response);
   return response;
 }
 
 async function runCancel(ctx: Context, body: Parsed<"cancel">): Promise<BotResponse> {
+  const gate = allowlistGate(ctx.config, ctx.conversation);
+  if (gate) return gate;
   if (body.confirmed !== true) {
     return refuse(400, "not_confirmed", "Falta la confirmación explícita del cliente para cancelar.");
   }
   const result = await cancelOrder(actionDeps(ctx, body.inboundWamid));
   if (isActionError(result)) return fromActionError(result, 409);
   const response = reply(200, { ...result, ok: true });
-  await saveIdem(ctx.deps.db, ctx.conversation.id, "cancel", ctx.idempotencyKey ?? body.inboundWamid, response);
+  await saveIdem(ctx, "cancel", ctx.idempotencyKey ?? body.inboundWamid, response);
   return response;
 }
 
 async function runStatus(ctx: Context, body: Parsed<"status">): Promise<BotResponse> {
+  const gate = allowlistGate(ctx.config, ctx.conversation);
+  if (gate) return gate;
   const result = await orderStatus(actionDeps(ctx, body.inboundWamid));
   if (isActionError(result)) return fromActionError(result, 409);
   return reply(200, { ...result, ok: true });
@@ -285,9 +357,9 @@ function parseJson(raw: string): unknown {
 /** Orquesta firma, validación, verificación del wamid, interruptores e idempotencia. */
 async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Promise<BotResponse> {
   const now = (deps.now ?? (() => new Date()))();
-  const secrets = [deps.secrets.current, deps.secrets.previous].filter(Boolean);
-  // Sin secreto el endpoint está apagado (también es el corte de emergencia): falla cerrado.
-  if (!deps.secrets.current) return refuse(503, "not_configured", "Servicio no disponible.");
+  const secrets = [deps.secrets.current, deps.secrets.previous].filter(isUsableSecret);
+  // Sin secreto (o uno de menos de 32 caracteres) el endpoint está apagado: falla cerrado, es el corte de emergencia.
+  if (!isUsableSecret(deps.secrets.current)) return refuse(503, "not_configured", "Servicio no disponible.");
 
   if (!(await deps.rateLimit(`bot-ip:${req.ip}`, IP_LIMIT.max, IP_LIMIT.windowMs))) {
     return refuse(429, "rate_limited", "Demasiadas solicitudes.");
@@ -321,12 +393,13 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
   const { data: conversation } = await deps.db.from("wa_conversations").select("*").eq("id", body.conversationId).maybeSingle();
   if (!conversation) return refuse(404, "not_found", "Conversación no encontrada.");
 
+  // Pertenencia y dirección del wamid: vale siempre, también para un reintento demorado.
   const inbound = await loadInbound(deps.db, conversation.id, body.inboundWamid);
-  const fresh = inbound && now.getTime() - new Date(inbound.created_at).getTime() <= INBOUND_MAX_AGE_MS;
-  if (!inbound || inbound.direction !== "in" || !fresh) {
+  if (!inbound || inbound.direction !== "in") {
     return refuse(403, "forbidden", "El mensaje indicado no corresponde a esta conversación.");
   }
 
+  // Replay ANTES de la frescura: un reintento demorado de la cola recibe la respuesta ya calculada.
   if (op === "confirm" || op === "cancel") {
     const stored = idemOf(conversation.state)[op];
     if (stored && stored.key === idempotencyKey) {
@@ -334,7 +407,12 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
     }
   }
 
-  const ctx: Context = { req, deps, now, conversation, idempotencyKey };
+  if (now.getTime() - new Date(inbound.created_at).getTime() > INBOUND_MAX_AGE_MS) {
+    return refuse(403, "forbidden", "El mensaje indicado no corresponde a esta conversación.");
+  }
+
+  const config = await loadBotConfig(deps.db);
+  const ctx: Context = { req, deps, now, conversation, idempotencyKey, config };
   switch (op) {
     case "quote":
       return runQuote(ctx, body);

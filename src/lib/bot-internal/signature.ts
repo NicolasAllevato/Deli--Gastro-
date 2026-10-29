@@ -14,6 +14,12 @@ export const BOT_SIGNATURE_HEADER = "x-bot-signature";
 export const SIGNATURE_WINDOW_SECONDS = 60;
 /** Cuerpo máximo aceptado. Un pedido de 30 líneas pesa menos de 4 KB. */
 export const MAX_BODY_BYTES = 16 * 1024;
+/** Una firma HMAC-SHA256 en hex tiene exactamente 64 caracteres. */
+export const SIGNATURE_HEX_LENGTH = 64;
+/** Largo mínimo de un secreto utilizable; uno más corto se trata como ausente. */
+export const MIN_SECRET_LENGTH = 32;
+
+export const isUsableSecret = (secret: string): boolean => secret.length >= MIN_SECRET_LENGTH;
 
 export type SignatureFailure = "missing_headers" | "bad_timestamp" | "stale" | "future" | "bad_signature";
 
@@ -51,6 +57,7 @@ export interface VerifyInput {
 
 /** Compara en tiempo constante; el largo se revisa antes porque `timingSafeEqual` lo exige. */
 function sameHex(expectedHex: string, receivedHex: string): boolean {
+  if (receivedHex.length !== SIGNATURE_HEX_LENGTH) return false;
   if (!/^[0-9a-f]+$/i.test(receivedHex)) return false;
   const expected = Buffer.from(expectedHex, "hex");
   const received = Buffer.from(receivedHex, "hex");
@@ -70,7 +77,7 @@ export function verifyBotRequest(input: VerifyInput): SignatureCheck {
   // Se prueban todos los secretos sin cortar antes: el tiempo no revela cuál coincidió.
   let match = false;
   for (const secret of input.secrets) {
-    if (!secret) continue;
+    if (!isUsableSecret(secret)) continue;
     if (sameHex(signBotRequest(secret, parts), signature)) match = true;
   }
   return match ? { ok: true } : { ok: false, reason: "bad_signature" };

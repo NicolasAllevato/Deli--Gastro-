@@ -9,7 +9,7 @@ import type { BotDeps, BotResponse } from "../src/lib/bot-internal/handlers.ts";
 import type { BotOperation } from "../src/lib/bot-internal/schemas.ts";
 
 const T0 = new Date("2026-10-20T15:00:00.000Z");
-const SECRET = "secreto-de-prueba";
+const SECRET = "secreto-de-prueba-de-al-menos-32-caracteres";
 const CONV = "11111111-1111-4111-8111-111111111111";
 const PHONE = "5491155550101";
 const NEAR = { label: "Av. Corrientes 1234, CABA", lat: -34.6037, lng: -58.3816 };
@@ -49,12 +49,15 @@ interface CallOptions {
   rateLimit?: BotDeps["rateLimit"];
   secrets?: BotDeps["secrets"];
   rawBody?: string;
+  db?: DemoDb["db"];
+  nowShiftSec?: number;
 }
 
 async function call(demo: DemoDb, op: BotOperation, body: Record<string, unknown>, opts: CallOptions = {}): Promise<BotResponse> {
   const path = `/api/internal/bot/${op}`;
   const rawBody = opts.rawBody ?? JSON.stringify(body);
-  const timestamp = String(Math.floor(T0.getTime() / 1000) + (opts.tsOffset ?? 0));
+  const shift = opts.nowShiftSec ?? 0;
+  const timestamp = String(Math.floor(T0.getTime() / 1000) + shift + (opts.tsOffset ?? 0));
   const signature = signBotRequest(opts.secret ?? SECRET, { timestamp, method: opts.method ?? "POST", path: opts.signPath ?? path, body: rawBody });
   const headers = new Map<string, string>([["x-bot-timestamp", timestamp], ["x-bot-signature", signature]]);
   const wamid = body.inboundWamid;
@@ -64,9 +67,9 @@ async function call(demo: DemoDb, op: BotOperation, body: Record<string, unknown
     op,
     { method: "POST", path, headers: { get: (n) => headers.get(n.toLowerCase()) ?? null }, rawBody, ip: "1.2.3.4" },
     {
-      db: demo.db,
+      db: opts.db ?? demo.db,
       secrets: opts.secrets ?? { current: SECRET, previous: "" },
-      now: () => T0,
+      now: () => new Date(T0.getTime() + shift * 1000),
       rateLimit: opts.rateLimit ?? (async () => true),
       geocode: async () => [NEAR],
       gateway: () => fakeGateway,
@@ -112,8 +115,8 @@ describe("firma", () => {
   });
 
   it("acepta el secreto anterior durante la rotación", () => {
-    const prev = signBotRequest("viejo", parts);
-    assert.equal(verifyBotRequest({ ...base, secrets: [SECRET, "viejo"], signature: prev }).ok, true);
+    const prev = signBotRequest("secreto-viejo-de-al-menos-32-caracteres", parts);
+    assert.equal(verifyBotRequest({ ...base, secrets: [SECRET, "secreto-viejo-de-al-menos-32-caracteres"], signature: prev }).ok, true);
     assert.equal(verifyBotRequest({ ...base, secrets: [SECRET], signature: prev }).ok, false);
     assert.equal(verifyBotRequest({ ...base, secrets: ["", ""], signature: sig }).ok, false);
   });
@@ -141,7 +144,7 @@ describe("autenticación del endpoint", () => {
 
   it("acepta el secreto anterior", async () => {
     const demo = newDemo();
-    const res = await call(demo, "quote", quoteBody(demo), { secret: "viejo", secrets: { current: SECRET, previous: "viejo" } });
+    const res = await call(demo, "quote", quoteBody(demo), { secret: "secreto-viejo-de-al-menos-32-caracteres", secrets: { current: SECRET, previous: "secreto-viejo-de-al-menos-32-caracteres" } });
     assert.equal(res.status, 200);
   });
 
@@ -247,6 +250,7 @@ describe("topes y reglas de la v1", () => {
     const res = await call(demo, "quote", quoteBody(demo, { items: [{ product_id: productId(demo), qty: 13 }] }));
     assert.deepEqual([res.status, res.body.code], [422, "limit_exceeded"]);
     setConfig(demo.store, "bot_max_units", 20);
+    setConfig(demo.store, "bot_max_total", 500000);
     assert.equal((await call(demo, "quote", quoteBody(demo, { items: [{ product_id: productId(demo), qty: 13 }] }))).status, 200);
   });
 

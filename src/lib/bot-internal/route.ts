@@ -3,6 +3,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { getClientIp, rateLimit } from "@/utils/rate-limit";
 import { cleanEnv } from "@/lib/clean-env";
 import { handleBot } from "./handlers.ts";
+import { readLimited } from "./read-body.ts";
 import { MAX_BODY_BYTES } from "./signature.ts";
 import type { BotOperation } from "./schemas.ts";
 
@@ -12,7 +13,10 @@ export async function runBotRoute(op: BotOperation, req: NextRequest): Promise<N
   if (declared > MAX_BODY_BYTES) {
     return NextResponse.json({ ok: false, code: "too_large", error: "Cuerpo demasiado grande." }, { status: 413 });
   }
-  const rawBody = await req.text();
+  const rawBody = await readLimited(req, MAX_BODY_BYTES);
+  if (rawBody === null) {
+    return NextResponse.json({ ok: false, code: "too_large", error: "Cuerpo demasiado grande." }, { status: 413 });
+  }
   const result = await handleBot(
     op,
     {

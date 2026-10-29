@@ -199,13 +199,44 @@ Rotación: poner el nuevo en `BOT_INTERNAL_SECRET` y el viejo en `BOT_INTERNAL_S
 ### Claves de `global_config` (se leen en el servidor en cada llamada, sin caché)
 | Clave | Default | Efecto |
 |---|---|---|
-| `bot_orders_enabled` | `false` | Apagado: `quote` y `confirm` responden 403 `orders_disabled` (`status` y `cancel` siguen) |
-| `bot_orders_allowlist` | vacía | Lista de teléfonos; si no está vacía, solo esos pueden cotizar/confirmar (403 `orders_disabled`) |
+| `bot_orders_enabled` | `false` | Apagado: `quote` y `confirm` responden 403 `orders_disabled`. **No** afecta a `status` ni `cancel` |
+| `bot_orders_allowlist` | ausente | Ver reglas abajo. Aplica a `quote`, `confirm`, `status` y `cancel` (403 `orders_disabled`) |
 | `bot_max_units` | 12 | Unidades totales por pedido |
-| `bot_max_total` | 150000 | Importe máximo por pedido (ARS, subtotal + envío) |
-| `bot_max_active_orders` | 1 | Pedidos en curso del cliente (activos + pago pendiente) |
+| `bot_max_total` | 80000 | Importe máximo por pedido (ARS, subtotal + envío). Default conservador para el piloto: se sube desde `global_config` |
+| `bot_max_active_orders` | 1 | Pedidos en curso del cliente (activos recientes + pago pendiente vigente) |
+| `bot_active_window_hours` | 3 | Un pedido activo más viejo que esto no cuenta (un «En Camino» olvidado no bloquea al cliente para siempre) |
 
-Pasar un tope devuelve 422 `limit_exceeded` con mensaje en español para derivar a una persona.
+Pasar un tope devuelve 422 `limit_exceeded` con mensaje en español para derivar a una persona. En `quote` el tope se evalúa
+**antes** de guardar el borrador (uno fuera de tope nunca se persiste) y en `confirm` sobre el borrador que realmente se reclama, antes del claim.
+
+**Allowlist (fail-closed):** valor ausente, `null`, `[]` o texto vacío = sin restricción. `"*"` (texto o dentro de la lista) = todos, explícito.
+Cualquier otro valor definido que no dé ningún teléfono (objeto, número, typo, entradas sin dígitos) = **nadie** pasa. Los teléfonos se
+comparan por los últimos 10 dígitos.
+
+**Gates por operación:** `quote` y `confirm` exigen `bot_orders_enabled` + allowlist. `status` y `cancel` siguen solo la allowlist: con los pedidos
+apagados el cliente igual puede consultar y cancelar un pedido en curso.
+
+**`human_takeover`:** si la conversación está tomada por una persona, `quote` y `confirm` responden 409 `human_takeover` (`status` y `cancel` quedan libres).
+**Pedidos activos:** si la consulta falla responde 503 `unavailable` (no cuenta 0). Con `client_id` nulo se cuenta 0: la conversación nunca confirmó
+un pedido y el cliente recién se crea al confirmar.
+
+**`confirm` con link perdido:** si no hay borrador y el cliente tiene un pago pendiente vigente de WhatsApp, `confirm` devuelve 200
+`{awaiting_payment:true, payment_url, total, replayed:true}` en vez de chocar con el tope de pedidos activos. El replay por `Idempotency-Key` se
+resuelve antes del chequeo de ≤ 10 min del wamid (la pertenencia y que sea entrante se verifican siempre).
+
+### Reglas para el Worker
+- Firmar con un `x-bot-timestamp` **nuevo en cada reintento** (la ventana es de 60 s).
+- 403 y 422 **no son reintentables**; 400/401 tampoco. 409 `claim_lost` **sí** es reintentable (con la misma `Idempotency-Key`); 429 y 5xx también.
+- 409 `human_takeover`, `not_confirmed`, `expired`, `no_draft`: se resuelven en la conversación, no reintentando.
+
+### Antes del piloto
+- `BOT_INTERNAL_SECRET` (≥ 32 caracteres) **idéntico** en Vercel (Production **y** Preview) y en el Worker, sin BOM ni espacios.
+- Cargar explícitos en `global_config`: `bot_orders_enabled`, `bot_orders_allowlist` (con los teléfonos del piloto), `bot_max_units`, `bot_max_total`, `bot_max_active_orders`.
+- Plantillas de Meta aprobadas (confirmación, seguimiento, link de pago).
+- Monitorear `payment_intents` con `refund_error` o `approved` sin `order_id`.
+
+### Diferido
+Anular la preferencia de Mercado Pago al cancelar (depende del gateway), tabla de idempotencia propia, rate limit distribuido y pago de una intención vencida.
 
 ### Corte de emergencia
 Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;
