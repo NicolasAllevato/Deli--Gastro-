@@ -1,3 +1,4 @@
+import { isBotSilenced } from "@/lib/whatsapp/pause";
 import type { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
 import { ACTIVE_STATUSES } from "@/lib/orders";
@@ -272,7 +273,7 @@ async function runQuote(ctx: Context, body: Parsed<"quote">): Promise<BotRespons
   const { config } = ctx;
   const gate = ordersGate(config, ctx.conversation);
   if (gate) return gate;
-  if (ctx.conversation.human_takeover) return takeoverRefusal();
+  if (isBotSilenced(ctx.conversation)) return takeoverRefusal();
 
   const units = body.items.reduce((sum, i) => sum + i.qty, 0);
   if (units > config.maxUnits) return limitExceeded(LIMIT_MESSAGE);
@@ -326,7 +327,7 @@ async function runConfirm(ctx: Context, body: Parsed<"confirm">): Promise<BotRes
   const { config } = ctx;
   const gate = ordersGate(config, ctx.conversation);
   if (gate) return gate;
-  if (ctx.conversation.human_takeover) return takeoverRefusal();
+  if (isBotSilenced(ctx.conversation)) return takeoverRefusal();
 
   if (body.payment_method !== "Mercado Pago") {
     return refuse(400, "payment_not_supported", "Por WhatsApp solo se puede pagar con Mercado Pago.");

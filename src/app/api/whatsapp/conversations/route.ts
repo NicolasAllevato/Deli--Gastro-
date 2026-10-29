@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       phone: c.client_phone,
       name: (c.client_id && names.get(c.client_id)) || c.contact_name || c.client_phone,
       humanTakeover: c.human_takeover,
+      botPausedUntil: c.bot_paused_until ?? null,
       lastInboundAt: c.last_inbound_at,
       last: lastByConversation.get(c.id) ?? null,
     })),

@@ -46,6 +46,8 @@ v1.0, versionCode 1, firmada con esquema v2, en `public/descargas/`), gateway Fu
    pasaron por el chat (`deli_bot`, Meta, Cloudflare) y las claves de Supabase de `datos.txt`.
    **Coexistencia (código listo, falta ejecutar):** aplicar la migración `021_bot_paused_until.sql` ANTES
    de desplegar el Worker, y seguir `docs/META_COEXISTENCIA.md` (Embedded Signup v4+, webhooks, App Review).
+   Diferido de la coexistencia: leer el cuerpo del webhook por bytes (hoy `req.text()` con tope de 256 KB) y guardar `history`
+   (hoy solo se loguean conteos).
 7. **Menores:** decidir los canales privados de la 011; Leaked Password Protection; pasar el redirect a
    `permanent: true` cuando todo esté estable; `.gitattributes` con `*.gradle text eol=lf` para el ruido
    de fin de línea de `cap sync`.

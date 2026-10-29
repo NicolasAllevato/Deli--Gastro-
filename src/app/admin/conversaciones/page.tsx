@@ -8,10 +8,10 @@ import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { Composer } from "./_components/Composer";
 import { ConversationList } from "./_components/ConversationList";
 import { MessageThread } from "./_components/MessageThread";
-import type { ConversationItem, ThreadMessage } from "./_components/conversation-utils";
+import { attendedLabel, personAttends, type ConversationItem, type ThreadMessage } from "./_components/conversation-utils";
 
 interface Thread {
-  conversation: { id: string; phone: string; humanTakeover: boolean };
+  conversation: { id: string; phone: string; humanTakeover: boolean; botPausedUntil?: string | null };
   messages: ThreadMessage[];
 }
 
@@ -106,7 +106,7 @@ export default function ConversacionesPage() {
   const toggleTakeover = () => {
     if (!thread) return;
     void act(async () => {
-      await request(`/api/whatsapp/conversations/${thread.conversation.id}`, send("PATCH", { humanTakeover: !thread.conversation.humanTakeover }));
+      await request(`/api/whatsapp/conversations/${thread.conversation.id}`, send("PATCH", { humanTakeover: !personAttends(thread.conversation, Date.now()) }));
       await Promise.all([refreshThread(thread.conversation.id), refreshList()]);
     });
   };
@@ -154,11 +154,11 @@ export default function ConversacionesPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-sm text-gray-800 truncate">+{thread.conversation.phone}</p>
                   <p className="text-[11px] text-gray-500">
-                    {thread.conversation.humanTakeover ? "Atiende una persona (el agente no responde)" : "Responde el agente"}
+                    {attendedLabel(thread.conversation, now)}
                   </p>
                 </div>
                 <Button size="sm" variant="secondary" onClick={toggleTakeover} loading={busy} leftIcon={<Hand size={14} aria-hidden />}>
-                  {thread.conversation.humanTakeover ? "Devolver al agente" : "Tomar el control"}
+                  {personAttends(thread.conversation, now) ? "Devolver al agente" : "Tomar el control"}
                 </Button>
               </div>
 

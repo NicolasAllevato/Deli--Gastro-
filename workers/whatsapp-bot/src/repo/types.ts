@@ -13,7 +13,7 @@ export interface StoredConversation {
 
 export interface InboundRow {
   wamid: string;
-  type: "text" | "audio" | "unsupported";
+  type: "text" | "audio" | "unsupported" | "image" | "video" | "document";
   body: string | null;
 }
 
@@ -23,11 +23,15 @@ export interface InboundRepo {
   /** Guarda el mensaje entrante; false si ese wamid ya estaba (reintento de Meta). */
   saveInbound(conversationId: string, message: InboundRow): Promise<boolean>;
   updateStatus(wamid: string, status: DeliveryStatus): Promise<void>;
+  /** true si ese wamid ya está guardado como saliente (eco repetido o mensaje que mandó el propio bot). */
+  hasOutbound(wamid: string): Promise<boolean>;
   /**
-   * Eco de la app WhatsApp Business: pausa el bot en el chat hasta `until` (nunca acorta una pausa más larga)
-   * sin tocar `last_inbound_at`, y devuelve la conversación (la crea si no existía).
+   * Conversación del teléfono comparando los últimos 10 dígitos (AR mezcla 549.../54...); la crea solo si no hay ninguna.
+   * No toca `last_inbound_at`: un eco no es un mensaje del cliente (un chat creado así queda con `last_inbound_at` nulo).
    */
-  pauseBot(phone: string, until: Date): Promise<StoredConversation>;
+  ensureConversation(phone: string): Promise<StoredConversation>;
+  /** Pausa el bot en la conversación hasta `until`; nunca acorta una pausa más larga. */
+  pauseBot(conversationId: string, until: Date): Promise<void>;
   /** Guarda el eco como mensaje saliente del local; false si ese wamid ya estaba (reintento de Meta). */
   saveEcho(conversationId: string, message: InboundRow): Promise<boolean>;
   /** Minutos de pausa tras un eco (`bot_human_takeover_minutes`, 120 por defecto). */

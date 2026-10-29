@@ -200,6 +200,18 @@ describe("human_takeover y pedidos activos", () => {
     assert.notEqual((await call(demo, "cancel", cancelBody)).body.code, "human_takeover");
   });
 
+  it("una pausa por eco vigente bloquea quote y confirm igual que human_takeover; vencida no", async () => {
+    const demo = newDemo();
+    demo.store.wa_conversations[0]!.bot_paused_until = new Date(Date.now() + 3_600_000).toISOString();
+    for (const [op, body] of [["quote", quoteBody(demo)], ["confirm", confirmBody()]] as const) {
+      const res = await call(demo, op, body);
+      assert.deepEqual([res.status, res.body.code], [409, "human_takeover"]);
+    }
+    assert.equal((await call(demo, "status", statusBody)).status, 200);
+    demo.store.wa_conversations[0]!.bot_paused_until = new Date(Date.now() - 3_600_000).toISOString();
+    assert.equal((await call(demo, "quote", quoteBody(demo))).status, 200);
+  });
+
   it("un pedido activo más viejo que bot_active_window_hours no bloquea", async () => {
     const demo = await withCashOrder();
     const order = demo.store.orders.at(-1)!;

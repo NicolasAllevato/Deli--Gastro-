@@ -255,6 +255,8 @@ export interface Database {
           contact_name: string | null
           state: Json
           human_takeover: boolean
+          /** Pausa temporal del bot por eco de la app WhatsApp Business (migración 021). */
+          bot_paused_until?: string | null
           last_inbound_at: string | null
           created_at: string
           updated_at: string
@@ -273,6 +275,7 @@ export interface Database {
           contact_name?: string | null
           state?: Json
           human_takeover?: boolean
+          bot_paused_until?: string | null
           last_inbound_at?: string | null
         }
         Relationships: []

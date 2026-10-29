@@ -27,15 +27,33 @@ export function sqlInboundRepo(sql: postgres.Sql): InboundRepo {
       return { id: row.id, phone: row.client_phone, humanTakeover: row.human_takeover };
     },
 
-    async pauseBot(phone, until) {
-      // No toca last_inbound_at: un eco no es un mensaje del cliente.
-      const [row] = await sql<{ id: string; client_phone: string; human_takeover: boolean }[]>`
-        insert into public.wa_conversations (client_phone, client_id, bot_paused_until)
-        values (${phone}, ${CLIENT_BY_PHONE(sql, phone)}, ${until})
-        on conflict (client_phone) do update set
-          bot_paused_until = greatest(public.wa_conversations.bot_paused_until, excluded.bot_paused_until)
-        returning id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as human_takeover`;
+    async hasOutbound(wamid) {
+      const rows = await sql`select 1 from public.wa_messages where wamid = ${wamid} and direction = 'out' limit 1`;
+      return rows.length > 0;
+    },
+
+    async ensureConversation(phone) {
+      const find = () => sql<{ id: string; client_phone: string; human_takeover: boolean }[]>`
+        select id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as human_takeover
+        from public.wa_conversations
+        where right(client_phone, 10) = right(${phone}, 10)
+        order by created_at limit 1`;
+      let [row] = await find();
+      if (!row) {
+        await sql`
+          insert into public.wa_conversations (client_phone, client_id)
+          values (${phone}, ${CLIENT_BY_PHONE(sql, phone)})
+          on conflict (client_phone) do nothing`;
+        [row] = await find();
+      }
       return { id: row.id, phone: row.client_phone, humanTakeover: row.human_takeover };
+    },
+
+    async pauseBot(conversationId, until) {
+      await sql`
+        update public.wa_conversations
+        set bot_paused_until = greatest(bot_paused_until, ${until})
+        where id = ${conversationId}`;
     },
 
     async saveEcho(conversationId, message) {
