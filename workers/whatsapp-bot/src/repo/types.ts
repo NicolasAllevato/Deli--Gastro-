@@ -30,8 +30,11 @@ export interface InboundRepo {
    * No toca `last_inbound_at`: un eco no es un mensaje del cliente (un chat creado así queda con `last_inbound_at` nulo).
    */
   ensureConversation(phone: string): Promise<StoredConversation>;
-  /** Pausa el bot en la conversación hasta `until`; nunca acorta una pausa más larga. */
-  pauseBot(conversationId: string, until: Date): Promise<void>;
+  /**
+   * Pausa el bot hasta `until` en la conversación y en TODAS las que comparten sus últimos 10 dígitos (fail-closed);
+   * nunca acorta una pausa más larga. Devuelve cuántas filas pausó.
+   */
+  pauseBot(conversationId: string, until: Date): Promise<number>;
   /** Guarda el eco como mensaje saliente del local; false si ese wamid ya estaba (reintento de Meta). */
   saveEcho(conversationId: string, message: InboundRow): Promise<boolean>;
   /** Minutos de pausa tras un eco (`bot_human_takeover_minutes`, 120 por defecto). */

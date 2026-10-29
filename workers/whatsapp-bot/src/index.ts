@@ -104,7 +104,7 @@ async function processEvents(rawBody: string, phoneNumberId: string | null, env:
   const sql = connect(env);
   try {
     await handleWebhookEvents(events, {
-      repo: sqlInboundRepo(sql),
+      repo: sqlInboundRepo(sql, (message, detail) => console.error(message, detail)),
       phoneNumberId,
       buffer: (phone: string, message: BufferedMessage) => env.BUFFER.get(env.BUFFER.idFromName(phone)).add(phone, message),
       log: (message, detail) => console.error(message, detail),
@@ -161,7 +161,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
     const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
     const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
     const deps = {
-      repo: sqlBotRepo(sql),
+      repo: sqlBotRepo(sql, (message, detail) => console.error(message, detail)),
       run,
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),

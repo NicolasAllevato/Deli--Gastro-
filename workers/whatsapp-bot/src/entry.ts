@@ -93,7 +93,8 @@ async function handleEcho(echo: SmbEchoEvent, deps: EntryDeps, minutesOf: () => 
   const conversation = await deps.repo.ensureConversation(phone);
   if (!(await deps.repo.saveEcho(conversation.id, row))) return;
   const sentAt = Math.min(declared, now);
-  await deps.repo.pauseBot(conversation.id, new Date(sentAt + (await minutesOf()) * 60_000));
+  const paused = await deps.repo.pauseBot(conversation.id, new Date(sentAt + (await minutesOf()) * 60_000));
+  if (paused > 1) deps.log("[whatsapp-bot] eco: se pausaron varias conversaciones con el mismo teléfono", { conversations: paused });
 }
 
 /** `history`, `smb_app_state_sync` y `account_update`: solo conteos o el nombre del evento (sin datos personales). */

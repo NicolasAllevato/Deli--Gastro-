@@ -33,7 +33,7 @@ function memoryRepo(initial: { takeover?: boolean } = {}) {
     async ensureConversation() {
       throw new Error("no se usa en estos tests");
     },
-    async pauseBot() {
+    async pauseBot(): Promise<number> {
       throw new Error("no se usa en estos tests");
     },
     async saveEcho() {

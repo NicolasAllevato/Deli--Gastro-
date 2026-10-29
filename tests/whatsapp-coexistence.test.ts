@@ -7,6 +7,7 @@ import { isBotPausedUntil, isBotSilenced } from "../src/lib/whatsapp/pause.ts";
 import { attendedLabel, personAttends } from "../src/app/admin/conversaciones/_components/conversation-utils.ts";
 import { handleWebhookEvents, type EntryDeps } from "../workers/whatsapp-bot/src/entry.ts";
 import { processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
+import { phoneTail, resolveMatches } from "../workers/whatsapp-bot/src/repo/phone-tail.ts";
 import { takeoverMinutesFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import type { BotRepo, InboundRepo, InboundRow, StoredConversation } from "../workers/whatsapp-bot/src/repo/types.ts";
 import type { BufferedMessage } from "../workers/whatsapp-bot/src/batching.ts";
@@ -123,8 +124,10 @@ function memoryRepo(clock: { t: number }) {
     },
     async pauseBot(conversationId, until) {
       calls.order.push("pause");
-      const c = [...conversations.values()].find((x) => x.id === conversationId)!;
-      c.pausedUntil = Math.max(c.pausedUntil, until.getTime());
+      const target = [...conversations.values()].find((x) => x.id === conversationId)!;
+      const same = [...conversations.values()].filter((x) => x.phone.slice(-10) === target.phone.slice(-10));
+      for (const c of same) c.pausedUntil = Math.max(c.pausedUntil, until.getTime());
+      return same.length;
     },
     async saveEcho(_id, msg) {
       calls.order.push("save");
@@ -319,6 +322,34 @@ describe("eco de la app WhatsApp Business en el Worker", () => {
     }
     assert.equal(logs.length, 3);
     assert.ok(logs.every((l) => l.includes("ALERTA")));
+  });
+});
+
+describe("búsqueda única por últimos 10 dígitos", () => {
+  it("phoneTail iguala 549... con 54... y ignora símbolos", () => {
+    assert.equal(phoneTail("+54 9 11 0000-0001"), "1100000001");
+    assert.equal(phoneTail("541100000001"), phoneTail("5491100000001"));
+    assert.equal(phoneTail("12345"), "12345");
+  });
+
+  it("resolveMatches elige la primera fila y es fail-closed si cualquiera está silenciada", () => {
+    assert.equal(resolveMatches([]), null);
+    const match = resolveMatches([{ id: "nueva", silenced: false }, { id: "vieja", silenced: true }])!;
+    assert.deepEqual([match.primary.id, match.silenced, match.duplicates], ["nueva", true, 1]);
+    assert.deepEqual(resolveMatches([{ id: "a", silenced: false }]), { primary: { id: "a", silenced: false }, silenced: false, duplicates: 0 });
+  });
+
+  it("un eco con conversaciones duplicadas pausa todas y lo loguea sin teléfonos", async () => {
+    const clock = { t: T0 };
+    const { repo, conversations } = memoryRepo(clock);
+    conversations.set("541100000001", { id: "c-54", phone: "541100000001", pausedUntil: 0 });
+    conversations.set("5491100000001", { id: "c-549", phone: "5491100000001", pausedUntil: 0 });
+    const logs: string[] = [];
+    await handleWebhookEvents(parseCoexistence(echoPayload()), depsFor(repo, clock, logs));
+    assert.ok((conversations.get("541100000001")?.pausedUntil ?? 0) > 0);
+    assert.ok((conversations.get("5491100000001")?.pausedUntil ?? 0) > 0);
+    assert.equal(logs.length, 1);
+    assert.ok(!logs[0].includes("1100000001"));
   });
 });
 

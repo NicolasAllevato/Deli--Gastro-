@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
+import { phoneTail, resolveMatches } from "./phone-tail.ts";
 import type { InboundRepo } from "./types.ts";
 
 export type * from "./types.ts";
@@ -12,19 +13,46 @@ const CLIENT_BY_PHONE = (sql: postgres.Sql, phone: string) => sql`
    order by created_at
    limit 1)`;
 
-export function sqlInboundRepo(sql: postgres.Sql): InboundRepo {
+type Row = { id: string; client_phone: string; silenced: boolean };
+type Log = (message: string, detail?: unknown) => void;
+
+const stored = (row: Row, silenced: boolean) => ({ id: row.id, phone: row.client_phone, humanTakeover: silenced });
+
+export function sqlInboundRepo(sql: postgres.Sql, log: Log = () => {}): InboundRepo {
+  /** Conversaciones con los mismos 10 dígitos, la de actividad más reciente primero. */
+  const matching = (phone: string) => sql<Row[]>`
+    select id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as silenced
+    from public.wa_conversations
+    where right(client_phone, 10) = ${phoneTail(phone)}
+    order by coalesce(last_inbound_at, created_at) desc, created_at desc`;
+
+  const warnDuplicates = (count: number) => {
+    if (count > 0) log("[whatsapp-bot] varias conversaciones comparten el teléfono (últimos 10 dígitos)", { duplicates: count });
+  };
+
   return {
     async upsertConversation(phone, name) {
+      const found = resolveMatches(await matching(phone));
+      if (found) {
+        warnDuplicates(found.duplicates);
+        await sql`
+          update public.wa_conversations set
+            contact_name = coalesce(contact_name, ${name}),
+            client_id = coalesce(client_id, ${CLIENT_BY_PHONE(sql, phone)}),
+            last_inbound_at = now()
+          where id = ${found.primary.id}`;
+        return stored(found.primary, found.silenced);
+      }
       // Atómico: dos mensajes simultáneos del mismo teléfono no crean dos conversaciones.
-      const [row] = await sql<{ id: string; client_phone: string; human_takeover: boolean }[]>`
+      const [row] = await sql<Row[]>`
         insert into public.wa_conversations (client_phone, contact_name, client_id, last_inbound_at)
         values (${phone}, ${name}, ${CLIENT_BY_PHONE(sql, phone)}, now())
         on conflict (client_phone) do update set
           contact_name = coalesce(public.wa_conversations.contact_name, excluded.contact_name),
           client_id = coalesce(public.wa_conversations.client_id, excluded.client_id),
           last_inbound_at = now()
-        returning id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as human_takeover`;
-      return { id: row.id, phone: row.client_phone, humanTakeover: row.human_takeover };
+        returning id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as silenced`;
+      return stored(row, row.silenced);
     },
 
     async hasOutbound(wamid) {
@@ -33,27 +61,26 @@ export function sqlInboundRepo(sql: postgres.Sql): InboundRepo {
     },
 
     async ensureConversation(phone) {
-      const find = () => sql<{ id: string; client_phone: string; human_takeover: boolean }[]>`
-        select id, client_phone, (human_takeover or coalesce(bot_paused_until > now(), false)) as human_takeover
-        from public.wa_conversations
-        where right(client_phone, 10) = right(${phone}, 10)
-        order by created_at limit 1`;
-      let [row] = await find();
-      if (!row) {
+      let found = resolveMatches(await matching(phone));
+      if (!found) {
         await sql`
           insert into public.wa_conversations (client_phone, client_id)
           values (${phone}, ${CLIENT_BY_PHONE(sql, phone)})
           on conflict (client_phone) do nothing`;
-        [row] = await find();
+        found = resolveMatches(await matching(phone));
       }
-      return { id: row.id, phone: row.client_phone, humanTakeover: row.human_takeover };
+      if (!found) throw new Error("no se pudo crear la conversación del eco");
+      warnDuplicates(found.duplicates);
+      return stored(found.primary, found.silenced);
     },
 
     async pauseBot(conversationId, until) {
-      await sql`
-        update public.wa_conversations
-        set bot_paused_until = greatest(bot_paused_until, ${until})
-        where id = ${conversationId}`;
+      // Fail-closed: pausa TODAS las conversaciones con los mismos 10 dígitos que la elegida.
+      const rows = await sql`
+        update public.wa_conversations set bot_paused_until = greatest(bot_paused_until, ${until})
+        where right(client_phone, 10) = (select right(client_phone, 10) from public.wa_conversations where id = ${conversationId})
+        returning id`;
+      return rows.length;
     },
 
     async saveEcho(conversationId, message) {
