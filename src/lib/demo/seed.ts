@@ -21,7 +21,9 @@ export type TableName =
   | "payment_intents"
   | "order_items"
   | "courier_locations"
-  | "couriers";
+  | "couriers"
+  | "fudo_product_map"
+  | "fudo_payment_map";
 
 export type Tables = Record<TableName, Row[]>;
 
@@ -524,5 +526,6 @@ export function buildSeed(): Tables {
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
     integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [], payment_intents: [], order_items: [], courier_locations: [],
     couriers: demoCouriers(),
+    fudo_product_map: [], fudo_payment_map: [],
   };
 }
