@@ -140,6 +140,14 @@ npx wrangler deploy
 En Vercel: `FUDO_GATEWAY_URL` (URL del Worker) y `FUDO_GATEWAY_SECRET` (el mismo). En el panel de Fudo,
 la URL de webhooks es `<worker>/webhook`.
 
-Pendiente: pantalla admin de mapeo de productos y medios de pago; ajustar `parseFudoWebhook` con el
+Pantalla admin de mapeo: HECHA en `/admin/fudo` (Configuración > Fudo; API `/api/admin/fudo-map`).
+- Productos: input de id con sugerencias del catálogo de Fudo (`GET /products` vía el Worker, forma real
+  `{ products: [{ id, name, active, ... }] }`). Si el catálogo está disponible, el servidor valida que el id exista
+  (400 si no) y guarda el nombre del catálogo.
+- Medios de pago: la API de Fudo NO tiene endpoint para listarlos; los ids se piden a Fudo y se cargan a mano.
+- Al guardar productos, los pedidos `skipped` por "Productos sin mapear a Fudo" de las últimas 24 h se reencolan a
+  `pending` (con `fudo_attempts = 0`) y el Worker los reenvía en su próximo cron.
+
+Pendiente: ajustar `parseFudoWebhook` con el
 primer webhook real (queda en los logs del Worker); confirmar con Fudo si `externalId` deduplica
 (si no, un timeout después de que Fudo creó el pedido puede duplicarlo al reintentar).

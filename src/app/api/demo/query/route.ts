@@ -15,7 +15,7 @@ const planSchema = z.object({
   columns: z.string(),
   filters: z.array(
     z.object({
-      op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "not"]),
+      op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "like", "not"]),
       column: z.string(),
       value: z.unknown(),
     }),

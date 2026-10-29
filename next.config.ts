@@ -77,11 +77,13 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
-        // Un solo enlace público: el dominio viejo de Vercel manda todo a dely.opsyn.app.
-        source: "/:path*",
+        // Un solo enlace público: el dominio viejo de Vercel manda las páginas a dely.opsyn.app.
+        // /api queda afuera: webhooks (Meta, Mercado Pago) y crons no siguen redirects.
+        // Temporal (307) hasta confirmar que todo funciona; después pasar a permanent: true.
+        source: "/:path((?!api(?:/|$)).*)",
         has: [{ type: "host", value: "deli-gastro.vercel.app" }],
-        destination: "https://dely.opsyn.app/:path*",
-        permanent: true,
+        destination: "https://dely.opsyn.app/:path",
+        permanent: false,
       },
     ];
   },

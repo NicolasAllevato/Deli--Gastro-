@@ -55,6 +55,7 @@ class Builder implements PromiseLike<QueryResult> {
   in(c: string, v: unknown[]): this { return this.filter("in", c, v); }
   is(c: string, v: unknown): this { return this.filter("is", c, v); }
   ilike(c: string, p: string): this { return this.filter("ilike", c, p); }
+  like(c: string, p: string): this { return this.filter("like", c, p); }
   not(c: string, op: FilterOp, v: unknown): this { return this.filter("not", c, { op, value: v }); }
   order(column: string, opts?: { ascending?: boolean }): this {
     this.plan.order.push({ column, ascending: opts?.ascending ?? true });

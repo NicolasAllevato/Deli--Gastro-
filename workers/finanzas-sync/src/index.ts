@@ -19,12 +19,12 @@ async function syncDailyReport(env: Env): Promise<void> {
   const endOfDay = `${today}T23:59:59.999Z`;
 
   const headers = {
-    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-    authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY.trim(),
+    authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY.trim()}`,
   };
 
   const ordersRes = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/orders?select=total,status,created_at` +
+    `${env.SUPABASE_URL.trim()}/rest/v1/orders?select=total,status,created_at` +
       `&created_at=gte.${startOfDay}&created_at=lte.${endOfDay}`,
     { headers },
   );
@@ -45,7 +45,7 @@ async function syncDailyReport(env: Env): Promise<void> {
   // merge sobre la PK (`id`, aleatoria) y a partir de la 2da corrida del día
   // el insert choca con `unique(report_date)` (409) y el reporte queda
   // congelado con los datos de la primera hora.
-  const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/reports_daily?on_conflict=report_date`, {
+  const upsertRes = await fetch(`${env.SUPABASE_URL.trim()}/rest/v1/reports_daily?on_conflict=report_date`, {
     method: "POST",
     headers: {
       ...headers,

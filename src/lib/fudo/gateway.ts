@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { parseFudoCatalog, type FudoCatalogItem } from "@/lib/fudo/mapping";
 
 /**
  * Enlace con el Worker `fudo-gateway` (workers/fudo-gateway), que es quien habla con la API de Fudo.
@@ -45,5 +46,36 @@ export async function requestFudoSync(orderId: string, config = fudoGatewayConfi
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+const CATALOG_MAX_BYTES = 1_000_000;
+
+/**
+ * Catálogo de productos de Fudo vía el Worker (la app firma el path). Sirve para sugerir ids en la
+ * pantalla de mapeo; nunca tira: devuelve [] si la integración está apagada o el Worker no responde.
+ */
+export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<FudoCatalogItem[]> {
+  if (!config) return [];
+  try {
+    const res = await fetch(`${config.url}/products`, {
+      headers: { [GATEWAY_SIGNATURE_HEADER]: signGatewayBody("/products", config.secret) },
+      cache: "no-store",
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) {
+      console.warn(`[fudo] el Worker respondió ${res.status} al pedir el catálogo`);
+      return [];
+    }
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    const text = declared > CATALOG_MAX_BYTES ? "" : await res.text();
+    if (declared > CATALOG_MAX_BYTES || new TextEncoder().encode(text).byteLength > CATALOG_MAX_BYTES) {
+      console.warn("[fudo] el catálogo supera el tamaño máximo permitido");
+      return [];
+    }
+    return parseFudoCatalog(JSON.parse(text));
+  } catch {
+    console.warn("[fudo] no se pudo leer el catálogo del Worker");
+    return [];
   }
 }
