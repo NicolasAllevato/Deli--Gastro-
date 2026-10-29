@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import { isDemoMode } from "@/lib/demo/mode";
 import { createWhatsAppClient, type TemplateInfo, type WhatsAppClient } from "./client.ts";
+import { isCoexistenceValue } from "./embedded-signup.ts";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -13,6 +14,18 @@ export interface WhatsAppSettings {
   /** App ID y Config ID de Embedded Signup: públicos (los usa el SDK en el navegador). */
   appId: string | null;
   configId: string | null;
+  /** "1"/"0": Embedded Signup con onboarding de la app WhatsApp Business (coexistencia). Vacío = no. */
+  coexistence: string | null;
+}
+
+/** Coexistencia activa solo si el admin la activó (vacío = comportamiento anterior: estándar con PIN). */
+export function isCoexistenceEnabled(s: Pick<WhatsAppSettings, "coexistence">): boolean {
+  return isCoexistenceValue(s.coexistence);
+}
+
+/** Nombres de las variables de entorno `WHATSAPP_*` que están tapando lo guardado en la base. */
+export function envOverrides(names: readonly SettingName[]): string[] {
+  return names.filter((n) => fromEnv(n) !== null).map((n) => SOURCES[n].env);
 }
 
 export type SettingName = keyof WhatsAppSettings;
@@ -26,6 +39,7 @@ const SOURCES: Record<SettingName, { key: string; env: string }> = {
   verifyToken: { key: "whatsapp_verify_token", env: "WHATSAPP_VERIFY_TOKEN" },
   appId: { key: "whatsapp_app_id", env: "WHATSAPP_APP_ID" },
   configId: { key: "whatsapp_config_id", env: "WHATSAPP_CONFIG_ID" },
+  coexistence: { key: "whatsapp_coexistence", env: "WHATSAPP_COEXISTENCE" },
 };
 
 const NAMES = Object.keys(SOURCES) as SettingName[];

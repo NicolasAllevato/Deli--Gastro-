@@ -3,20 +3,26 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
-import { canReceive, canSend, loadWhatsAppSettings, saveWhatsAppSettings } from "@/lib/whatsapp/config";
+import { canReceive, canSend, envOverrides, isCoexistenceEnabled, loadWhatsAppSettings, saveWhatsAppSettings } from "@/lib/whatsapp/config";
 import { maskSecret } from "@/lib/whatsapp/mask";
+import { ID_PATTERN } from "@/lib/whatsapp/embedded-signup";
 
 const field = z.string().trim().max(512).optional();
 
+/** Ids de Meta: solo dígitos (vacío = no cambiar). */
+const metaId = (label: string) =>
+  z.union([z.literal(""), z.string().trim().regex(ID_PATTERN, `${label} no es válido: solo dígitos.`)]).optional();
+
 const putSchema = z
   .object({
-    phoneNumberId: field,
-    wabaId: field,
+    phoneNumberId: metaId("El Phone Number ID"),
+    wabaId: metaId("El WABA ID"),
     accessToken: field,
     appSecret: field,
     verifyToken: field,
     appId: field,
     configId: field,
+    coexistence: z.enum(["0", "1"]).optional(),
   })
   .strict();
 
@@ -41,6 +47,9 @@ async function currentState() {
     verifyToken: settings.verifyToken ?? "",
     appId: settings.appId ?? "",
     configId: settings.configId ?? "",
+    coexistence: isCoexistenceEnabled(settings),
+    /** true si WHATSAPP_COEXISTENCE está definida en el entorno: el interruptor del panel no puede cambiarla. */
+    coexistenceLocked: envOverrides(["coexistence"]).length > 0,
     accessTokenHint: maskSecret(settings.accessToken),
     appSecretHint: maskSecret(settings.appSecret),
     canSend: canSend(settings),
