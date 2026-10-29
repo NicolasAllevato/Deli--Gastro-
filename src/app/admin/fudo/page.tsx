@@ -3,11 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Save, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui";
-import type { FudoCatalogItem, MappingState, SaveInput } from "@/lib/fudo/mapping";
+import type { FudoCatalogItem, MappingState, SaveInput, SkippedSummary } from "@/lib/fudo/mapping";
 
 interface MapResponse extends MappingState {
   catalog: FudoCatalogItem[];
   gatewayConfigured: boolean;
+  skipped: SkippedSummary;
+}
+
+const NO_SKIPPED: SkippedSummary = { byMapping: { count: 0, oldestAt: null, recentCount: 0 }, otherSkipped: 0, stuck: 0 };
+
+function hasSkippedNotice(s: SkippedSummary | undefined): s is SkippedSummary {
+  return !!s && (s.byMapping.count > 0 || s.otherSkipped > 0 || s.stuck > 0);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 const inputClass =
@@ -56,6 +68,7 @@ export default function FudoMapPage() {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [requeued, setRequeued] = useState(0);
+  const [staleNotice, setStaleNotice] = useState(false);
   const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
 
   const load = (next: MapResponse) => {
@@ -126,9 +139,14 @@ export default function FudoMapPage() {
     setRejectedIds(new Set());
     try {
       const res = await request<MapResponse & { requeued: number }>("PUT", diff.input);
-      load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false });
+      load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false, skipped: data?.skipped ?? NO_SKIPPED });
       setRequeued(res.requeued ?? 0);
       setSaved(true);
+      // El PUT no trae el aviso: se relee para que baje la cuenta de omitidos.
+      setStaleNotice(false);
+      request<MapResponse>("GET")
+        .then((fresh) => setData((d) => (d ? { ...d, skipped: fresh.skipped ?? NO_SKIPPED } : d)))
+        .catch(() => setStaleNotice(true));
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "No se pudo guardar.";
       if (e instanceof HttpError && e.status === 400) {
@@ -175,6 +193,31 @@ export default function FudoMapPage() {
 
       {data && (
         <>
+          {data.gatewayConfigured && hasSkippedNotice(data.skipped) && (
+            <div role="status" className="badge-orange text-xs font-bold px-3 py-2 rounded-lg flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+              <div className="space-y-1">
+                {data.skipped.byMapping.count > 0 && (
+                  <p>
+                    {data.skipped.byMapping.count} {data.skipped.byMapping.count === 1 ? "pedido no llegó" : "pedidos no llegaron"} a Fudo por productos sin mapear
+                    {data.skipped.byMapping.oldestAt ? ` (el más viejo: ${formatDate(data.skipped.byMapping.oldestAt)})` : ""}.
+                    {" "}Cargá el mapeo y guardá: los de las últimas 24 h ({data.skipped.byMapping.recentCount}) se reenvían al guardar; los más viejos no se reenvían solos, pasalos a Fudo a mano.
+                  </p>
+                )}
+                {data.skipped.otherSkipped > 0 && (
+                  <p>
+                    {data.skipped.otherSkipped} {data.skipped.otherSkipped === 1 ? "pedido fue rechazado o no se pudo enviar" : "pedidos fueron rechazados o no se pudieron enviar"} a Fudo por otro motivo: revisá la integración.
+                  </p>
+                )}
+                {data.skipped.stuck > 0 && (
+                  <p>
+                    {data.skipped.stuck} {data.skipped.stuck === 1 ? "pedido lleva" : "pedidos llevan"} más de 10 minutos esperando para enviarse a Fudo: revisá que el gateway esté funcionando.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <section role="status" className="neumorphic rounded-2xl p-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
             {data.unmappedProducts + data.unmappedPayments === 0 ? (
               <span className="badge-green px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5">
@@ -278,6 +321,11 @@ export default function FudoMapPage() {
             {diff?.invalid && (
               <p role="alert" className="badge-red text-xs font-bold px-2.5 py-1 rounded-full">
                 Hay ids inválidos: tienen que ser enteros entre 1 y {MAX_FUDO_ID.toLocaleString("es-AR")}.
+              </p>
+            )}
+            {staleNotice && (
+              <p role="status" className="text-xs text-gray-500">
+                No se pudo actualizar el aviso de pedidos omitidos; recargá la página para verlo.
               </p>
             )}
             {saved && (

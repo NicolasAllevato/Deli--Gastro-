@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { fetchFudoCatalog, fudoGatewayConfig } from "@/lib/fudo/gateway";
-import { loadMapping, suggestionsFrom } from "@/lib/fudo/mapping";
+import { buildMapResponse, safeCountSkippedOrders, loadMapping } from "@/lib/fudo/mapping";
 import { processSaveRequest } from "@/lib/fudo/save-request";
 
 // Mapeo de productos y medios de pago de la app con Fudo (tablas fudo_product_map / fudo_payment_map).
@@ -13,8 +13,9 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
   try {
     const config = fudoGatewayConfig();
-    const [mapping, catalog] = await Promise.all([loadMapping(createAdminClient()), fetchFudoCatalog(config)]);
-    return NextResponse.json({ ...mapping, catalog: suggestionsFrom(catalog), gatewayConfigured: config !== null });
+    const db = createAdminClient();
+    const [mapping, catalog, skipped] = await Promise.all([loadMapping(db), fetchFudoCatalog(config), safeCountSkippedOrders(db)]);
+    return NextResponse.json(buildMapResponse(mapping, catalog, config !== null, skipped));
   } catch (error: unknown) {
     console.error("[admin/fudo-map] leer", error);
     return NextResponse.json({ error: "No se pudo leer el mapeo de Fudo." }, { status: 500 });
