@@ -90,12 +90,12 @@ export default {
       );
     }
 
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/orders`, {
+    const res = await fetch(`${env.SUPABASE_URL.trim()}/rest/v1/orders`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY.trim(),
+        authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY.trim()}`,
         prefer: "resolution=merge-duplicates,return=representation",
       },
       body: JSON.stringify(parsed.data),
