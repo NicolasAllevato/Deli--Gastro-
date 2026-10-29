@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rejectCrossOrigin } from "@/lib/auth/requireRole";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
@@ -13,6 +14,9 @@ const GLOBAL = { max: 60, windowMs: 15 * 60_000 };
 const bodySchema = z.object({ pin: pinSchema });
 
 export async function POST(req: NextRequest) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   const tooMany = NextResponse.json(
     { error: "Demasiados intentos. Esperá 15 minutos o pedile ayuda al local." },
     { status: 429 },

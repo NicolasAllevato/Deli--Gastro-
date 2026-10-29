@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectCrossOrigin } from "@/lib/auth/requireRole";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
@@ -18,6 +19,9 @@ export async function GET() {
 
 /** Inicia sesión con una de las cuentas de ejemplo. */
 export async function POST(req: Request) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   if (!isDemoMode()) return notFound();
 
   const parsed = loginSchema.safeParse(await req.json().catch(() => null));
@@ -37,7 +41,10 @@ export async function POST(req: Request) {
 }
 
 /** Cierra la sesión demo. */
-export async function DELETE() {
+export async function DELETE(req: Request) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   if (!isDemoMode()) return notFound();
   const cookieStore = await cookies();
   cookieStore.delete(DEMO_COOKIE);

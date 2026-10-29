@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectCrossOrigin } from "@/lib/auth/requireRole";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
@@ -31,6 +32,9 @@ const planSchema = z.object({
 
 /** Ejecuta un plan de consulta del cliente falso del navegador (solo modo demo). */
 export async function POST(req: Request) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   if (!isDemoMode()) return NextResponse.json({ error: "No encontrado." }, { status: 404 });
 
   const cookieStore = await cookies();

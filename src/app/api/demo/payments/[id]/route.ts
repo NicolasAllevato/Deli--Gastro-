@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { rejectCrossOrigin } from "@/lib/auth/requireRole";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { isDemoMode } from "@/lib/demo/mode";
@@ -14,6 +15,9 @@ const bodySchema = z.object({ outcome: z.enum(["approved", "rejected"]) });
  * o el pago hubiera sido rechazado, pasando por la misma lógica que el webhook real.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   if (!isDemoMode()) return NextResponse.json({ error: "No encontrado." }, { status: 404 });
 
   const id = z.string().uuid().safeParse((await params).id);
