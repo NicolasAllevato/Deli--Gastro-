@@ -22,11 +22,17 @@ crons = ["*/5 * * * *"]
 
 [vars]
 FUDO_API_URL = "https://integrations.fu.do/fudo"
+# API pública de Fudo (catálogo y ventas): token en FUDO_AUTH_URL, datos en FUDO_PUBLIC_API_URL.
+FUDO_AUTH_URL = "https://auth.fu.do/api"
+FUDO_PUBLIC_API_URL = "https://api.fu.do/v1alpha1"
 APP_URL = "https://dely.opsyn.app"
+# Sync automático del catálogo cada 15 min: "0" apagado, "1" prendido. Antes de prender en otro entorno, revisar un simulacro con POST /catalog-sync?dry=1.
+CATALOG_CRON = "1"
 # DEBUG_WEBHOOK_BODY = "1"  # temporal: loguea el webhook completo (datos del cliente) hasta conocer el formato
 
 # Secrets (npx wrangler secret put <NOMBRE>, nunca en el repo):
-#   FUDO_CLIENT_ID, FUDO_CLIENT_SECRET   credenciales del usuario de integración (crm-dely@lagambeta)
+#   FUDO_API_KEY, FUDO_API_SECRET        credenciales de la API pública (usuario crm-dely@lagambeta): catálogo y ventas
+#   FUDO_CLIENT_ID, FUDO_CLIENT_SECRET   credenciales de la API de integraciones (pedidos); llegan con el integrator token
 #   FUDO_INTEGRATOR_TOKEN                lo asigna Fudo al aprobar la integración
 #   FUDO_GATEWAY_SECRET                  compartido con la app (misma variable en Vercel)
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY

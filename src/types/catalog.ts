@@ -18,4 +18,6 @@ export interface Product {
   is_active: boolean;
   /** Puntos por cada $100 del plato; pisa los de la categoría. `null` = hereda. */
   points_per_100: number | null;
+  /** Id en Fudo. Si está, Fudo manda en nombre, precio, disponibilidad y categoría (solo lectura acá). */
+  fudo_id?: number | null;
 }

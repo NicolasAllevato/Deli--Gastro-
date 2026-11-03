@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui";
 import type { FudoCatalogItem, MappingState, SaveInput, SkippedSummary } from "@/lib/fudo/mapping";
 
@@ -70,6 +70,8 @@ export default function FudoMapPage() {
   const [requeued, setRequeued] = useState(0);
   const [staleNotice, setStaleNotice] = useState(false);
   const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const load = (next: MapResponse) => {
     setData(next);
@@ -162,6 +164,27 @@ export default function FudoMapPage() {
     }
   };
 
+  const runCatalogSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/fudo-sync", { method: "POST", cache: "no-store" });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string; productsCreated?: number; productsUpdated?: number; productsDeactivated?: number;
+      };
+      if (!res.ok) throw new Error(json.error ?? "No se pudo sincronizar el catálogo.");
+      setSyncMessage(
+        `Catálogo sincronizado: ${json.productsCreated ?? 0} nuevos, ${json.productsUpdated ?? 0} actualizados, ${json.productsDeactivated ?? 0} desactivados.`,
+      );
+      await fetchState();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "No se pudo sincronizar el catálogo.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const onSaveClick = () => (removals > 0 ? setConfirming(true) : void runSave());
 
   const setDraft = (key: string, value: string) => {
@@ -216,6 +239,24 @@ export default function FudoMapPage() {
                 )}
               </div>
             </div>
+          )}
+
+          {data.gatewayConfigured && (
+            <section className="neumorphic rounded-2xl p-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+              <button
+                type="button"
+                onClick={() => void runCatalogSync()}
+                disabled={syncing}
+                className="btn-glow px-4 py-2 rounded-xl text-sm font-bold text-white bg-brand-orange inline-flex items-center gap-2 disabled:opacity-60"
+              >
+                {syncing ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <RefreshCw size={14} aria-hidden />}
+                Sincronizar catálogo ahora
+              </button>
+              <span className="text-xs text-gray-500">
+                Fudo manda en nombre, precio, disponibilidad y categoría; se sincroniza solo cada 15 minutos.
+              </span>
+              {syncMessage && <span role="status" className="text-xs font-bold text-gray-700">{syncMessage}</span>}
+            </section>
           )}
 
           <section role="status" className="neumorphic rounded-2xl p-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">

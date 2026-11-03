@@ -386,6 +386,9 @@ export interface Database {
           points_per_100: number | null
           created_at: string
           updated_at: string
+          fudo_id: number | null
+          source: 'manual' | 'fudo'
+          fudo_synced_at: string | null
         }
         Insert: {
           id?: string
@@ -393,12 +396,18 @@ export interface Database {
           description?: string
           is_active?: boolean
           points_per_100?: number | null
+          fudo_id?: number | null
+          source?: 'manual' | 'fudo'
+          fudo_synced_at?: string | null
         }
         Update: {
           name?: string
           description?: string
           is_active?: boolean
           points_per_100?: number | null
+          fudo_id?: number | null
+          source?: 'manual' | 'fudo'
+          fudo_synced_at?: string | null
         }
         Relationships: []
       }
@@ -414,6 +423,9 @@ export interface Database {
           points_per_100: number | null
           created_at: string
           updated_at: string
+          fudo_id: number | null
+          source: 'manual' | 'fudo'
+          fudo_synced_at: string | null
         }
         Insert: {
           id?: string
@@ -424,6 +436,9 @@ export interface Database {
           image_url?: string
           is_active?: boolean
           points_per_100?: number | null
+          fudo_id?: number | null
+          source?: 'manual' | 'fudo'
+          fudo_synced_at?: string | null
         }
         Update: {
           category_id?: string | null
@@ -433,6 +448,9 @@ export interface Database {
           image_url?: string
           is_active?: boolean
           points_per_100?: number | null
+          fudo_id?: number | null
+          source?: 'manual' | 'fudo'
+          fudo_synced_at?: string | null
         }
         Relationships: []
       }

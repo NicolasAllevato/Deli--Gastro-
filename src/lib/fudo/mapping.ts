@@ -138,11 +138,11 @@ export function parseFudoCatalog(raw: unknown): FudoCatalogItem[] {
   const items: FudoCatalogItem[] = [];
   for (const entry of list) {
     if (!entry || typeof entry !== "object") continue;
-    const e = entry as { id?: unknown; name?: unknown; active?: unknown; attributes?: { name?: unknown } };
+    const e = entry as { id?: unknown; name?: unknown; active?: unknown; attributes?: { name?: unknown; active?: unknown } };
     const id = Number(e.id);
     const name = typeof e.attributes?.name === "string" ? e.attributes.name : e.name;
     if (Number.isInteger(id) && id > 0 && typeof name === "string" && name.trim()) {
-      items.push({ id, name: name.trim().slice(0, FUDO_NAME_MAX), active: e.active !== false });
+      items.push({ id, name: name.trim().slice(0, FUDO_NAME_MAX), active: (e.attributes?.active ?? e.active) !== false });
     }
   }
   return items.sort((a, b) => a.name.localeCompare(b.name, "es"));

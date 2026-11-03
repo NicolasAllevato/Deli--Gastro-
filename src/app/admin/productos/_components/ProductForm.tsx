@@ -21,6 +21,8 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 export function ProductForm({ editingProduct, categories, onClose, onSubmit, onCreateCategory }: Props) {
+  // Si el producto viene de Fudo, nombre, categoría, precio y disponibilidad son de solo lectura (los manda Fudo).
+  const fromFudo = editingProduct?.fudo_id != null;
   const [isActive, setIsActive] = useState(editingProduct ? editingProduct.is_active : true);
   const [imageUrl, setImageUrl] = useState<string | null>(editingProduct?.image_url ?? null);
   const [isUploading, setIsUploading] = useState(false);
@@ -66,14 +68,15 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    // Los campos deshabilitados no viajan en el FormData: para los de Fudo se reusan los valores actuales.
     onSubmit({
       id:          editingProduct?.id ?? crypto.randomUUID(),
-      name:        fd.get("name") as string,
+      name:        fromFudo ? editingProduct.name : (fd.get("name") as string),
       description: fd.get("description") as string,
-      price:       parseFloat(fd.get("price") as string),
+      price:       fromFudo ? editingProduct.price : parseFloat(fd.get("price") as string),
       image_url:   imageUrl ?? "",
-      category_id: fd.get("category_id") as string,
-      is_active:   isActive,
+      category_id: fromFudo ? editingProduct.category_id : (fd.get("category_id") as string),
+      is_active:   fromFudo ? editingProduct.is_active : isActive,
       points_per_100: parsePoints(fd.get("points_per_100")),
     });
   };
@@ -97,6 +100,11 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
         </header>
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-5 overflow-y-auto pr-2 pb-4">
+          {fromFudo && (
+            <p role="note" className="badge-blue text-xs font-bold px-3 py-2 rounded-lg">
+              Este producto viene de Fudo: nombre, categoría, precio y disponibilidad se cambian allá y se actualizan solos. Acá podés editar la foto, la descripción y los puntos.
+            </p>
+          )}
           {/* Imagen del producto: preview + upload a R2 */}
           <div>
             <button
@@ -138,6 +146,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
             name="name"
             type="text"
             required
+            disabled={fromFudo}
             placeholder="Ej. Hamburguesa Clásica"
             defaultValue={editingProduct?.name}
           />
@@ -160,6 +169,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
                 name="category_id"
                 defaultValue={editingProduct?.category_id ?? ""}
                 required
+                disabled={fromFudo}
                 className="w-full px-6 py-4 rounded-2xl neumorphic-inset text-gray-800 outline-none focus:ring-2 focus:ring-brand-orange/50 transition-all font-bold appearance-none bg-transparent"
               >
                 <option value="" disabled>Seleccionar Categoría</option>
@@ -188,6 +198,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
               type="number"
               step="1"
               required
+              disabled={fromFudo}
               placeholder="0"
               defaultValue={editingProduct?.price}
             />
@@ -195,6 +206,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
               <Switch
                 checked={isActive}
                 onChange={setIsActive}
+                disabled={fromFudo}
                 label="Visible al cliente"
               />
             </div>

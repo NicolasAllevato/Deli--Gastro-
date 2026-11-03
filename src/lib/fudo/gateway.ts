@@ -79,3 +79,31 @@ export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<Fu
     return [];
   }
 }
+
+export interface CatalogSyncSummary {
+  categoriesCreated: number;
+  categoriesUpdated: number;
+  productsCreated: number;
+  productsUpdated: number;
+  productsDeactivated: number;
+}
+
+export type CatalogSyncOutcome = { ok: true; summary: CatalogSyncSummary } | { ok: false; error: string };
+
+/** Pide al Worker que sincronice el catálogo de Fudo ahora (el cron lo hace cada 15 min). Nunca tira. */
+export async function requestCatalogSync(config = fudoGatewayConfig()): Promise<CatalogSyncOutcome> {
+  if (!config) return { ok: false, error: "La integración con Fudo no está configurada." };
+  try {
+    const res = await fetch(`${config.url}/catalog-sync`, {
+      method: "POST",
+      headers: { [GATEWAY_SIGNATURE_HEADER]: signGatewayBody("/catalog-sync", config.secret) },
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+    const json = (await res.json().catch(() => ({}))) as { result?: CatalogSyncSummary; error?: string };
+    if (!res.ok || !json.result) return { ok: false, error: json.error ?? `El gateway respondió ${res.status}.` };
+    return { ok: true, summary: json.result };
+  } catch {
+    return { ok: false, error: "No se pudo contactar al gateway de Fudo." };
+  }
+}

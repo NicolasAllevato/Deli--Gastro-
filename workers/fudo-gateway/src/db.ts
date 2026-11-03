@@ -6,7 +6,7 @@ export interface DbEnv {
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
-async function rest<T>(env: DbEnv, path: string, init: RequestInit = {}): Promise<T> {
+export async function rest<T>(env: DbEnv, path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${env.SUPABASE_URL.trim()}/rest/v1/${path}`, {
     ...init,
     headers: {
@@ -18,7 +18,9 @@ async function rest<T>(env: DbEnv, path: string, init: RequestInit = {}): Promis
     },
   });
   if (!res.ok) throw new Error(`Supabase ${path.split("?")[0]} ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return (await res.json()) as T;
+  // `Prefer: return=minimal` responde 201/204 sin cuerpo: no hay JSON que parsear.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const MAX_ATTEMPTS = 6;
