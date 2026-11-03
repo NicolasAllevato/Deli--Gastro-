@@ -151,3 +151,56 @@ Pantalla admin de mapeo: HECHA en `/admin/fudo` (Configuración > Fudo; API `/ap
 Pendiente: ajustar `parseFudoWebhook` con el
 primer webhook real (queda en los logs del Worker); confirmar con Fudo si `externalId` deduplica
 (si no, un timeout después de que Fudo creó el pedido puede duplicarlo al reintentar).
+
+## Sincronización del catálogo (migración 022)
+
+Fudo manda en **nombre, precio, disponibilidad y categoría**; la app conserva foto, descripción y puntos.
+
+- **Quién:** el Worker `fudo-gateway` (`src/catalog.ts` es el plan puro, `src/catalog-sync.ts` aplica). Corre dentro del cron
+  existente cada 15 min y a pedido con el botón «Sincronizar catálogo ahora» de `/admin/fudo` (`POST /api/admin/fudo-sync`
+  → `POST /catalog-sync` del Worker, firmado con el path).
+- **Cómo vincula:** por `fudo_id` (único en `products` y `categories`). La primera vez, un producto o categoría manual con el
+  mismo nombre (sin tildes ni mayúsculas) se vincula en vez de duplicarse. Lo que no figura en Fudo y estaba vinculado se
+  **desactiva** (nunca se borra); con catálogo vacío no se desactiva nada. Lo manual sin vincular no se toca.
+- **Auto-mapeo:** cada producto vinculado se escribe en `fudo_product_map`, así los pedidos ya no quedan `skipped` por falta de mapeo.
+- **Precio ausente:** si Fudo no informa precio, no se pisa el de la app; un producto nuevo sin precio nace inactivo con precio 0.
+- **Solo lectura en la app:** `PATCH /api/products` descarta esos cuatro campos si el producto tiene `fudo_id` (409 si no queda
+  nada por guardar) y `DELETE` se rechaza. El formulario y la lista del admin lo muestran deshabilitado.
+- **Bitácora:** `fudo_sync_runs` (una fila por corrida con cambios o con error).
+- **Por verificar con la API real:** los nombres de campo de `GET /products` (precio, categoría). El parser acepta forma plana y
+  JSON:API (`price`, `productCategoryId`/`categoryId`/`category.id`, `relationships`). Si Fudo usa otros, se ajusta `catalog.ts`.
+- **Promos/combos:** la API pública no los expone; si llegan como productos se importan como tales. Pedir la API extendida a soporte@fu.do si hacen falta.
+- **Orden de despliegue (obligatorio):** 1) migración `022_fudo_catalogo.sql`, 2) Worker `fudo-gateway`, 3) app. Si la app sale antes,
+  editar o borrar productos devuelve 500 (el `PATCH`/`DELETE` leen `products.fudo_id`).
+- **Guardarraíl:** si Fudo devuelve menos de la mitad de los productos vinculados activos (con 4 o más vinculados), el sync NO
+  desactiva nada y lo registra en el log (`deactivationBlocked`). Protege de listados paginados o de un cambio de formato.
+- **Límites conocidos:** el sync lee hasta 1000 filas por tabla (límite de PostgREST) y no pagina el listado de Fudo (por confirmar
+  con la API real). Las categorías sincronizadas todavía se pueden renombrar o borrar desde la app (Fudo las pisa o recrea).
+  El sync y el reintento de pedidos comparten invocación del cron: en el plan Free de Workers (50 subrequests) conviene confirmar el plan.
+
+
+## Catálogo por la API pública de Fudo (vigente desde 2026-11-03)
+
+El catálogo NO usa la API de integraciones (que exige el integrator token, todavía sin asignar) sino la **API pública**:
+`POST https://auth.fu.do/api` con `{apiKey, apiSecret}` devuelve `{token, exp}` (24 h) y los datos salen de
+`https://api.fu.do/v1alpha1/<recurso>` con `Authorization: Bearer`. Es JSON:API y **paginada** (`page[size]` y `page[number]`;
+el Worker pagina de a 100 hasta una página corta y rechaza un listado que llegue a 6000 sin cortar).
+
+- **Secretos del Worker** (`wrangler secret bulk`, nunca en el repo): `FUDO_API_KEY`, `FUDO_API_SECRET`, `FUDO_GATEWAY_SECRET`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Los de integraciones (`FUDO_CLIENT_ID/SECRET`, `FUDO_INTEGRATOR_TOKEN`) se
+  agregan cuando Fudo los asigne; solo sirven para enviar pedidos.
+- **Worker desplegado:** `https://fudo-gateway.opsyn-dely.workers.dev` (cuenta «Opsyn Dely»). `CATALOG_CRON = "1"` en
+  `wrangler.toml` prende el sync automático cada 15 min.
+- **Simulacro sin escribir:** `POST /catalog-sync?dry=1` con `x-gateway-signature` = HMAC-SHA256 hex del texto `/catalog-sync`
+  con `FUDO_GATEWAY_SECRET`. Devuelve cuántos crearía, actualizaría y desactivaría.
+- **Qué se sincroniza** (`catalog.ts`): solo productos con `sellAlone !== false`, fuera de las categorías «Opciones»,
+  «Modificadores genéricos» y «Productos genéricos». Un producto NUEVO solo se crea si está activo y tiene precio > 0; una
+  categoría nueva solo si tiene algún producto. Las «Promos» de Fudo son una categoría más (26 al 2026-11-03).
+- **Primera carga (2026-11-03):** 5 categorías (Platos Principales, Bebidas, Promos, Cafetería, Postres) y 120 productos,
+  todos con `fudo_product_map`. Los 3 productos y 3 categorías de ejemplo de la semilla se desactivaron.
+- **Medios de pago de Fudo** (para `fudo_payment_map` cuando haya pedidos): 1 Efectivo, 14 Mercado pago, 6 Payway; los de
+  PedidosYa y Rappi figuran inactivos.
+- **Otros recursos de la API pública** (todos responden 200): `sales`, `items`, `payment-methods`, `discounts`, `promotions`,
+  `customers`. Sirven para traer los productos vendidos; todavía sin implementar.
+- **Gotcha:** `rest()` del Worker fallaba con las respuestas vacías de `Prefer: return=minimal` («Unexpected end of JSON
+  input»); corregido, y con eso la bitácora `order_events` deja de fallar en silencio.

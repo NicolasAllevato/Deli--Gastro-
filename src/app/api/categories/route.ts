@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
+import { FUDO_MANAGED_CATEGORY_FIELDS, stripFudoManaged } from "@/lib/fudo/catalog-lock";
 
 const categorySchema = z.object({
   name: z.string().trim().min(1, "El nombre es requerido").max(80),
@@ -42,15 +43,23 @@ export async function PATCH(req: NextRequest) {
   const parsed = updateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail(parsed.error);
 
-  const { id, ...patch } = parsed.data;
-  const { data, error } = await createAdminClient()
-    .from("categories")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
+  const { id, ...requested } = parsed.data;
+  const db = createAdminClient();
+  const current = await db.from("categories").select("fudo_id").eq("id", id).maybeSingle();
+  if (current.error) return NextResponse.json({ error: current.error.message }, { status: 500 });
+  if (!current.data) return NextResponse.json({ error: "Categoría no encontrada." }, { status: 404 });
+
+  // El nombre de una categoría de Fudo lo manda Fudo: renombrarla acá sería pisado en la próxima sincronización.
+  const { patch, ignored } = stripFudoManaged(requested, current.data.fudo_id ?? null, FUDO_MANAGED_CATEGORY_FIELDS);
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json(
+      { error: `Esta categoría se administra desde Fudo (${ignored.join(", ")}). Cambialo allá y se actualiza solo.` },
+      { status: 409 },
+    );
+  }
+  const { data, error } = await db.from("categories").update(patch).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json({ ...data, ignored_fudo_fields: ignored });
 }
 
 /** Borra la categoría y deja sus productos sin categoría (igual que `on delete set null`). */
@@ -63,6 +72,14 @@ export async function DELETE(req: NextRequest) {
   if (!id.success) return NextResponse.json({ error: "id inválido." }, { status: 400 });
 
   const db = createAdminClient();
+  const current = await db.from("categories").select("fudo_id").eq("id", id.data).maybeSingle();
+  if (current.error) return NextResponse.json({ error: current.error.message }, { status: 500 });
+  if (current.data?.fudo_id != null) {
+    return NextResponse.json(
+      { error: "Esta categoría viene de Fudo y volvería en la próxima sincronización. Borrala o desactivala en Fudo." },
+      { status: 409 },
+    );
+  }
   await db.from("products").update({ category_id: null }).eq("category_id", id.data);
   const { error } = await db.from("categories").delete().eq("id", id.data);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

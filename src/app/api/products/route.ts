@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
+import { stripFudoManaged } from "@/lib/fudo/catalog-lock";
 
 // Imagen: vacía, URL https (R2) o data URL (modo demo, sin R2).
 const MAX_DATA_URL_LENGTH = 7_000_000;
@@ -74,15 +75,23 @@ export async function PATCH(req: NextRequest) {
   const parsed = updateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail(parsed.error);
 
-  const { id, ...patch } = parsed.data;
-  const { data, error } = await createAdminClient()
-    .from("products")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
+  const { id, ...requested } = parsed.data;
+  const db = createAdminClient();
+  const current = await db.from("products").select("fudo_id").eq("id", id).maybeSingle();
+  if (current.error) return NextResponse.json({ error: current.error.message }, { status: 500 });
+  if (!current.data) return NextResponse.json({ error: "Producto no encontrado." }, { status: 404 });
+
+  // Nombre, precio, disponibilidad y categoría los manda Fudo: editarlos acá sería pisado en la próxima sincronización.
+  const { patch, ignored } = stripFudoManaged(requested, (current.data as { fudo_id: number | null }).fudo_id ?? null);
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json(
+      { error: `Este producto se administra desde Fudo (${ignored.join(", ")}). Cambialo allá y se actualiza solo.` },
+      { status: 409 },
+    );
+  }
+  const { data, error } = await db.from("products").update(patch).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json({ ...data, ignored_fudo_fields: ignored });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -93,7 +102,17 @@ export async function DELETE(req: NextRequest) {
   const id = z.string().uuid().safeParse(req.nextUrl.searchParams.get("id"));
   if (!id.success) return NextResponse.json({ error: "id inválido." }, { status: 400 });
 
-  const { error } = await createAdminClient().from("products").delete().eq("id", id.data);
+  const db = createAdminClient();
+  const current = await db.from("products").select("fudo_id").eq("id", id.data).maybeSingle();
+  if (current.error) return NextResponse.json({ error: current.error.message }, { status: 500 });
+  if ((current.data as { fudo_id: number | null } | null)?.fudo_id != null) {
+    return NextResponse.json(
+      { error: "Este producto viene de Fudo y volvería en la próxima sincronización. Desactivalo o borralo en Fudo." },
+      { status: 409 },
+    );
+  }
+
+  const { error } = await db.from("products").delete().eq("id", id.data);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

@@ -20,6 +20,7 @@ export default async function AdminProductosPage() {
     category_id: p.category_id ?? "",
     is_active: p.is_active,
     points_per_100: p.points_per_100 === null ? null : Number(p.points_per_100),
+    fudo_id: p.fudo_id ?? null,
   }));
 
   const initialCategories: Category[] = (categories.data ?? []).map((c) => ({

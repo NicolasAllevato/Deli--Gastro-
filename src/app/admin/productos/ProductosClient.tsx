@@ -26,6 +26,7 @@ function toProduct(row: Product & { category_id: string | null; price: number | 
     category_id: row.category_id ?? "",
     is_active: row.is_active,
     points_per_100: row.points_per_100 === null ? null : Number(row.points_per_100),
+    fudo_id: row.fudo_id ?? null,
   };
 }
 
@@ -186,6 +187,8 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
                   <div className="mt-auto flex items-center justify-between pt-4 border-t border-gray-200/50">
                     <button
                       onClick={() => toggleProductActive(product.id)}
+                      disabled={product.fudo_id != null}
+                      title={product.fudo_id != null ? "La disponibilidad la define Fudo" : undefined}
                       aria-label={product.is_active ? "Desactivar producto" : "Activar producto"}
                       className="transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange/60 rounded-full"
                     >
@@ -213,6 +216,7 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
                         size="sm"
                         aria-label={`Eliminar ${product.name}`}
                         onClick={() => deleteProduct(product.id)}
+                        disabled={product.fudo_id != null}
                         className="hover:text-red-500"
                       >
                         <Trash2 size={14} />

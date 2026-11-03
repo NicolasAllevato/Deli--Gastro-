@@ -13,6 +13,14 @@ abiertos el PR #13 (redirect sin `/api` en 307, `cleanEnv` unificado, `trim` en 
 con Mercado Pago (código), Conversaciones sobre OpenWA, app Android del repartidor (APK de release
 v1.0, versionCode 1, firmada con esquema v2, en `public/descargas/`), gateway Fudo (código).
 
+**Diferido a propósito (decidido el 2026-11-03; el código ya está listo, solo faltan las claves):**
+- **Mercado Pago:** cargar en Vercel `MP_ACCESS_TOKEN` (empezar con uno `TEST-`), `MP_WEBHOOK_SECRET` y `PUBLIC_URL`.
+  Guía en `docs/MERCADOPAGO.md`. Decisiones abiertas de producto: cuotas, facturación AFIP, reembolsos parciales,
+  limpieza de intenciones vencidas. Hasta entonces el cliente no puede pagar con Mercado Pago.
+- **Resend (resumen diario por mail y encuestas):** cargar en Vercel `RESEND_API_KEY` y `RESUMEN_EMAIL_FROM`
+  (el dominio emisor tiene que estar verificado en Resend). Sin estas claves el resumen diario sale solo por WhatsApp
+  y `encuestas-cron` no envía nada.
+
 **Pendiente, por orden:**
 1. **Usuario:** instalar la APK en el Samsung (el mensaje exacto del bloqueo sigue sin confirmarse).
    Causas probables: "Instalar apps desconocidas" para el navegador, Auto Blocker (Ajustes > Seguridad
