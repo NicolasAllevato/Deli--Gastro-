@@ -41,33 +41,21 @@ describe("redirect de deli-gastro.vercel.app", () => {
 
 describe("redirect de dely.opsyn.app (corte a Cloudflare)", () => {
   const rulesHost = byHost("dely.opsyn.app");
-  const pages = rulesHost.find((r) => r.source !== "/login");
-  const login = rulesHost.find((r) => r.source === "/login");
+  const [pages] = rulesHost;
   const matches = matcher(pages?.source ?? "");
 
-  it("manda las páginas al dominio nuevo, en temporal", () => {
-    assert.ok(pages, "falta la regla de páginas");
+  it("una sola regla, temporal, hacia el dominio nuevo", () => {
+    assert.equal(rulesHost.length, 1);
     assert.equal(pages.destination, `${NEW}/:path`);
     assert.equal(pages.permanent, false);
-    assert.ok(matches("/"));
-    assert.ok(matches("/admin/tablero"));
-    assert.ok(matches("/cliente"));
-    assert.ok(matches("/descargas/dely-repartidor.apk"));
-    assert.ok(matches("/repartidores")); // no es /repartidor
-    assert.ok(matches("/login-algo"));
   });
 
-  it("no toca /api ni el portal del repartidor (APK v1.0)", () => {
-    for (const p of ["/api", "/api/cron/surveys", "/repartidor", "/repartidor/x", "/login"]) assert.ok(!matches(p), p);
+  it("redirige todas las páginas, incluido el repartidor y el login", () => {
+    for (const p of ["/", "/admin/tablero", "/cliente", "/repartidor", "/repartidor/x", "/login", "/descargas/dely-repartidor.apk"])
+      assert.ok(matches(p), p);
   });
 
-  it("/login se redirige salvo el ingreso con PIN de la APK", () => {
-    assert.ok(login, "falta la regla de /login");
-    assert.equal(login.destination, `${NEW}/login`);
-    const miss = login.missing?.[0];
-    assert.ok(miss && miss.type === "query" && miss.key === "redirectTo");
-    const re = new RegExp(`^${miss.value}$`);
-    assert.ok(re.test("/repartidor"));
-    assert.ok(!re.test("/admin"));
+  it("no toca /api", () => {
+    for (const p of ["/api", "/api/cron/surveys"]) assert.ok(!matches(p), p);
   });
 });
