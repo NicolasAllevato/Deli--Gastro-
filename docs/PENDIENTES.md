@@ -8,9 +8,7 @@ aplicadas. Catálogo de Fudo sincronizado cada 15 min por la API pública (Worke
 Plantillas UTILITY de WhatsApp enviadas a revisión de Meta. Dominio `bot-dely.opsyn.app` funcionando.
 
 **Pendiente, por orden:**
-1. **Prender la importación de ventas y clientes de Fudo:** `SALES_CRON="1"` y `CUSTOMERS_CRON="1"` en
-   `workers/fudo-gateway/wrangler.toml` y `wrangler deploy`. Simulacros: 52 ventas en 48 h y 326 clientes nuevos.
-   Antes, revisar un simulacro fresco (`POST /sales-sync?dry=1` y `/customers-sync?dry=1`).
+1. ~~Prender la importación de ventas y clientes de Fudo~~ HECHO el 2026-11-04: `SALES_CRON`/`CUSTOMERS_CRON` en "1" y Worker desplegado (versión 2ae8ed18), con el simulacro anterior (52 ventas, 326 clientes). Verificar tras la primera corrida (ventas cada 5 min, clientes cada hora) que lleguen filas a la base.
 2. **Crear pedidos de la app en Fudo (Fase 4):** `POST /sales` (TAKEAWAY; delivery con dirección y teléfono en el
    comentario) + `POST /items` en serie + `POST /payments`, detrás de un interruptor `FUDO_WRITES` apagado. Hace
    falta una venta de prueba real con el usuario presente y anularla al final. Después se cargan

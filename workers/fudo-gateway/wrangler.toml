@@ -28,9 +28,9 @@ FUDO_PUBLIC_API_URL = "https://api.fu.do/v1alpha1"
 APP_URL = "https://dely.opsyn.app"
 # Sync automático del catálogo cada 15 min: "0" apagado, "1" prendido. Antes de prender en otro entorno, revisar un simulacro con POST /catalog-sync?dry=1.
 CATALOG_CRON = "1"
-# Ventas de delivery y take away (cada 5 min) y clientes (cada hora): apagados hasta revisar un simulacro.
-SALES_CRON = "0"
-CUSTOMERS_CRON = "0"
+# Ventas de delivery y take away (cada 5 min) y clientes (cada hora): prendidos el 2026-11-04 tras revisar el simulacro.
+SALES_CRON = "1"
+CUSTOMERS_CRON = "1"
 # DEBUG_WEBHOOK_BODY = "1"  # temporal: loguea el webhook completo (datos del cliente) hasta conocer el formato
 
 # Secrets (npx wrangler secret put <NOMBRE>, nunca en el repo):
