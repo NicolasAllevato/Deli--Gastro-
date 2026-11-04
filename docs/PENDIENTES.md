@@ -1,6 +1,28 @@
 # Pendientes — Deli-Gastro
 
-## Estado al 2026-10-29 (lo vigente; lo de abajo es historial y puede estar desactualizado)
+## Estado al 2026-11-04 (lo vigente; lo de abajo es historial y puede estar desactualizado)
+
+**Hecho (no repetir):** PRs #23, #24 y #25 fusionados y desplegados en `dely.opsyn.app`. Migraciones 022 y 023
+aplicadas. Catálogo de Fudo sincronizado cada 15 min por la API pública (Worker `fudo-gateway`, 120 productos y
+5 categorías). Modo demo con Fudo simulado. Corregido el bug que borraba foto y descripción en ediciones parciales.
+Plantillas UTILITY de WhatsApp enviadas a revisión de Meta. Dominio `bot-dely.opsyn.app` funcionando.
+
+**Pendiente, por orden:**
+1. ~~Prender la importación de ventas y clientes de Fudo~~ HECHO el 2026-11-04: `SALES_CRON`/`CUSTOMERS_CRON` en "1" y Worker desplegado (versión 2ae8ed18), con el simulacro anterior (52 ventas, 326 clientes). Verificado: entran las ventas. Backfill de octubre hecho el mismo día con `POST /sales-sync?from=&to=` (rango de hasta 7 días, firmado): 1228 pedidos de octubre + 109 de noviembre. Los pedidos importados todavía no tienen cliente vinculado: se vinculan por `fudo_customer_id`/teléfono solo al importar, así que conviene re-vincular después de la primera corrida de clientes.
+2. **Crear pedidos de la app en Fudo (Fase 4):** `POST /sales` (TAKEAWAY; delivery con dirección y teléfono en el
+   comentario) + `POST /items` en serie + `POST /payments`, detrás de un interruptor `FUDO_WRITES` apagado. Hace
+   falta una venta de prueba real con el usuario presente y anularla al final. Después se cargan
+   `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en Vercel y se mapean los medios de pago (1 Efectivo, 14 Mercado pago, 6 Payway).
+3. **Ventas y clientes simulados en el modo demo** para probar el tablero con pedidos de Fudo en local.
+4. **App nueva de Meta solo para el cliente** (la crea el usuario): con su App ID/secret configurar el webhook a
+   `bot-dely.opsyn.app/webhook`, token del sistema y revisar si hay que recrear las plantillas en su cuenta.
+5. **Dominio nuevo y migración a Cloudflare:** el usuario compró un dominio (falta el nombre). App y bot en
+   subdominios; la app pasa de Vercel a Cloudflare (Next 16 con OpenNext, variables, crons). Requiere plan propio.
+6. **Seguridad:** rotar apiKey/apiSecret de Fudo y los demás secretos que pasaron por el chat.
+7. **Diferidos a propósito:** Mercado Pago y Resend (ver abajo). Integrator token de Fudo: ya no hace falta para
+   catálogo, ventas ni clientes; solo para la API de integraciones.
+
+## Estado al 2026-10-29 (historial)
 
 En producción (`dely.opsyn.app`): PRs #6 a #12 fusionados. El ingreso de repartidores con PIN anda
 (probado el 28-oct por la noche, hora de Argentina, con claves de Supabase sin BOM y redeploy). Están

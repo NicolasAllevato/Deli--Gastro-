@@ -1,7 +1,7 @@
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
 import { listPublicResource, type FudoEnv } from "./fudo";
-import { parseFudoItem, parseFudoSales, phoneKey, planSalesImport, type ExistingOrder, type FudoItem } from "./sales.ts";
+import { parseFudoItem, parseFudoSales, phoneKey, planSalesImport, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
 
 /**
  * Importa ventas (delivery y take away) y clientes de Fudo a la app. Usa los planes puros de `sales.ts` y
@@ -46,10 +46,10 @@ async function logRun(env: DbEnv, kind: "sales" | "customers", created: number, 
   }
 }
 
-export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, windowHours = DEFAULT_SALES_WINDOW_HOURS): Promise<SalesSyncSummary> {
+export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: SalesRange | null = null): Promise<SalesSyncSummary> {
   try {
-    const to = new Date();
-    const from = new Date(to.getTime() - windowHours * 3_600_000);
+    const to = window?.to ?? new Date();
+    const from = window?.from ?? new Date(to.getTime() - DEFAULT_SALES_WINDOW_HOURS * 3_600_000);
     const range = `filter[createdAt]=and(gte.${fudoDate(from)},lte.${fudoDate(to)})&sort=-createdAt`;
     // Fudo solo acepta `filter[saleType]=eq.<TIPO>` (rechaza `in.(...)` con 400): una consulta por tipo.
     // `include=items` trae los ítems en la misma respuesta: leerlos uno por uno agota los subrequests del Worker.
@@ -99,20 +99,22 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, windowHour
     });
 
     if (!dryRun) {
-      for (const order of plan.inserts) {
-        const { lines, ...row } = order;
+      // En lotes: un POST de pedidos y otro de ítems por lote, para no agotar los subrequests del Worker.
+      for (const batch of chunk(plan.inserts, ID_BATCH)) {
         // ignore-duplicates: si dos corridas se pisan, la venta igual entra una sola vez (fudo_order_id único).
-        const [created] = await rest<Array<{ id: string }>>(env, "orders?on_conflict=fudo_order_id&select=id", {
+        // Solo vuelven las filas insertadas, así que los ítems se cuelgan solo de esas.
+        const created = await rest<Array<{ id: string; fudo_order_id: number }>>(env, "orders?on_conflict=fudo_order_id&select=id,fudo_order_id", {
           method: "POST",
           headers: { prefer: "return=representation,resolution=ignore-duplicates" },
-          body: JSON.stringify(row),
+          body: JSON.stringify(batch.map(({ lines: _lines, ...row }) => row)),
         });
-        if (created && lines.length) {
-          await rest(env, "order_items", {
-            method: "POST",
-            headers: { prefer: "return=minimal" },
-            body: JSON.stringify(lines.map((l) => ({ ...l, order_id: created.id }))),
-          });
+        const idByFudo = new Map(created.map((c) => [c.fudo_order_id, c.id]));
+        const items = batch.flatMap((o) => {
+          const orderId = idByFudo.get(o.fudo_order_id);
+          return orderId ? o.lines.map((l) => ({ ...l, order_id: orderId })) : [];
+        });
+        if (items.length) {
+          await rest(env, "order_items", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(items) });
         }
       }
       for (const u of plan.updates) {

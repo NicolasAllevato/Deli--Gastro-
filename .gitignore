@@ -81,3 +81,7 @@ spec-kit/
 
 # compilación de npm run demo:rapido
 /.next-demo/
+
+# OpenNext (Cloudflare)
+.open-next/
+.wrangler/

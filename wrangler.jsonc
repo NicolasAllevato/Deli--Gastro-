@@ -1,0 +1,19 @@
+// App Next.js (OpenNext) en la cuenta Opsyn-La gambeta Dely. Ver docs/MIGRACION_CLOUDFLARE.md.
+// Secretos con `npx wrangler secret put <NOMBRE>` (nunca acá). Las NEXT_PUBLIC_* se hornean en el build:
+// tienen que estar en el entorno al correr `npm run cf:deploy`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opsyn-dely",
+  "account_id": "e7351dd776e005da826ba6f2a5aae4c1",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-27",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "opsyn-dely" }],
+  "workers_dev": true,
+  "routes": [{ "pattern": "opsyndely.la-gambeta.com", "custom_domain": true }],
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com"
+  },
+  "observability": { "enabled": true }
+}

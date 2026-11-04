@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV === "development";
 
+/** Dominio de la app desde el corte a Cloudflare. */
+const NEW_APP_ORIGIN = "https://opsyndely.la-gambeta.com";
+
 // Host público del bucket R2 (imágenes de productos). Se habilita en
 // next/image y en la CSP sólo si la variable está definida.
 function r2Hostname(): string | null {
@@ -76,13 +79,31 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Corte a Cloudflare (2026-11-04): dely.opsyn.app (Vercel) manda todo a opsyndely.la-gambeta.com, salvo:
+      //   /api          webhooks (Meta, Mercado Pago) y crons no siguen redirects;
+      //   /repartidor   la APK v1.0 abre dely.opsyn.app/repartidor y solo navega dentro de ese host;
+      //   /login?redirectTo=/repartidor...  el ingreso con PIN de esa APK.
+      // Sacar las excepciones del repartidor cuando salga la APK que apunta al dominio nuevo.
       {
-        // Un solo enlace público: el dominio viejo de Vercel manda las páginas a dely.opsyn.app.
+        source: "/:path((?!api(?:/|$)|repartidor(?:/|$)|login$).*)",
+        has: [{ type: "host", value: "dely.opsyn.app" }],
+        destination: `${NEW_APP_ORIGIN}/:path`,
+        permanent: false,
+      },
+      {
+        source: "/login",
+        has: [{ type: "host", value: "dely.opsyn.app" }],
+        missing: [{ type: "query", key: "redirectTo", value: "/repartidor.*" }],
+        destination: `${NEW_APP_ORIGIN}/login`,
+        permanent: false,
+      },
+      {
+        // Un solo enlace público: el dominio viejo de Vercel manda las páginas al dominio nuevo.
         // /api queda afuera: webhooks (Meta, Mercado Pago) y crons no siguen redirects.
         // Temporal (307) hasta confirmar que todo funciona; después pasar a permanent: true.
         source: "/:path((?!api(?:/|$)).*)",
         has: [{ type: "host", value: "deli-gastro.vercel.app" }],
-        destination: "https://dely.opsyn.app/:path",
+        destination: `${NEW_APP_ORIGIN}/:path`,
         permanent: false,
       },
     ];

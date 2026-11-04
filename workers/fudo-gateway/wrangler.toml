@@ -2,7 +2,7 @@ name = "fudo-gateway"
 main = "src/index.ts"
 compatibility_date = "2026-08-27"
 compatibility_flags = ["nodejs_compat"]
-account_id = "53d56863addd21be708a642b540e5990"
+account_id = "e7351dd776e005da826ba6f2a5aae4c1"
 workers_dev = true
 
 # Pasarela Deli-Gastro <-> Fudo (Integrations API v1). Ver docs/FUDO_INTEGRACION.md.
@@ -15,7 +15,7 @@ workers_dev = true
 # Crear con:  npx wrangler kv namespace create FUDO_KV   y pegar el id acá.
 [[kv_namespaces]]
 binding = "FUDO_KV"
-id = "edecc57f9a2b46c88f09c2254d8ab4cb"
+id = "a5d6ac94d9144d949badfd510690ae5e"
 
 [triggers]
 crons = ["*/5 * * * *"]
@@ -25,12 +25,12 @@ FUDO_API_URL = "https://integrations.fu.do/fudo"
 # API pública de Fudo (catálogo y ventas): token en FUDO_AUTH_URL, datos en FUDO_PUBLIC_API_URL.
 FUDO_AUTH_URL = "https://auth.fu.do/api"
 FUDO_PUBLIC_API_URL = "https://api.fu.do/v1alpha1"
-APP_URL = "https://dely.opsyn.app"
+APP_URL = "https://opsyndely.la-gambeta.com"
 # Sync automático del catálogo cada 15 min: "0" apagado, "1" prendido. Antes de prender en otro entorno, revisar un simulacro con POST /catalog-sync?dry=1.
 CATALOG_CRON = "1"
-# Ventas de delivery y take away (cada 5 min) y clientes (cada hora): apagados hasta revisar un simulacro.
-SALES_CRON = "0"
-CUSTOMERS_CRON = "0"
+# Ventas de delivery y take away (cada 5 min) y clientes (cada hora): prendidos el 2026-11-04 tras revisar el simulacro.
+SALES_CRON = "1"
+CUSTOMERS_CRON = "1"
 # DEBUG_WEBHOOK_BODY = "1"  # temporal: loguea el webhook completo (datos del cliente) hasta conocer el formato
 
 # Secrets (npx wrangler secret put <NOMBRE>, nunca en el repo):

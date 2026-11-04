@@ -41,7 +41,8 @@ export default function RootLayout({
         {children}
         <CookieNotice />
         <DemoBanner />
-        <Analytics />
+        {/* Solo en Vercel: en Cloudflare (OpenNext) /_vercel/insights no existe. */}
+        {process.env.VERCEL ? <Analytics /> : null}
       </body>
     </html>
   );
