@@ -5,7 +5,7 @@ Decidido el 2026-11-04: todo lo del cliente pasa a la cuenta **Opsyn-La gambeta 
 
 | Servicio | Hoy | Destino |
 |---|---|---|
-| App Next.js | Vercel, `dely.opsyn.app` | Worker OpenNext, `app.la-gambeta.com` |
+| App Next.js | Vercel, `dely.opsyn.app` | Worker OpenNext, `opsyndely.la-gambeta.com` |
 | Bot de WhatsApp | `whatsapp-bot` en Opsyn Dely, vía `dely-proxy` (`bot-dely.opsyn.app`, cuenta Opsyn wallet) | `whatsapp-bot` en la cuenta nueva, `bot.la-gambeta.com` |
 | Pasarela Fudo | `fudo-gateway` en Opsyn Dely | `fudo-gateway` en la cuenta nueva (workers.dev, sin dominio propio) |
 | Uploads, encuestas-cron, finanzas-sync, pedidos-webhook | Proyectos OPSYN | Fase posterior (no bloquean) |
@@ -31,16 +31,16 @@ Supabase no cambia.
    (el plan Free de Workers limita a 3 MB comprimido: probablemente haga falta **Workers Paid, US$5/mes**).
 3. Quitar `@vercel/analytics` (o reemplazar por Cloudflare Web Analytics) y ajustar la CSP.
 4. Copiar las variables de producción de Vercel como secretos/vars del Worker. Cambiar
-   `NEXT_PUBLIC_APP_URL=https://app.la-gambeta.com` (se hornea en el build).
+   `NEXT_PUBLIC_APP_URL=https://opsyndely.la-gambeta.com` (se hornea en el build).
 5. Deploy a `*.workers.dev`, pasada de humo (login por rol, pedido demo-less de lectura, admin, repartidor PIN).
-6. Custom domain `app.la-gambeta.com`.
+6. Custom domain `opsyndely.la-gambeta.com`.
 
 ## Fase C — Corte
-- Supabase Auth: Site URL y Redirect URLs con `app.la-gambeta.com`.
+- Supabase Auth: Site URL y Redirect URLs con `opsyndely.la-gambeta.com`.
 - `APP_URL` de `fudo-gateway`, `BASE_URL` de `encuestas-cron`, webhook de Mercado Pago (`PUBLIC_URL`).
 - Webhook de Meta a `bot.la-gambeta.com/webhook`.
 - APK del repartidor: si apunta a `dely.opsyn.app`, nueva versión o redirect.
-- `dely.opsyn.app` → redirect 301 a `app.la-gambeta.com`; Vercel queda pausado una semana antes de borrarlo.
+- `dely.opsyn.app` → redirect 301 a `opsyndely.la-gambeta.com`; Vercel queda pausado una semana antes de borrarlo.
 
 ## Lo que necesita el usuario
 - `FUDO_API_KEY` / `FUDO_API_SECRET` (usuario `crm-dely@lagambeta`).
