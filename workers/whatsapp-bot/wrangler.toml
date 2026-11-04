@@ -51,7 +51,7 @@ dead_letter_queue = "wa-inbound-dlq"
 #   BOT_INTERNAL_SECRET  Fase 5. Firma las llamadas a /api/internal/bot/*. Idéntico al de Vercel (Production y Preview),
 #                        >= 32 caracteres, sin BOM ni espacios. Sin él, el bot deriva los pedidos a la web.
 [vars]
-APP_URL = "https://dely.opsyn.app"
+APP_URL = "https://opsyndely.la-gambeta.com"
 
 [observability]
 enabled = true

@@ -25,7 +25,7 @@ FUDO_API_URL = "https://integrations.fu.do/fudo"
 # API pública de Fudo (catálogo y ventas): token en FUDO_AUTH_URL, datos en FUDO_PUBLIC_API_URL.
 FUDO_AUTH_URL = "https://auth.fu.do/api"
 FUDO_PUBLIC_API_URL = "https://api.fu.do/v1alpha1"
-APP_URL = "https://dely.opsyn.app"
+APP_URL = "https://opsyndely.la-gambeta.com"
 # Sync automático del catálogo cada 15 min: "0" apagado, "1" prendido. Antes de prender en otro entorno, revisar un simulacro con POST /catalog-sync?dry=1.
 CATALOG_CRON = "1"
 # Ventas de delivery y take away (cada 5 min) y clientes (cada hora): prendidos el 2026-11-04 tras revisar el simulacro.
