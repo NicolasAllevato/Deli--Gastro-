@@ -18,17 +18,28 @@ const categoryIdSchema = z
   .union([z.string().uuid(), z.literal(""), z.null()])
   .transform((v) => (v === "" ? null : v));
 
-const productSchema = z.object({
+const productFields = {
   name: z.string().trim().min(1, "El nombre es requerido").max(120),
-  description: z.string().trim().max(500).default(""),
+  description: z.string().trim().max(500),
   price: z.number().finite().nonnegative().max(10_000_000),
-  image_url: imageSchema.default(""),
-  category_id: categoryIdSchema.default(null),
-  is_active: z.boolean().default(true),
-  points_per_100: z.number().finite().min(0).max(1000).nullable().default(null),
+  image_url: imageSchema,
+  category_id: categoryIdSchema,
+  is_active: z.boolean(),
+  points_per_100: z.number().finite().min(0).max(1000).nullable(),
+};
+
+const productSchema = z.object({
+  ...productFields,
+  description: productFields.description.default(""),
+  image_url: productFields.image_url.default(""),
+  category_id: productFields.category_id.default(null),
+  is_active: productFields.is_active.default(true),
+  points_per_100: productFields.points_per_100.default(null),
 });
 
-const updateSchema = productSchema.partial().extend({ id: z.string().uuid() });
+// Sin `.default()`: un PATCH parcial (por ejemplo solo `is_active`) no debe pisar foto ni descripción.
+// Zod aplica los defaults aunque el campo sea opcional, por eso no se usa `productSchema.partial()`.
+const updateSchema = z.object(productFields).partial().extend({ id: z.string().uuid() });
 
 function limited(req: NextRequest, max: number) {
   return rateLimit(getClientIp(req), max, 60_000);

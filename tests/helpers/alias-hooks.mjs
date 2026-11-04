@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SRC = new URL("../../src/", import.meta.url);
+const WORKERS = new URL("../../workers/", import.meta.url);
 const ADMIN_STUB = new URL("./admin-stub.ts", import.meta.url).href;
 
 function candidates(rest) {
@@ -11,6 +12,16 @@ function candidates(rest) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
+  // `@workers/...`: código de los Workers que la app reutiliza (por ejemplo el plan del sync de Fudo).
+  if (specifier.startsWith("@workers/")) {
+    for (const candidate of candidates(specifier.slice("@workers/".length))) {
+      const url = new URL(candidate, WORKERS);
+      if (existsSync(fileURLToPath(url)) && /\.ts$/.test(candidate)) {
+        return { url: pathToFileURL(fileURLToPath(url)).href, shortCircuit: true };
+      }
+    }
+    return nextResolve(specifier, context);
+  }
   if (!specifier.startsWith("@/")) return nextResolve(specifier, context);
 
   const rest = specifier.slice(2);

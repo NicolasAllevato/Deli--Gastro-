@@ -1,3 +1,4 @@
+import { resetDemoFudo } from "@/lib/demo/fudo-fixture";
 import { buildSeed, type Tables } from "@/lib/demo/seed";
 
 /**
@@ -31,5 +32,6 @@ export function getStore(): Tables {
 let checkedTables = false;
 
 export function resetStore(): void {
+  resetDemoFudo();
   (globalThis as GlobalWithStore)[GLOBAL_KEY] = buildSeed();
 }

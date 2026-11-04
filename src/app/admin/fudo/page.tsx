@@ -9,6 +9,8 @@ interface MapResponse extends MappingState {
   catalog: FudoCatalogItem[];
   gatewayConfigured: boolean;
   skipped: SkippedSummary;
+  /** Modo demo: hay un Fudo simulado y se puede provocar cambios en él. */
+  demo?: boolean;
 }
 
 const NO_SKIPPED: SkippedSummary = { byMapping: { count: 0, oldestAt: null, recentCount: 0 }, otherSkipped: 0, stuck: 0 };
@@ -72,6 +74,7 @@ export default function FudoMapPage() {
   const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [demoMessage, setDemoMessage] = useState<string | null>(null);
 
   const load = (next: MapResponse) => {
     setData(next);
@@ -185,6 +188,26 @@ export default function FudoMapPage() {
     }
   };
 
+  const simulateChange = async (kind: "precios" | "nuevo" | "apagar") => {
+    setSyncing(true);
+    setDemoMessage(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/demo/fudo/change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "No se pudo simular el cambio.");
+      setDemoMessage(`${json.message ?? "Listo."} Tocá «Sincronizar catálogo ahora» para traerlo a la app.`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "No se pudo simular el cambio.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const onSaveClick = () => (removals > 0 ? setConfirming(true) : void runSave());
 
   const setDraft = (key: string, value: string) => {
@@ -256,6 +279,29 @@ export default function FudoMapPage() {
                 Fudo manda en nombre, precio, disponibilidad y categoría; se sincroniza solo cada 15 minutos.
               </span>
               {syncMessage && <span role="status" className="text-xs font-bold text-gray-700">{syncMessage}</span>}
+            </section>
+          )}
+
+          {data.demo && (
+            <section className="neumorphic rounded-2xl p-4 flex flex-col gap-3 text-sm text-gray-600">
+              <div>
+                <p className="font-bold text-gray-800">Modo demo: Fudo simulado</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Cambiá algo en el Fudo de mentira y después sincronizá: así se ve cómo llega a Productos y a la carta del cliente.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => void simulateChange("precios")} disabled={syncing} className="neumorphic-hover px-3 py-2 rounded-xl text-xs font-bold text-gray-700 disabled:opacity-60">
+                  Subir precios 10 %
+                </button>
+                <button type="button" onClick={() => void simulateChange("nuevo")} disabled={syncing} className="neumorphic-hover px-3 py-2 rounded-xl text-xs font-bold text-gray-700 disabled:opacity-60">
+                  Agregar producto nuevo
+                </button>
+                <button type="button" onClick={() => void simulateChange("apagar")} disabled={syncing} className="neumorphic-hover px-3 py-2 rounded-xl text-xs font-bold text-gray-700 disabled:opacity-60">
+                  Apagar un producto
+                </button>
+              </div>
+              {demoMessage && <p role="status" className="text-xs font-bold text-gray-700">{demoMessage}</p>}
             </section>
           )}
 
