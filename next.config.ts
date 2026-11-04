@@ -79,22 +79,12 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      // Corte a Cloudflare (2026-11-04): dely.opsyn.app (Vercel) manda todo a opsyndely.la-gambeta.com, salvo:
-      //   /api          webhooks (Meta, Mercado Pago) y crons no siguen redirects;
-      //   /repartidor   la APK v1.0 abre dely.opsyn.app/repartidor y solo navega dentro de ese host;
-      //   /login?redirectTo=/repartidor...  el ingreso con PIN de esa APK.
-      // Sacar las excepciones del repartidor cuando salga la APK que apunta al dominio nuevo.
+      // Corte a Cloudflare (2026-11-04): dely.opsyn.app (Vercel) manda todo a opsyndely.la-gambeta.com,
+      // salvo /api (webhooks y crons no siguen redirects). La APK 1.1 ya apunta al dominio nuevo.
       {
-        source: "/:path((?!api(?:/|$)|repartidor(?:/|$)|login$).*)",
+        source: "/:path((?!api(?:/|$)).*)",
         has: [{ type: "host", value: "dely.opsyn.app" }],
         destination: `${NEW_APP_ORIGIN}/:path`,
-        permanent: false,
-      },
-      {
-        source: "/login",
-        has: [{ type: "host", value: "dely.opsyn.app" }],
-        missing: [{ type: "query", key: "redirectTo", value: "/repartidor.*" }],
-        destination: `${NEW_APP_ORIGIN}/login`,
         permanent: false,
       },
       {
