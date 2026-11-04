@@ -7,9 +7,9 @@ const config: CapacitorConfig = {
   appName: "Dely Repartidor",
   webDir: "www",
   server: {
-    url: "https://dely.opsyn.app/repartidor",
+    url: "https://opsyndely.la-gambeta.com/repartidor",
     // El login vuelve a /login y a /aceptar-terminos del mismo dominio.
-    allowNavigation: ["dely.opsyn.app"],
+    allowNavigation: ["opsyndely.la-gambeta.com"],
     androidScheme: "https",
   },
   android: {
