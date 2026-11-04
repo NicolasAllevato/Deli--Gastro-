@@ -1,3 +1,10 @@
+import {
+  DEMO_FUDO_CATEGORY_ID_BY_NAME,
+  DEMO_FUDO_PAYMENT_IDS,
+  DEMO_FUDO_PRODUCT_ID_BY_NAME,
+  DEMO_LINKED_CATEGORY_NAMES,
+  DEMO_LINKED_PRODUCT_NAMES,
+} from "@/lib/demo/fudo-fixture";
 import { RESTAURANT_LOCATION, SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { DEMO_ACCOUNTS } from "@/lib/demo/users";
 import { DEMO_COURIER_PIN, DEMO_PIN_SECRET, hashPin } from "@/lib/courier-pins";
@@ -346,27 +353,46 @@ function buildExtraReviews(orders: readonly Row[], slowIds: ReadonlySet<string>,
 }
 
 export function buildSeed(): Tables {
-  const categories: Row[] = CATEGORIES.map((c, i) => ({
-    id: demoId(G.cat, i + 1),
-    name: c.name,
-    description: c.description,
-    is_active: true,
-    points_per_100: c.points,
-    created_at: ago(60 * 24 * 30),
-    updated_at: ago(60 * 24 * 30),
-  }));
+  // Fudo simulado: parte de la carta ya viene vinculada; el resto queda manual hasta el primer sync.
+  const categories: Row[] = CATEGORIES.map((c, i) => {
+    const linked = DEMO_LINKED_CATEGORY_NAMES.includes(c.name);
+    return {
+      id: demoId(G.cat, i + 1),
+      name: c.name,
+      description: c.description,
+      is_active: true,
+      points_per_100: c.points,
+      fudo_id: linked ? DEMO_FUDO_CATEGORY_ID_BY_NAME[c.name] ?? null : null,
+      source: linked ? "fudo" : "manual",
+      fudo_synced_at: linked ? ago(60) : null,
+      created_at: ago(60 * 24 * 30),
+      updated_at: ago(60 * 24 * 30),
+    };
+  });
 
-  const products: Row[] = PRODUCTS.map(([cat, name, description, price, seed, active], i) => ({
-    id: demoId(G.prod, i + 1),
-    category_id: demoId(G.cat, cat + 1),
-    name,
-    description,
-    price,
-    image_url: img(seed),
-    is_active: active,
-    points_per_100: null,
-    created_at: ago(60 * 24 * 30),
-    updated_at: ago(60 * 24 * 30),
+  const products: Row[] = PRODUCTS.map(([cat, name, description, price, seed, active], i) => {
+    const linked = DEMO_LINKED_PRODUCT_NAMES.includes(name);
+    return {
+      id: demoId(G.prod, i + 1),
+      category_id: demoId(G.cat, cat + 1),
+      name,
+      description,
+      price,
+      image_url: img(seed),
+      is_active: active,
+      points_per_100: null,
+      fudo_id: linked ? DEMO_FUDO_PRODUCT_ID_BY_NAME[name] ?? null : null,
+      source: linked ? "fudo" : "manual",
+      fudo_synced_at: linked ? ago(60) : null,
+      created_at: ago(60 * 24 * 30),
+      updated_at: ago(60 * 24 * 30),
+    };
+  });
+  const fudoProductMap: Row[] = products
+    .filter((p) => p.fudo_id != null)
+    .map((p) => ({ product_id: p.id, fudo_product_id: p.fudo_id, fudo_name: p.name, updated_at: ago(60) }));
+  const fudoPaymentMap: Row[] = Object.entries(DEMO_FUDO_PAYMENT_IDS).map(([payment_method, fudo_payment_method_id]) => ({
+    payment_method, fudo_payment_method_id, updated_at: ago(60),
   }));
 
   const clientUserId = DEMO_ACCOUNTS.find((a) => a.role === "cliente")!.id;
@@ -526,6 +552,6 @@ export function buildSeed(): Tables {
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
     integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [], payment_intents: [], order_items: [], courier_locations: [],
     couriers: demoCouriers(),
-    fudo_product_map: [], fudo_payment_map: [],
+    fudo_product_map: fudoProductMap, fudo_payment_map: fudoPaymentMap,
   };
 }

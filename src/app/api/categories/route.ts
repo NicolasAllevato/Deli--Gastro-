@@ -5,14 +5,22 @@ import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { FUDO_MANAGED_CATEGORY_FIELDS, stripFudoManaged } from "@/lib/fudo/catalog-lock";
 
-const categorySchema = z.object({
+const categoryFields = {
   name: z.string().trim().min(1, "El nombre es requerido").max(80),
-  description: z.string().trim().max(300).default(""),
-  is_active: z.boolean().default(true),
-  points_per_100: z.number().finite().min(0).max(1000).nullable().default(null),
+  description: z.string().trim().max(300),
+  is_active: z.boolean(),
+  points_per_100: z.number().finite().min(0).max(1000).nullable(),
+};
+
+const categorySchema = z.object({
+  ...categoryFields,
+  description: categoryFields.description.default(""),
+  is_active: categoryFields.is_active.default(true),
+  points_per_100: categoryFields.points_per_100.default(null),
 });
 
-const updateSchema = categorySchema.partial().extend({ id: z.string().uuid() });
+// Sin `.default()`: un PATCH parcial no debe pisar descripción, visibilidad ni puntos (ver /api/products).
+const updateSchema = z.object(categoryFields).partial().extend({ id: z.string().uuid() });
 
 function limited(req: NextRequest, max: number) {
   return rateLimit(getClientIp(req), max, 60_000);

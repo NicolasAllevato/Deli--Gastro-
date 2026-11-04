@@ -1,6 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createDemoDb } from "./helpers/demo-db.ts";
+import { createDemoDb as createSeededDb } from "./helpers/demo-db.ts";
+
+// El seed del demo ya trae productos y medios de pago mapeados (para probar Fudo en local).
+// Estos tests verifican el mapeo desde cero, así que arrancan con las tablas de mapeo vacías.
+const createDemoDb = () =>
+  createSeededDb((store) => {
+    store.fudo_product_map = [];
+    store.fudo_payment_map = [];
+  });
 
 const {
   saveSchema, buildProductRows, buildPaymentRows, findUnmappedProducts, parseFudoCatalog,

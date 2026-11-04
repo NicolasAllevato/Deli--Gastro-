@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { isDemoMode } from "@/lib/demo/mode";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { fetchFudoCatalog, fudoGatewayConfig } from "@/lib/fudo/gateway";
 import { buildMapResponse, safeCountSkippedOrders, loadMapping } from "@/lib/fudo/mapping";
@@ -15,7 +16,9 @@ export async function GET(req: NextRequest) {
     const config = fudoGatewayConfig();
     const db = createAdminClient();
     const [mapping, catalog, skipped] = await Promise.all([loadMapping(db), fetchFudoCatalog(config), safeCountSkippedOrders(db)]);
-    return NextResponse.json(buildMapResponse(mapping, catalog, config !== null, skipped));
+    // En modo demo hay un Fudo simulado: la pantalla se comporta como con el gateway configurado.
+    const demo = isDemoMode();
+    return NextResponse.json({ ...buildMapResponse(mapping, catalog, config !== null || demo, skipped), demo });
   } catch (error: unknown) {
     console.error("[admin/fudo-map] leer", error);
     return NextResponse.json({ error: "No se pudo leer el mapeo de Fudo." }, { status: 500 });

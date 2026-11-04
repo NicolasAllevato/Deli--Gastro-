@@ -1,5 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { demoFudoProductsPayload } from "@/lib/demo/fudo-fixture";
+import { isDemoMode } from "@/lib/demo/mode";
+import { runDemoCatalogSync } from "@/lib/fudo/demo-sync";
 import { parseFudoCatalog, type FudoCatalogItem } from "@/lib/fudo/mapping";
+import { createAdminClient } from "@/utils/supabase/admin";
 
 /**
  * Enlace con el Worker `fudo-gateway` (workers/fudo-gateway), que es quien habla con la API de Fudo.
@@ -56,6 +60,7 @@ const CATALOG_MAX_BYTES = 1_000_000;
  * pantalla de mapeo; nunca tira: devuelve [] si la integración está apagada o el Worker no responde.
  */
 export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<FudoCatalogItem[]> {
+  if (isDemoMode()) return parseFudoCatalog(demoFudoProductsPayload());
   if (!config) return [];
   try {
     const res = await fetch(`${config.url}/products`, {
@@ -86,12 +91,23 @@ export interface CatalogSyncSummary {
   productsCreated: number;
   productsUpdated: number;
   productsDeactivated: number;
+  /** Desactivaciones frenadas por el guardarraíl (listado de Fudo sospechosamente corto). */
+  deactivationBlocked?: number;
+  /** true = simulacro: no se escribió nada. */
+  dryRun?: boolean;
 }
 
 export type CatalogSyncOutcome = { ok: true; summary: CatalogSyncSummary } | { ok: false; error: string };
 
 /** Pide al Worker que sincronice el catálogo de Fudo ahora (el cron lo hace cada 15 min). Nunca tira. */
 export async function requestCatalogSync(config = fudoGatewayConfig()): Promise<CatalogSyncOutcome> {
+  if (isDemoMode()) {
+    try {
+      return { ok: true, summary: await runDemoCatalogSync(createAdminClient(), false) };
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : "No se pudo sincronizar el catálogo simulado." };
+    }
+  }
   if (!config) return { ok: false, error: "La integración con Fudo no está configurada." };
   try {
     const res = await fetch(`${config.url}/catalog-sync`, {
