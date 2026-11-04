@@ -159,6 +159,26 @@ export function nextStatus(current: BoardStatus, target: BoardStatus): BoardStat
   return RANK[target] > RANK[current] ? target : current;
 }
 
+/** Rango explícito para importar ventas viejas (backfill). Máximo `MAX_RANGE_DAYS` por corrida. */
+export interface SalesRange {
+  from: Date;
+  to: Date;
+}
+export const MAX_RANGE_DAYS = 7;
+
+/** Lee `from`/`to` (ISO) de la query. `null` si no vienen; lanza si son inválidos o el rango es muy largo. */
+export function parseSalesRange(params: URLSearchParams): SalesRange | null {
+  const rawFrom = params.get("from");
+  const rawTo = params.get("to");
+  if (!rawFrom && !rawTo) return null;
+  const from = new Date(rawFrom ?? "");
+  const to = new Date(rawTo ?? "");
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) throw new Error("from/to inválidos (ISO 8601).");
+  if (to <= from) throw new Error("to tiene que ser posterior a from.");
+  if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * 86_400_000) throw new Error(`El rango no puede pasar de ${MAX_RANGE_DAYS} días.`);
+  return { from, to };
+}
+
 export interface OrderLineInsert {
   product_id: string | null;
   name: string;

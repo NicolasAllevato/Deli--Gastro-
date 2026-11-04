@@ -1,5 +1,6 @@
 import { syncCatalog } from "./catalog-sync";
 import { syncCustomers, syncSales } from "./sales-sync.ts";
+import { parseSalesRange } from "./sales.ts";
 import { claimOrder, listRetryable, loadMaps, markFailed, markSent, MAX_ATTEMPTS, type DbEnv } from "./db";
 import { createFudoOrder, FudoError, listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo";
 import { buildFudoOrder, parseFudoWebhook } from "./payload";
@@ -146,7 +147,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (request.method === "POST" && pathname === "/catalog-sync") return handleCatalogSync(request, env);
-    if (request.method === "POST" && pathname === "/sales-sync") return handleSignedSync(request, env, "/sales-sync", (dry) => syncSales(env, dry));
+    if (request.method === "POST" && pathname === "/sales-sync") return handleSignedSync(request, env, "/sales-sync", (dry) => syncSales(env, dry, parseSalesRange(new URL(request.url).searchParams)));
     if (request.method === "POST" && pathname === "/customers-sync") return handleSignedSync(request, env, "/customers-sync", (dry) => syncCustomers(env, dry));
     if (request.method === "POST" && pathname === "/sync") return handleSync(request, env);
     if (request.method === "POST" && pathname === "/webhook") return handleWebhook(request, env);
