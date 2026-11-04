@@ -53,6 +53,13 @@ Pasos originales:
 6. Custom domain `opsyndely.la-gambeta.com`.
 
 ## Fase C — Corte
+
+**Hecho el 2026-11-04:** `APP_URL` de `fudo-gateway` y `whatsapp-bot` → dominio nuevo; `encuestas-cron` con `BASE_URL`
+y `CRON_SECRET` nuevos (probado 200/401); webhook de Meta (app Opsyn Dely Agente) → `https://bot.la-gambeta.com/webhook`,
+verificado por Meta al guardarlo. La app de Meta sigue sin publicar (solo llegan webhooks de prueba del panel).
+Redirect de `dely.opsyn.app` listo en `next.config.ts` (commit 074a574), **falta llevarlo a Vercel** (merge a main).
+**Falta (usuario):** Supabase Auth → Site URL y Redirect URLs. **Gotcha:** wrangler 4.157 de la raíz toma el
+`wrangler.jsonc` de la app aunque se corra desde `workers/<x>`: desplegar los Workers con `--config wrangler.toml`.
 - Supabase Auth: Site URL y Redirect URLs con `opsyndely.la-gambeta.com`.
 - `APP_URL` de `fudo-gateway` y de `whatsapp-bot`; `BASE_URL` y `CRON_SECRET` (el nuevo) de `encuestas-cron`; webhook de Mercado Pago (`PUBLIC_URL`).
 - Webhook de Meta a `bot.la-gambeta.com/webhook`.
