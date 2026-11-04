@@ -3,7 +3,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type OrderStatus = 'Recibidos' | 'En Preparación' | 'En Camino' | 'Finalizados' | 'Cancelado'
 export type ClientTier  = 'Bronce' | 'Plata' | 'Oro' | 'Platino'
 export type PaymentMethod = 'Efectivo' | 'Tarjeta' | 'Mercado Pago'
-export type OrderChannel = 'web' | 'whatsapp' | 'mostrador'
+export type OrderChannel = 'web' | 'whatsapp' | 'mostrador' | 'fudo'
 export type FudoSyncStatus = 'pending' | 'sent' | 'failed' | 'skipped'
 export type PaymentIntentStatus = 'pending' | 'approved' | 'cancelled' | 'expired' | 'refunded'
 
@@ -20,6 +20,9 @@ export interface Database {
           tier: ClientTier
           total_points: number
           wa_marketing_opt_in: boolean
+          fudo_customer_id: number | null
+          email: string | null
+          source: 'app' | 'fudo'
           created_at: string
           updated_at: string
         }
@@ -32,6 +35,9 @@ export interface Database {
           tier?: ClientTier
           total_points?: number
           wa_marketing_opt_in?: boolean
+          fudo_customer_id?: number | null
+          email?: string | null
+          source?: 'app' | 'fudo'
         }
         Update: {
           name?: string
@@ -40,6 +46,9 @@ export interface Database {
           tier?: ClientTier
           total_points?: number
           wa_marketing_opt_in?: boolean
+          fudo_customer_id?: number | null
+          email?: string | null
+          source?: 'app' | 'fudo'
         }
         Relationships: []
       }
@@ -66,6 +75,8 @@ export interface Database {
           points_earned: number | null
           fudo_order_id: number | null
           fudo_sync_status: FudoSyncStatus | null
+          fudo_sale_type: 'DELIVERY' | 'TAKEAWAY' | 'EAT-IN' | null
+          fudo_sale_state: string | null
           fudo_error: string | null
           fudo_attempts: number
           fudo_synced_at: string | null
@@ -91,6 +102,8 @@ export interface Database {
           channel?: OrderChannel
           points_earned?: number | null
           fudo_sync_status?: FudoSyncStatus | null
+          fudo_sale_type?: 'DELIVERY' | 'TAKEAWAY' | 'EAT-IN' | null
+          fudo_sale_state?: string | null
         }
         Update: {
           status?: OrderStatus
@@ -111,6 +124,8 @@ export interface Database {
           points_earned?: number | null
           fudo_order_id?: number | null
           fudo_sync_status?: FudoSyncStatus | null
+          fudo_sale_type?: 'DELIVERY' | 'TAKEAWAY' | 'EAT-IN' | null
+          fudo_sale_state?: string | null
           fudo_error?: string | null
           fudo_attempts?: number
           fudo_synced_at?: string | null

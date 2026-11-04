@@ -22,6 +22,8 @@ export interface EnrichedOrder {
   notes: string | null;
   courier_name: string | null;
   channel: OrderChannel;
+  /** Tipo de venta en Fudo (solo pedidos con channel = 'fudo'). */
+  fudo_sale_type: string | null;
   accepted_at: string | null;
   ready_at: string | null;
   picked_up_at: string | null;
@@ -47,6 +49,7 @@ interface RawOrder {
   notes?: string | null;
   courier_name?: string | null;
   channel?: OrderChannel | null;
+  fudo_sale_type?: string | null;
   accepted_at?: string | null;
   ready_at?: string | null;
   picked_up_at?: string | null;
@@ -93,6 +96,7 @@ export async function enrichOrders(db: Db, orders: RawOrder[]): Promise<Enriched
       notes: o.notes ?? null,
       courier_name: o.courier_name ?? null,
       channel: o.channel ?? "web",
+      fudo_sale_type: o.fudo_sale_type ?? null,
       accepted_at: o.accepted_at ?? null,
       ready_at: o.ready_at ?? null,
       picked_up_at: o.picked_up_at ?? null,

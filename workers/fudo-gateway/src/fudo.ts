@@ -110,26 +110,34 @@ async function getPublicToken(env: FudoEnv, fresh = false): Promise<string> {
 }
 
 /** GET autenticado a la API pública; ante 401 con el token cacheado pide uno nuevo y reintenta una vez. */
-async function publicGet(env: FudoEnv, path: string): Promise<Response> {
+export async function publicGet(env: FudoEnv, path: string): Promise<Response> {
   const send = async (token: string) =>
     fetch(`${env.FUDO_PUBLIC_API_URL}/${path}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
   const res = await send(await getPublicToken(env));
   return res.status === 401 ? send(await getPublicToken(env, true)) : res;
 }
 
-/** Trae TODAS las páginas de un recurso (JSON:API) y las devuelve juntas como `{ data: [...] }`. */
-export async function listPublicResource(env: FudoEnv, resource: string): Promise<{ data: unknown[] }> {
+/**
+ * Trae TODAS las páginas de un recurso (JSON:API) y las devuelve juntas como `{ data: [...] }`.
+ * `query` agrega filtros y orden con la sintaxis de Fudo, por ejemplo
+ * `filter[createdAt]=and(gte.2026-11-01T00:00:00,lte.2026-11-03T23:59:59)&sort=-createdAt`.
+ */
+export async function listPublicResource(env: FudoEnv, resource: string, query = ""): Promise<{ data: unknown[]; included: unknown[] }> {
   const data: unknown[] = [];
+  // Con `include=...` Fudo agrega las entidades relacionadas en `included` (por ejemplo los ítems de cada venta).
+  const included: unknown[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await publicGet(env, `${resource}?page[size]=${PAGE_SIZE}&page[number]=${page}`);
+    const res = await publicGet(env, `${resource}?${query ? `${query}&` : ""}page[size]=${PAGE_SIZE}&page[number]=${page}`);
     if (!res.ok) throw new FudoError(`Fudo ${resource} ${res.status}`, res.status, false);
-    const body = (await res.json()) as { data?: unknown };
+    const body = (await res.json()) as { data?: unknown; included?: unknown };
     if (!Array.isArray(body.data)) throw new FudoError(`Fudo ${resource} no devolvió una lista`, 502, false);
     data.push(...body.data);
-    if (body.data.length < PAGE_SIZE) return { data };
+    if (Array.isArray(body.included)) included.push(...body.included);
+    if (body.data.length < PAGE_SIZE) return { data, included };
   }
   throw new FudoError(`Fudo ${resource}: más de ${MAX_PAGES * PAGE_SIZE} registros, listado incompleto`, 502, false);
 }
 
 export const listFudoProducts = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "products");
 export const listFudoCategories = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "product-categories");
+

@@ -26,7 +26,7 @@ interface Turn {
   content: string;
 }
 
-const CHANNEL_LABEL: Record<string, string> = { web: "Web", whatsapp: "WhatsApp", mostrador: "Mostrador" };
+const CHANNEL_LABEL: Record<string, string> = { web: "Web", whatsapp: "WhatsApp", mostrador: "Mostrador", fudo: "Fudo" };
 const SUGGESTIONS = ["¿Cuánto vendí esta semana?", "¿Cuáles son los productos más vendidos?", "¿Qué clientes piden seguido?"];
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
