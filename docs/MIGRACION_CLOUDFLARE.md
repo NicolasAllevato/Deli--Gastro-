@@ -26,6 +26,23 @@ Supabase no cambia.
    `bot-dely.opsyn.app` sigue andando hasta cambiar el webhook en Meta.
 
 ## Fase B — App en Cloudflare (OpenNext)
+
+**HECHO el 2026-11-04.** Worker `opsyn-dely` en `https://opsyndely.la-gambeta.com` (y `opsyn-dely.opsyn-la-gambeta-dely.workers.dev`),
+bundle 4,76 MB gzip (Workers Paid). Humo OK: páginas públicas 200, guard del proxy (307 a `/login`, APIs 401) y admin
+real logueado (`/admin/ejecutivo`, `/admin/tablero`, `/api/orders`, `/api/products` en 200 con datos de Supabase).
+Secretos cargados: `SUPABASE_SERVICE_ROLE_KEY`, `UPLOADS_WORKER_TOKEN`, `UPLOADS_WORKER_URL`, `BOT_INTERNAL_SECRET`
+(el nuevo, igual al de `whatsapp-bot`) y `CRON_SECRET` nuevo (`CRON_SECRET_CF` en `.env.local`).
+
+**Cómo desplegar** (gotcha): `.env.local` tiene un `CLOUDFLARE_API_TOKEN` de otra cuenta que OpenNext/wrangler cargan
+(error 10000) y tokens que no deben empaquetarse. Sacarlo de la carpeta, exportar solo las `NEXT_PUBLIC_*` con
+`NEXT_PUBLIC_APP_URL=https://opsyndely.la-gambeta.com`, y correr `env -u CLOUDFLARE_API_TOKEN npm run cf:deploy`.
+
+**Faltan en el Worker** (Vercel no deja descifrar las "sensitive"):
+- `UPSTASH_REDIS_REST_URL`/`_TOKEN`: sin ellas el rate limit queda en memoria por instancia (debilita el tope del PIN). Las pasa el usuario o se crea una base nueva.
+- `FUDO_GATEWAY_URL` (= `https://fudo-gateway.opsyn-la-gambeta-dely.workers.dev`) y `FUDO_GATEWAY_SECRET`: al final, cuando se active el envío de pedidos a Fudo.
+- `OPENAI_API_KEY`, Mercado Pago y Resend: diferidos como en Vercel.
+
+Pasos originales:
 1. `@opennextjs/cloudflare` + `wrangler.jsonc` + `open-next.config.ts`; scripts `preview`/`deploy`.
 2. Revisar compatibilidad: Next 16.4.3, `src/proxy.ts`, rutas con `after()`, `next/image`, tamaño del bundle
    (el plan Free de Workers limita a 3 MB comprimido: probablemente haga falta **Workers Paid, US$5/mes**).
@@ -37,7 +54,7 @@ Supabase no cambia.
 
 ## Fase C — Corte
 - Supabase Auth: Site URL y Redirect URLs con `opsyndely.la-gambeta.com`.
-- `APP_URL` de `fudo-gateway`, `BASE_URL` de `encuestas-cron`, webhook de Mercado Pago (`PUBLIC_URL`).
+- `APP_URL` de `fudo-gateway` y de `whatsapp-bot`; `BASE_URL` y `CRON_SECRET` (el nuevo) de `encuestas-cron`; webhook de Mercado Pago (`PUBLIC_URL`).
 - Webhook de Meta a `bot.la-gambeta.com/webhook`.
 - APK del repartidor: si apunta a `dely.opsyn.app`, nueva versión o redirect.
 - `dely.opsyn.app` → redirect 301 a `opsyndely.la-gambeta.com`; Vercel queda pausado una semana antes de borrarlo.
