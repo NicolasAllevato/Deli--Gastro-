@@ -213,6 +213,13 @@ export interface ExistingOrder {
   channel: string;
   status: string;
   fudo_sale_state: string | null;
+  client_id?: string | null;
+}
+
+/** Pedidos ya importados sin cliente que ahora se pueden vincular, agrupados por cliente. */
+export interface ClientRelink {
+  client_id: string;
+  orderIds: string[];
 }
 
 export interface SalesPlanInput {
@@ -227,9 +234,19 @@ export interface SalesPlanInput {
 export interface SalesPlan {
   inserts: SaleOrderInsert[];
   updates: SaleOrderUpdate[];
+  relinks: ClientRelink[];
 }
 
 const NOTES_MAX = 300;
+
+function clientFor(sale: FudoSale, input: SalesPlanInput): string | null {
+  const key = phoneKey(sale.anon?.phone);
+  return (
+    (sale.customerId !== null ? input.clientsByFudoId.get(sale.customerId) : undefined) ??
+    (key ? input.clientsByPhone.get(key) : undefined) ??
+    null
+  );
+}
 
 function linesFor(items: FudoItem[], products: SalesPlanInput["productsByFudoId"]): OrderLineInsert[] {
   return items
@@ -246,8 +263,9 @@ function linesFor(items: FudoItem[], products: SalesPlanInput["productsByFudoId"
 }
 
 export function planSalesImport(input: SalesPlanInput): SalesPlan {
-  const plan: SalesPlan = { inserts: [], updates: [] };
+  const plan: SalesPlan = { inserts: [], updates: [], relinks: [] };
   const byFudoId = new Map(input.existing.map((o) => [o.fudo_order_id, o]));
+  const relinks = new Map<string, string[]>();
 
   for (const sale of input.sales) {
     if (sale.saleType === "EAT-IN") continue;
@@ -261,15 +279,14 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       if (status !== existing.status || sale.saleState !== existing.fudo_sale_state) {
         plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState });
       }
+      // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
+      const relinkTo = existing.client_id === null ? clientFor(sale, input) : null;
+      if (relinkTo) relinks.set(relinkTo, [...(relinks.get(relinkTo) ?? []), existing.id]);
       continue;
     }
 
     const lines = linesFor(input.itemsBySale.get(sale.id) ?? [], input.productsByFudoId);
-    const key = phoneKey(sale.anon?.phone);
-    const clientId =
-      (sale.customerId !== null ? input.clientsByFudoId.get(sale.customerId) : undefined) ??
-      (key ? input.clientsByPhone.get(key) : undefined) ??
-      null;
+    const clientId = clientFor(sale, input);
     const notes = [sale.anon?.name ?? sale.customerName, sale.anon?.phone, sale.comment].filter(Boolean).join(" · ");
 
     plan.inserts.push({
@@ -287,5 +304,5 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       lines,
     });
   }
-  return plan;
+  return { ...plan, relinks: [...relinks].map(([client_id, orderIds]) => ({ client_id, orderIds })) };
 }
