@@ -2,12 +2,13 @@ name = "whatsapp-bot"
 main = "src/index.ts"
 compatibility_date = "2026-08-27"
 compatibility_flags = ["nodejs_compat"]
-account_id = "53d56863addd21be708a642b540e5990"
+account_id = "e7351dd776e005da826ba6f2a5aae4c1"
 
 # Webhook de Meta: https://bot-dely.opsyn.app/webhook. El dominio ya está comprado y responde (verificado el 2026-11-03);
 # está enlazado desde el dashboard de Cloudflare. Si se quiere versionar acá:
 # routes = [{ pattern = "bot-dely.opsyn.app", custom_domain = true }]
 workers_dev = true
+routes = [{ pattern = "bot.la-gambeta.com", custom_domain = true }]
 
 # Corre cerca de Supabase (la base) en vez de cerca de Meta: menos latencia por consulta.
 [placement]
@@ -18,7 +19,7 @@ mode = "smart"
 # y pegar acá el id que devuelve (el id no es secreto; la cadena de conexión queda solo en Cloudflare).
 [[hyperdrive]]
 binding = "DB"
-id = "5672a541cbee4d299b076bb2bb58946d"
+id = "1a9f0b99798d4bf4ac2fb0b0fa0aa857"
 
 # Workers AI: clasificador, respondedor y transcripción de audios (sin OpenAI).
 [ai]

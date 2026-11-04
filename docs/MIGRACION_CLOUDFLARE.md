@@ -14,6 +14,8 @@ Supabase no cambia.
 
 ## Fase A — Workers a la cuenta nueva
 
+**`whatsapp-bot`: HECHO el 2026-11-04.** No usa D1: lee la base por Hyperdrive (nuevo `1a9f0b99…`, rol `deli_bot`) y las credenciales de Meta de `bot_secrets` en Supabase, así que no hubo que copiarlas. Colas `wa-inbound`/`wa-inbound-dlq` creadas, `BOT_INTERNAL_SECRET` nuevo (en `.env.local`; cargarlo igual en la app al migrarla), custom domain `bot.la-gambeta.com` con `/health` ok. Meta sigue apuntando a `bot-dely.opsyn.app` hasta el corte (fase C).
+
 **`fudo-gateway`: HECHO el 2026-11-04.** URL nueva `https://fudo-gateway.opsyn-la-gambeta-dely.workers.dev`, KV `a5d6ac94…`, 5 secretos cargados, crons prendidos y simulacros en 200 (sin pendientes). El Worker viejo de Opsyn Dely quedó con los tres crons en "0"; borrarlo tras el corte.
 
 1. `fudo-gateway`: KV nuevo, `account_id` nuevo, secretos (`FUDO_API_KEY`/`FUDO_API_SECRET` los tiene que
