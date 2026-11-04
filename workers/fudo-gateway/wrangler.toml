@@ -2,7 +2,7 @@ name = "fudo-gateway"
 main = "src/index.ts"
 compatibility_date = "2026-08-27"
 compatibility_flags = ["nodejs_compat"]
-account_id = "53d56863addd21be708a642b540e5990"
+account_id = "e7351dd776e005da826ba6f2a5aae4c1"
 workers_dev = true
 
 # Pasarela Deli-Gastro <-> Fudo (Integrations API v1). Ver docs/FUDO_INTEGRACION.md.
@@ -15,7 +15,7 @@ workers_dev = true
 # Crear con:  npx wrangler kv namespace create FUDO_KV   y pegar el id acá.
 [[kv_namespaces]]
 binding = "FUDO_KV"
-id = "edecc57f9a2b46c88f09c2254d8ab4cb"
+id = "a5d6ac94d9144d949badfd510690ae5e"
 
 [triggers]
 crons = ["*/5 * * * *"]

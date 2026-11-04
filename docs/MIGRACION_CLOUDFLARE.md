@@ -13,6 +13,9 @@ Decidido el 2026-11-04: todo lo del cliente pasa a la cuenta **Opsyn-La gambeta 
 Supabase no cambia.
 
 ## Fase A — Workers a la cuenta nueva
+
+**`fudo-gateway`: HECHO el 2026-11-04.** URL nueva `https://fudo-gateway.opsyn-la-gambeta-dely.workers.dev`, KV `a5d6ac94…`, 5 secretos cargados, crons prendidos y simulacros en 200 (sin pendientes). El Worker viejo de Opsyn Dely quedó con los tres crons en "0"; borrarlo tras el corte.
+
 1. `fudo-gateway`: KV nuevo, `account_id` nuevo, secretos (`FUDO_API_KEY`/`FUDO_API_SECRET` los tiene que
    pasar el usuario: Cloudflare no deja leer los secretos de la cuenta vieja), deploy. Apagar los crons del
    viejo **antes** de prender los del nuevo para no importar dos veces (igual hay `on_conflict`).
