@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Bike, CreditCard, Flame, History, MapPin, XCircle, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { fudoOriginLabel } from "@/lib/fudo/origin";
 import { elapsedTone, formatMoney, formatOrderId } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
@@ -175,6 +176,10 @@ export function KanbanColumn({ config, orders, busyId, now, onMove, couriers = [
                 <p className="font-bold text-sm text-gray-700 truncate">{order.client_name}</p>
                 <span className="text-sm font-black text-brand-orange shrink-0">{formatMoney(order.total)}</span>
               </div>
+
+              {fudoOriginLabel(order) && (
+                <span className="badge-blue self-start px-2 py-0.5 rounded-full text-[10px] font-bold">{fudoOriginLabel(order)}</span>
+              )}
 
               <p className="text-xs text-gray-600 line-clamp-2" title={order.items_desc}>{order.items_desc}</p>
 

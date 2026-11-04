@@ -1,3 +1,4 @@
+import { isFudoOrigin } from "@/lib/fudo/origin";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
 import { formatMoney, formatOrderId } from "@/lib/orders";
@@ -90,6 +91,7 @@ export async function notifyOrderEvent(db: Db, orderId: string, notice: OrderNot
   try {
     const { data: order } = await db.from("orders").select("*").eq("id", orderId).maybeSingle();
     if (!order) return;
+    if (isFudoOrigin(order)) return; // segundo resguardo: el PATCH ya los corta antes
     if (notice === "created" && skipCreatedNotice(order)) return;
 
     const target = await loadTarget(db, order);
@@ -117,6 +119,8 @@ export async function sendDueSurveys(db: Db, appUrl: string, now: Date = new Dat
         .from("orders")
         .select("*")
         .eq("status", "Finalizados")
+        // Los pedidos nacidos en Fudo no reciben encuesta (los gestiona el local en Fudo).
+        .neq("channel", "fudo")
         .is("survey_sent_at", null)
         .gte("delivered_at", from)
         .lte("delivered_at", to)

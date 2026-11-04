@@ -1,4 +1,5 @@
 import { syncCatalog } from "./catalog-sync";
+import { syncCustomers, syncSales } from "./sales-sync.ts";
 import { claimOrder, listRetryable, loadMaps, markFailed, markSent, MAX_ATTEMPTS, type DbEnv } from "./db";
 import { createFudoOrder, FudoError, listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo";
 import { buildFudoOrder, parseFudoWebhook } from "./payload";
@@ -10,6 +11,10 @@ export interface Env extends FudoEnv, DbEnv {
   FUDO_GATEWAY_SECRET: string;
   /** "1" activa el sync automático del catálogo en el cron (cada 15 min). El botón del admin funciona siempre. */
   CATALOG_CRON?: string;
+  /** "1" importa las ventas de delivery y take away de Fudo en cada corrida del cron (cada 5 min). */
+  SALES_CRON?: string;
+  /** "1" importa los clientes de Fudo una vez por hora. */
+  CUSTOMERS_CRON?: string;
   /** "1" para loguear el cuerpo completo del webhook (trae datos del cliente). Solo mientras se ajusta el parser. */
   DEBUG_WEBHOOK_BODY?: string;
 }
@@ -120,6 +125,20 @@ async function handleCatalogSync(request: Request, env: Env): Promise<Response> 
   }
 }
 
+type SignedJob = "/catalog-sync" | "/sales-sync" | "/customers-sync";
+
+/** Sync a pedido de ventas o clientes (la app firma el path). `?dry=1` solo calcula. */
+async function handleSignedSync(request: Request, env: Env, path: SignedJob, run: (dry: boolean) => Promise<unknown>): Promise<Response> {
+  if (!(await verifyHmacHex(path, request.headers.get(SIGNATURE_HEADER), env.FUDO_GATEWAY_SECRET))) {
+    return json({ error: "Firma inválida." }, 401);
+  }
+  try {
+    return json({ result: await run(new URL(request.url).searchParams.get("dry") === "1") });
+  } catch (e) {
+    return json({ error: errorMessage(e) }, 502);
+  }
+}
+
 /** El catálogo se sincroniza cada 15 min; el cron corre cada 5 para los reintentos de pedidos. */
 const CATALOG_SYNC_EVERY_MINUTES = 15;
 
@@ -127,6 +146,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (request.method === "POST" && pathname === "/catalog-sync") return handleCatalogSync(request, env);
+    if (request.method === "POST" && pathname === "/sales-sync") return handleSignedSync(request, env, "/sales-sync", (dry) => syncSales(env, dry));
+    if (request.method === "POST" && pathname === "/customers-sync") return handleSignedSync(request, env, "/customers-sync", (dry) => syncCustomers(env, dry));
     if (request.method === "POST" && pathname === "/sync") return handleSync(request, env);
     if (request.method === "POST" && pathname === "/webhook") return handleWebhook(request, env);
     if (request.method === "GET" && (pathname === "/products" || pathname === "/product-categories")) {
@@ -146,7 +167,22 @@ export default {
             console.error("[fudo.cron]", id, errorMessage(e));
           }
         }
-        if (env.CATALOG_CRON === "1" && new Date(controller.scheduledTime).getUTCMinutes() % CATALOG_SYNC_EVERY_MINUTES === 0) {
+        const minute = new Date(controller.scheduledTime).getUTCMinutes();
+        if (env.SALES_CRON === "1") {
+          try {
+            await syncSales(env);
+          } catch (e) {
+            console.error("[fudo.sales]", errorMessage(e));
+          }
+        }
+        if (env.CUSTOMERS_CRON === "1" && minute === 0) {
+          try {
+            await syncCustomers(env);
+          } catch (e) {
+            console.error("[fudo.customers]", errorMessage(e));
+          }
+        }
+        if (env.CATALOG_CRON === "1" && minute % CATALOG_SYNC_EVERY_MINUTES === 0) {
           try {
             await syncCatalog(env);
           } catch (e) {

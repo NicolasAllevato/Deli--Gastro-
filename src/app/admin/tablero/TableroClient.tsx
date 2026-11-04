@@ -157,7 +157,8 @@ export default function TableroClient({ initialOrders }: Props) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(json.error ?? "No se pudo actualizar el pedido.");
       }
-      sendToDispatcher("status_update", {
+      // Los pedidos nacidos en Fudo se despachan desde Fudo: no se avisa al despachador.
+      if (previous.find((o) => o.id === id)?.channel !== "fudo") sendToDispatcher("status_update", {
         orderId: id,
         newStatus,
         timestamp: new Date().toISOString(),

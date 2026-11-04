@@ -13,6 +13,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   web: "Web",
   whatsapp: "WhatsApp",
   mostrador: "Mostrador",
+  fudo: "Fudo",
 };
 
 const nf = (n: number, digits = 1) => n.toLocaleString("es-AR", { maximumFractionDigits: digits });

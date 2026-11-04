@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { isFudoOrigin } from "@/lib/fudo/origin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, requireAnyRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { courierDisplayName } from "@/lib/auth/courier";
@@ -202,6 +203,9 @@ export async function PATCH(req: NextRequest) {
       .from("order_events")
       .insert(events.map((e) => ({ order_id: data.id, actor: auth.role, ...e })));
   }
+
+  // Un pedido nacido en Fudo ya lo gestiona el local allá: sin WhatsApp, puntos, reembolsos ni canjes.
+  if (isFudoOrigin(data)) return NextResponse.json(data);
 
   const notice = patch.status && patch.status !== "Cancelado" && patch.status !== "Recibidos" ? patch.status : null;
   if (notice) after(() => notifyOrderEvent(supabase, data.id, notice as OrderNotice));
