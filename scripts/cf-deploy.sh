@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Deploy de la app a Cloudflare (OpenNext) sin empaquetar .env.local ni usar su CLOUDFLARE_API_TOKEN
+# (es de otra cuenta → error 10000). Mueve .env.local afuera durante el build y lo devuelve SIEMPRE
+# (trap), aunque el build falle o se corte. Uso: bash scripts/cf-deploy.sh
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+ENV_FILE=".env.local"
+[ -f "$ENV_FILE" ] || { echo "No está $ENV_FILE; no despliego." >&2; exit 1; }
+
+BACKUP_DIR="${HOME}/.deli-gastro-env-backups"
+mkdir -p "$BACKUP_DIR"
+STASH="$BACKUP_DIR/env.local.$(date +%Y%m%d-%H%M%S)"
+cp "$ENV_FILE" "$STASH.copia"          # copia permanente, por las dudas
+mv "$ENV_FILE" "$STASH"
+restore() { [ -f "$STASH" ] && mv "$STASH" "$ENV_FILE" && echo ".env.local restaurado."; }
+trap restore EXIT INT TERM
+
+# Solo las NEXT_PUBLIC_* (se hornean en el build), con la URL del dominio nuevo.
+set -a
+eval "$(grep -E '^NEXT_PUBLIC_' "$STASH" | grep -v '^NEXT_PUBLIC_APP_URL')"
+set +a
+export NEXT_PUBLIC_APP_URL="https://opsyndely.la-gambeta.com"
+
+env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID npm run cf:deploy
