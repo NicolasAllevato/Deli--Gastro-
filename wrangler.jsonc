@@ -11,7 +11,10 @@
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "opsyn-dely" }],
   "workers_dev": true,
-  "routes": [{ "pattern": "opsyndely.la-gambeta.com", "custom_domain": true }],
+  "routes": [
+    { "pattern": "opsyndely.la-gambeta.com", "custom_domain": true },
+    { "pattern": "la-gambeta.com", "custom_domain": true }
+  ],
   "vars": {
     "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com"
   },

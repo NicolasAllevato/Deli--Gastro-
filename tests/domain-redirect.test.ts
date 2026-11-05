@@ -59,3 +59,27 @@ describe("redirect de dely.opsyn.app (corte a Cloudflare)", () => {
     for (const p of ["/api", "/api/cron/surveys"]) assert.ok(!matches(p), p);
   });
 });
+
+describe("redirect de la raíz la-gambeta.com", () => {
+  const rulesHost = byHost("la-gambeta.com");
+  const [pages] = rulesHost;
+  const matches = matcher(pages?.source ?? "");
+
+  it("una sola regla, temporal, hacia el dominio de la app", () => {
+    assert.equal(rulesHost.length, 1);
+    assert.equal(pages.destination, `${NEW}/:path`);
+    assert.equal(pages.permanent, false);
+  });
+
+  it("redirige la portada y las páginas", () => {
+    for (const p of ["/", "/terminos", "/privacidad"]) assert.ok(matches(p), p);
+  });
+
+  it("no toca /api", () => {
+    for (const p of ["/api", "/api/cron/surveys"]) assert.ok(!matches(p), p);
+  });
+
+  it("el dominio de la app no se redirige a sí mismo", () => {
+    assert.equal(byHost("opsyndely.la-gambeta.com").length, 0);
+  });
+});

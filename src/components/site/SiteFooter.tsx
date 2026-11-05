@@ -18,6 +18,20 @@ export function SiteFooter() {
           </p>
           <p className="mt-1">{copyrightLine()}</p>
           <p className="mt-0.5">Un producto de {BRAND.company}.</p>
+          <address className="mt-2 not-italic leading-relaxed">
+            <p>
+              Titular: {BRAND.legal.holder} · CUIT {BRAND.legal.cuit}
+            </p>
+            <p>{BRAND.legal.address}</p>
+            <p>
+              <a
+                href={`mailto:${BRAND.contactEmail}`}
+                className="font-semibold underline hover:text-gray-800 transition-colors"
+              >
+                {BRAND.contactEmail}
+              </a>
+            </p>
+          </address>
         </div>
         <nav aria-label="Información legal" className="flex flex-wrap justify-center gap-x-5 gap-y-2">
           {LEGAL_LINKS.map((l) => (
