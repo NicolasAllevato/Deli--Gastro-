@@ -1,26 +1,34 @@
 # Pendientes — Deli-Gastro
 
-## Estado al 2026-11-04 (lo vigente; lo de abajo es historial y puede estar desactualizado)
+## Estado al 2026-11-05 (lo vigente; lo de abajo es historial y puede estar desactualizado)
 
-**Hecho (no repetir):** PRs #23, #24 y #25 fusionados y desplegados en `dely.opsyn.app`. Migraciones 022 y 023
-aplicadas. Catálogo de Fudo sincronizado cada 15 min por la API pública (Worker `fudo-gateway`, 120 productos y
-5 categorías). Modo demo con Fudo simulado. Corregido el bug que borraba foto y descripción en ediciones parciales.
-Plantillas UTILITY de WhatsApp enviadas a revisión de Meta. Dominio `bot-dely.opsyn.app` funcionando.
+**Hecho (no repetir):** app en Cloudflare (`opsyndely.la-gambeta.com`), bot en `bot.la-gambeta.com`, gateway Fudo en la cuenta
+"Opsyn-La gambeta Dely" (ver `docs/MIGRACION_CLOUDFLARE.md`). `dely.opsyn.app` (Vercel) redirige todo salvo `/api`. APK del
+repartidor 1.1 apunta al dominio nuevo. Upstash nuevo cargado (rate limit compartido). Supabase Auth con las URLs nuevas.
+Ventas y clientes de Fudo importados (1382 pedidos, octubre y noviembre) con **canal** (PedidosYa/Rappi/Morfy/local, deducido del
+medio de pago), nombre real y medio de pago (migración 024 aplicada); 159 vinculados a un cliente. Pedidos paginado y con etiqueta
+de canal. Tablero con indicador de conexión. Términos y privacidad con titular, CUIT y domicilio. Deploy seguro con `scripts/cf-deploy.sh`.
 
 **Pendiente, por orden:**
-1. ~~Prender la importación de ventas y clientes de Fudo~~ HECHO el 2026-11-04: `SALES_CRON`/`CUSTOMERS_CRON` en "1" y Worker desplegado (versión 2ae8ed18), con el simulacro anterior (52 ventas, 326 clientes). Verificado: entran las ventas. Backfill de octubre hecho el mismo día con `POST /sales-sync?from=&to=` (rango de hasta 7 días, firmado): 1228 pedidos de octubre + 109 de noviembre. Los pedidos importados todavía no tienen cliente vinculado: se vinculan por `fudo_customer_id`/teléfono solo al importar, así que conviene re-vincular después de la primera corrida de clientes.
-2. **Crear pedidos de la app en Fudo (Fase 4):** `POST /sales` (TAKEAWAY; delivery con dirección y teléfono en el
-   comentario) + `POST /items` en serie + `POST /payments`, detrás de un interruptor `FUDO_WRITES` apagado. Hace
-   falta una venta de prueba real con el usuario presente y anularla al final. Después se cargan
-   `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en Vercel y se mapean los medios de pago (1 Efectivo, 14 Mercado pago, 6 Payway).
-3. **Ventas y clientes simulados en el modo demo** para probar el tablero con pedidos de Fudo en local.
-4. **App nueva de Meta solo para el cliente** (la crea el usuario): con su App ID/secret configurar el webhook a
-   `bot-dely.opsyn.app/webhook`, token del sistema y revisar si hay que recrear las plantillas en su cuenta.
-5. **Dominio nuevo y migración a Cloudflare:** el usuario compró un dominio (falta el nombre). App y bot en
-   subdominios; la app pasa de Vercel a Cloudflare (Next 16 con OpenNext, variables, crons). Requiere plan propio.
-6. **Seguridad:** rotar apiKey/apiSecret de Fudo y los demás secretos que pasaron por el chat.
-7. **Diferidos a propósito:** Mercado Pago y Resend (ver abajo). Integrator token de Fudo: ya no hace falta para
-   catálogo, ventas ni clientes; solo para la API de integraciones.
+1. **WhatsApp con coexistencia (bloqueado por Meta):** configuración de Embedded Signup creada (`1553288184524169`, cargada en la app) y
+   coexistencia prendida, pero Meta no corre el alta hasta aprobar la **verificación del negocio OPSYN** (enviada 2026-11-04, 1–5 días
+   hábiles). Después: "Conectar con Facebook" con el +54 9 11 2774-4537 (QR desde WhatsApp Business, no registrar por API), verificar
+   suscripción y mensaje real. Luego publicar la app (go_live) y repetir con el número del local (+54 11 3084-8283, su propio portfolio, Tech Provider).
+   La constancia de ARCA vence el **2026-11-22**.
+2. **Crear pedidos de la app en Fudo (Fase 4):** `POST /sales` (TAKEAWAY; delivery con dirección y teléfono en el comentario) +
+   `POST /items` en serie + `POST /payments`, detrás de un interruptor `FUDO_WRITES` apagado. Hace falta una venta de prueba real con el
+   usuario presente y anularla al final. Después cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en el Worker de la app y mapear medios de pago.
+3. **Seguridad:** rotar el API secret de Fudo, la contraseña de `deli_bot` (y actualizar Hyperdrive y `Desktopdeli_bot_supabase.txt`),
+   la del admin de prueba y los secretos de Meta/Cloudflare que pasaron por el chat.
+4. **Limpieza:** borrar a mano (dashboard) los Workers viejos `fudo-gateway` y `whatsapp-bot` de la cuenta "Opsyn Dely" (`53d56863…`):
+   no usar `wrangler delete` desde la raíz del repo (toma la cuenta del `wrangler.jsonc` y borró el gateway nuevo). Sacar las
+   Redirect URLs de `dely.opsyn.app` en Supabase Auth. Pausar Vercel cuando ya nadie use `dely.opsyn.app/api`.
+5. **Pedidos de Fudo:** el nombre del cliente y canal ya se ven; faltan 42 pedidos de octubre sin ítems (sin revisar) y el KPI de
+   tiempos/CSAT del tablero (Fudo no los informa; "—" es lo esperado).
+6. **Ventas y clientes simulados en el modo demo** para probar el tablero con pedidos de Fudo en local.
+7. **App nueva de Meta solo para el cliente** (la crea el cliente): App ID/secret, webhook a `bot.la-gambeta.com/webhook`, token del sistema y plantillas.
+8. **Cobertura de tests (80 %) y E2E de reseñas/canje de puntos:** sin medir.
+9. **Diferidos a propósito:** Mercado Pago, Resend y OpenAI en el Worker de la app.
 
 ## Estado al 2026-10-29 (historial)
 
