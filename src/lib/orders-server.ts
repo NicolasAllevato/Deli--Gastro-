@@ -24,6 +24,10 @@ export interface EnrichedOrder {
   channel: OrderChannel;
   /** Tipo de venta en Fudo (solo pedidos con channel = 'fudo'). */
   fudo_sale_type: string | null;
+  /** Canal de Fudo: pedidosya, rappi, morfy o local (migración 024). */
+  fudo_source: string | null;
+  /** Medio de pago tal como figura en Fudo. */
+  fudo_payment: string | null;
   accepted_at: string | null;
   ready_at: string | null;
   picked_up_at: string | null;
@@ -50,6 +54,9 @@ interface RawOrder {
   courier_name?: string | null;
   channel?: OrderChannel | null;
   fudo_sale_type?: string | null;
+  fudo_source?: string | null;
+  fudo_payment?: string | null;
+  customer_name?: string | null;
   accepted_at?: string | null;
   ready_at?: string | null;
   picked_up_at?: string | null;
@@ -83,7 +90,8 @@ export async function enrichOrders(db: Db, orders: RawOrder[]): Promise<Enriched
     return {
       id: o.id,
       client_id: o.client_id,
-      client_name: client?.name ?? "Mostrador",
+      // Sin cliente vinculado, el nombre que informó Fudo (anónimo o de PedidosYa/Rappi) antes que «Mostrador».
+      client_name: client?.name ?? o.customer_name?.trim() ?? "Mostrador",
       client_phone: client?.phone ?? null,
       status: o.status,
       items_desc: o.items_desc,
@@ -97,6 +105,8 @@ export async function enrichOrders(db: Db, orders: RawOrder[]): Promise<Enriched
       courier_name: o.courier_name ?? null,
       channel: o.channel ?? "web",
       fudo_sale_type: o.fudo_sale_type ?? null,
+      fudo_source: o.fudo_source ?? null,
+      fudo_payment: o.fudo_payment ?? null,
       accepted_at: o.accepted_at ?? null,
       ready_at: o.ready_at ?? null,
       picked_up_at: o.picked_up_at ?? null,
@@ -118,6 +128,18 @@ export async function listOrders(
   if (opts.statuses) query = query.in("status", [...opts.statuses]);
   const { data } = await query.order("created_at", { ascending: false }).limit(opts.limit ?? 100);
   return enrichOrders(db, (data ?? []) as unknown as RawOrder[]);
+}
+
+/** Una página del historial (más nuevo primero), filtrada por estado en la base, con el total para paginar. */
+export async function listOrdersPage(
+  db: Db,
+  opts: { status?: OrderStatus; page: number; pageSize: number },
+): Promise<{ orders: EnrichedOrder[]; total: number }> {
+  const from = Math.max(0, opts.page - 1) * opts.pageSize;
+  let query = db.from("orders").select("*", { count: "exact" });
+  if (opts.status) query = query.eq("status", opts.status);
+  const { data, count } = await query.order("created_at", { ascending: false }).range(from, from + opts.pageSize - 1);
+  return { orders: await enrichOrders(db, (data ?? []) as unknown as RawOrder[]), total: count ?? 0 };
 }
 
 export async function getClientByUserId(db: Db, userId: string) {

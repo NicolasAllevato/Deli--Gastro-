@@ -22,6 +22,8 @@ export interface QueryPlan {
   filters: Filter[];
   order: Array<{ column: string; ascending: boolean }>;
   limit: number | null;
+  /** Filas a saltear antes de `limit` (`.range(from, to)` de PostgREST). */
+  offset?: number;
   payload: unknown;
   onConflict: string;
   returning: boolean;
@@ -163,7 +165,8 @@ export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
     for (const o of [...plan.order].reverse()) {
       rows.sort((a, b) => (o.ascending ? 1 : -1) * compare(a[o.column], b[o.column]));
     }
-    const limited = plan.limit === null ? rows : rows.slice(0, plan.limit);
+    const start = plan.offset ?? 0;
+    const limited = plan.limit === null ? rows.slice(start) : rows.slice(start, start + plan.limit);
     return finalize(plan, structuredClone(limited), plan.count ? total : null);
   }
 

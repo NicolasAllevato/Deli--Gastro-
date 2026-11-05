@@ -1,7 +1,7 @@
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
 import { listPublicResource, type FudoEnv } from "./fudo";
-import { parseFudoItem, parseFudoSales, phoneKey, planSalesImport, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
+import { parseFudoItem, parseFudoSales, parsePaymentMethods, paymentMethodIds, phoneKey, planSalesImport, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
 
 /**
  * Importa ventas (delivery y take away) y clientes de Fudo a la app. Usa los planes puros de `sales.ts` y
@@ -13,6 +13,7 @@ export interface SalesSyncSummary {
   ordersCreated: number;
   ordersUpdated: number;
   ordersRelinked?: number;
+  ordersEnriched?: number;
   dryRun: boolean;
 }
 
@@ -54,21 +55,25 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
     const range = `filter[createdAt]=and(gte.${fudoDate(from)},lte.${fudoDate(to)})&sort=-createdAt`;
     // Fudo solo acepta `filter[saleType]=eq.<TIPO>` (rechaza `in.(...)` con 400): una consulta por tipo.
     // `include=items` trae los ítems en la misma respuesta: leerlos uno por uno agota los subrequests del Worker.
+    // `payments` da el medio de pago, del que sale el canal (PedidosYa, Rappi, Morfy o local).
     const sales = [];
     const itemsById = new Map<number, FudoItem>();
+    const methodByPayment = new Map<number, number>();
     for (const type of IMPORTED_SALE_TYPES) {
-      const page = await listPublicResource(env, "sales", `${range}&filter[saleType]=eq.${type}&include=items`);
+      const page = await listPublicResource(env, "sales", `${range}&filter[saleType]=eq.${type}&include=items,payments`);
       sales.push(...parseFudoSales(page));
       for (const raw of page.included) {
+        if ((raw as { type?: unknown }).type !== "Item") continue;
         const item = parseFudoItem(raw);
         if (item) itemsById.set(item.id, item);
       }
+      for (const [payment, method] of paymentMethodIds(page.included)) methodByPayment.set(payment, method);
     }
     if (sales.length === 0) return { salesSeen: 0, ordersCreated: 0, ordersUpdated: 0, dryRun };
 
     const existing: ExistingOrder[] = [];
     for (const ids of chunk(sales.map((s) => s.id), ID_BATCH)) {
-      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id`)));
+      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source`)));
     }
     const known = new Set(existing.map((o) => o.fudo_order_id));
 
@@ -76,6 +81,11 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
     for (const sale of sales) {
       if (!known.has(sale.id)) itemsBySale.set(sale.id, sale.itemIds.map((id) => itemsById.get(id)).filter((i): i is FudoItem => i !== undefined));
     }
+
+    const methodNames = parsePaymentMethods((await listPublicResource(env, "payment-methods")).data);
+    const paymentNamesBySale = new Map(
+      sales.map((s) => [s.id, s.paymentIds.map((p) => methodNames.get(methodByPayment.get(p) ?? -1)).filter((n): n is string => Boolean(n))]),
+    );
 
     const [productMap, clients] = await Promise.all([
       rest<Array<{ fudo_product_id: number; product_id: string; products: { name: string } | null }>>(
@@ -97,6 +107,7 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       existing,
       clientsByFudoId: new Map(clients.filter((c) => c.fudo_customer_id !== null).map((c) => [c.fudo_customer_id as number, c.id])),
       clientsByPhone,
+      paymentNamesBySale,
     });
 
     if (!dryRun) {
@@ -135,11 +146,26 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
           });
         }
       }
+      // Agrupados por valores iguales: un PATCH por combinación canal/nombre/medio, no por pedido.
+      const groups = new Map<string, { body: Omit<(typeof plan.enrich)[number], "id">; ids: string[] }>();
+      for (const { id, ...body } of plan.enrich) {
+        const key = JSON.stringify(body);
+        groups.set(key, { body, ids: [...(groups.get(key)?.ids ?? []), id] });
+      }
+      for (const { body, ids: all } of groups.values()) {
+        for (const ids of chunk(all, ID_BATCH)) {
+          await rest(env, `orders?id=in.(${ids.join(",")})&channel=eq.fudo&fudo_source=is.null`, {
+            method: "PATCH",
+            headers: { prefer: "return=minimal" },
+            body: JSON.stringify(body),
+          });
+        }
+      }
       const relinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
       if (plan.inserts.length || plan.updates.length || relinked) await logRun(env, "sales", plan.inserts.length, plan.updates.length + relinked, null);
     }
     const ordersRelinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
-    return { salesSeen: sales.length, ordersCreated: plan.inserts.length, ordersUpdated: plan.updates.length, ordersRelinked, dryRun };
+    return { salesSeen: sales.length, ordersCreated: plan.inserts.length, ordersUpdated: plan.updates.length, ordersRelinked, ordersEnriched: plan.enrich.length, dryRun };
   } catch (e) {
     if (!dryRun) await logRun(env, "sales", 0, 0, e instanceof Error ? e.message : String(e));
     throw e;
