@@ -20,6 +20,8 @@ export interface Database {
           tier: ClientTier
           total_points: number
           wa_marketing_opt_in: boolean
+          channel: string | null
+          is_anonymous: boolean
           fudo_customer_id: number | null
           email: string | null
           source: 'app' | 'fudo'
@@ -35,6 +37,8 @@ export interface Database {
           tier?: ClientTier
           total_points?: number
           wa_marketing_opt_in?: boolean
+          channel?: string | null
+          is_anonymous?: boolean
           fudo_customer_id?: number | null
           email?: string | null
           source?: 'app' | 'fudo'
@@ -46,6 +50,8 @@ export interface Database {
           tier?: ClientTier
           total_points?: number
           wa_marketing_opt_in?: boolean
+          channel?: string | null
+          is_anonymous?: boolean
           fudo_customer_id?: number | null
           email?: string | null
           source?: 'app' | 'fudo'

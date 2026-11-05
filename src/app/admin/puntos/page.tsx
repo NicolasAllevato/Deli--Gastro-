@@ -19,7 +19,7 @@ export default async function AdminPuntosPage() {
   const [{ data: clients }, { data: ledger }, { data: categories }, { data: products }, { data: orders }] = await Promise.all([
     supabase
       .from("clients")
-      .select("id, name, phone, total_points, tier")
+      .select("id, name, phone, channel, total_points, tier")
       .order("total_points", { ascending: false })
       .order("name")
       .limit(5000),
@@ -75,6 +75,7 @@ export default async function AdminPuntosPage() {
     id: c.id,
     nombre: c.name,
     telefono: c.phone ?? null,
+    canal: c.channel ?? null,
     pedidosTotales: activity.get(c.id)?.count ?? 0,
     gastado: activity.get(c.id)?.spent ?? 0,
     ultimoPedido: activity.get(c.id) ? formatDate(activity.get(c.id)!.last) : null,

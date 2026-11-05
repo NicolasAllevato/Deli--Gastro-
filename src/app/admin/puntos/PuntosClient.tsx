@@ -18,6 +18,8 @@ export interface ClientePuntos {
   id: string;
   nombre: string;
   telefono: string | null;
+  /** Canal de venta del cliente: app, local, pedidosya, rappi o morfy. */
+  canal: string | null;
   /** Pedidos no cancelados vinculados al cliente (app y Fudo). */
   pedidosTotales: number;
   gastado: number;
@@ -35,6 +37,8 @@ const NIVEL_TONE: Record<string, "yellow" | "blue" | "orange" | "green"> = {
 };
 
 const PAGE_SIZE = 50;
+
+const CANAL_LABEL: Record<string, string> = { app: "App", local: "Fudo · Local", pedidosya: "PedidosYa", rappi: "Rappi", morfy: "Morfy" };
 
 const PROMOS = [
   { id: "p1", nombre: "Postre Gratis",  descripcion: "Cualquier postre del menú sin cargo",   puntosRequeridos: 200, activa: true },
@@ -160,6 +164,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm text-gray-800 truncate">{cliente.nombre}</p>
                       <Badge tone={nivelTone}>{cliente.nivel}</Badge>
+                      {cliente.canal && <Badge tone="blue">{CANAL_LABEL[cliente.canal] ?? cliente.canal}</Badge>}
                       {promos.length > 0 && (
                         <Badge tone="green">{promos.length} promo{promos.length > 1 ? "s" : ""}</Badge>
                       )}
