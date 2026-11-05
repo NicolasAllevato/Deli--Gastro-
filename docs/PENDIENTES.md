@@ -6,8 +6,12 @@
 "Opsyn-La gambeta Dely" (ver `docs/MIGRACION_CLOUDFLARE.md`). `dely.opsyn.app` (Vercel) redirige todo salvo `/api`. APK del
 repartidor 1.1 apunta al dominio nuevo. Upstash nuevo cargado (rate limit compartido). Supabase Auth con las URLs nuevas.
 Ventas y clientes de Fudo importados (1382 pedidos, octubre y noviembre) con **canal** (PedidosYa/Rappi/Morfy/local, deducido del
-medio de pago), nombre real y medio de pago (migración 024 aplicada); 159 vinculados a un cliente. Pedidos paginado y con etiqueta
-de canal. Tablero con indicador de conexión. Términos y privacidad con titular, CUIT y domicilio. Deploy seguro con `scripts/cf-deploy.sh`.
+medio de pago), nombre real y medio de pago (migración 024 aplicada). Pedidos paginado y con etiqueta de canal.
+**Clientes por canal (migración 025 aplicada, PR #32 desplegado):** `clients.channel` (app/local/pedidosya/rappi/morfy) e `is_anonymous`;
+los pedidos de Fudo sin cliente quedan vinculados a un cliente anónimo por nombre + canal (sin nombre: «Sin nombre · Take away/Delivery»)
+y un trigger hace lo mismo con los pedidos nuevos (~1.080 clientes; solo 1 pedido web sin cliente). Tablero con «Ventas por canal»
+(PedidosYa/Rappi/Morfy/local) y la tabla «Resultado de pedidos por canal» en lugar del gráfico por zona; Puntos con teléfono, pedidos,
+gastado, último pedido y canal. Tablero con indicador de conexión. Términos y privacidad con titular, CUIT y domicilio. Deploy seguro con `scripts/cf-deploy.sh`.
 
 **Pendiente, por orden:**
 1. **WhatsApp con coexistencia (bloqueado por Meta):** configuración de Embedded Signup creada (`1553288184524169`, cargada en la app) y
@@ -23,12 +27,14 @@ de canal. Tablero con indicador de conexión. Términos y privacidad con titular
 4. **Limpieza:** borrar a mano (dashboard) los Workers viejos `fudo-gateway` y `whatsapp-bot` de la cuenta "Opsyn Dely" (`53d56863…`):
    no usar `wrangler delete` desde la raíz del repo (toma la cuenta del `wrangler.jsonc` y borró el gateway nuevo). Sacar las
    Redirect URLs de `dely.opsyn.app` en Supabase Auth. Pausar Vercel cuando ya nadie use `dely.opsyn.app/api`.
-5. **Pedidos de Fudo:** el nombre del cliente y canal ya se ven; faltan 42 pedidos de octubre sin ítems (sin revisar) y el KPI de
+5. **Verificar en producción (con sesión):** tablero (canales y tabla) y Puntos (~1.080 clientes). Límites conocidos: los anónimos se agrupan
+   por nombre (Ana, Lleve… pueden ser varias personas) y un pedido anónimo no se revincula solo si su cliente real se importa después.
+6. **Pedidos de Fudo:** el nombre del cliente y canal ya se ven; faltan 42 pedidos de octubre sin ítems (sin revisar) y el KPI de
    tiempos/CSAT del tablero (Fudo no los informa; "—" es lo esperado).
-6. **Ventas y clientes simulados en el modo demo** para probar el tablero con pedidos de Fudo en local.
-7. **App nueva de Meta solo para el cliente** (la crea el cliente): App ID/secret, webhook a `bot.la-gambeta.com/webhook`, token del sistema y plantillas.
-8. **Cobertura de tests (80 %) y E2E de reseñas/canje de puntos:** sin medir.
-9. **Diferidos a propósito:** Mercado Pago, Resend y OpenAI en el Worker de la app.
+7. **Ventas y clientes simulados en el modo demo** para probar el tablero con pedidos de Fudo en local.
+8. **App nueva de Meta solo para el cliente** (la crea el cliente): App ID/secret, webhook a `bot.la-gambeta.com/webhook`, token del sistema y plantillas.
+9. **Cobertura de tests (80 %) y E2E de reseñas/canje de puntos:** sin medir.
+10. **Diferidos a propósito:** Mercado Pago, Resend y OpenAI en el Worker de la app.
 
 ## Estado al 2026-10-29 (historial)
 
