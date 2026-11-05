@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Star, ChevronDown, ChevronUp, Bell, Gift, TrendingUp, Users, Search } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { formatMoney } from "@/lib/orders";
 import type { ClientTier } from "@/types/database";
 
 export interface PedidoPuntos {
@@ -16,6 +17,13 @@ export interface PedidoPuntos {
 export interface ClientePuntos {
   id: string;
   nombre: string;
+  telefono: string | null;
+  /** Canal de venta del cliente: app, local, pedidosya, rappi o morfy. */
+  canal: string | null;
+  /** Pedidos no cancelados vinculados al cliente (app y Fudo). */
+  pedidosTotales: number;
+  gastado: number;
+  ultimoPedido: string | null;
   puntosTotales: number;
   nivel: ClientTier;
   pedidos: PedidoPuntos[];
@@ -27,6 +35,10 @@ const NIVEL_TONE: Record<string, "yellow" | "blue" | "orange" | "green"> = {
   Oro:     "orange",
   Platino: "orange",
 };
+
+const PAGE_SIZE = 50;
+
+const CANAL_LABEL: Record<string, string> = { app: "App", local: "Fudo · Local", pedidosya: "PedidosYa", rappi: "Rappi", morfy: "Morfy" };
 
 const PROMOS = [
   { id: "p1", nombre: "Postre Gratis",  descripcion: "Cualquier postre del menú sin cargo",   puntosRequeridos: 200, activa: true },
@@ -45,6 +57,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
   const [notifCliente, setNotifCliente] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [visible, setVisible] = useState(PAGE_SIZE);
 
   // Las notificaciones todavía no salen por n8n/WhatsApp: se simula el envío.
   const announce = (message: string) => {
@@ -52,9 +65,11 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
     window.setTimeout(() => setNotice(null), 3500);
   };
 
+  const term = search.toLowerCase().trim();
   const filtrados = clientes.filter(c =>
-    c.nombre.toLowerCase().includes(search.toLowerCase())
+    c.nombre.toLowerCase().includes(term) || (c.telefono ?? "").includes(term)
   );
+  const mostrados = filtrados.slice(0, visible);
 
   const totalPuntos = clientes.reduce((s, c) => s + c.puntosTotales, 0);
 
@@ -86,9 +101,10 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { label: "Clientes activos",  value: clientes.length,                                        icon: <Users size={16} className="text-brand-orange" /> },
+          { label: "Clientes",  value: clientes.length.toLocaleString("es-AR"),                                        icon: <Users size={16} className="text-brand-orange" /> },
+          { label: "Con puntos",       value: clientes.filter(c => c.puntosTotales > 0).length,      icon: <Users size={16} className="text-green-500" /> },
           { label: "Puntos emitidos",   value: totalPuntos.toLocaleString("es-AR"),                    icon: <Star size={16} className="text-yellow-500" /> },
           { label: "Promos activas",    value: PROMOS.filter(p => p.activa).length,                    icon: <Gift size={16} className="text-green-500" /> },
           { label: "Nivel Platino",     value: clientes.filter(c => c.nivel === "Platino").length,     icon: <TrendingUp size={16} className="text-brand-orange" /> },
@@ -111,8 +127,8 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar cliente por nombre..."
+          onChange={e => { setSearch(e.target.value); setVisible(PAGE_SIZE); }}
+          placeholder="Buscar cliente por nombre o teléfono..."
           className="w-full pl-9 pr-4 py-2.5 rounded-xl neumorphic-inset text-sm text-gray-700 placeholder-gray-400 outline-none focus:ring-2 focus:ring-brand-orange/40 transition-all"
         />
       </div>
@@ -128,7 +144,7 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
         </div>
       ) : (
         <div className="space-y-2">
-          {filtrados.map(cliente => {
+          {mostrados.map(cliente => {
             const isOpen = expandedId === cliente.id;
             const promos = getPromos(cliente.puntosTotales);
             const nivelTone = NIVEL_TONE[cliente.nivel] ?? "yellow";
@@ -148,11 +164,12 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm text-gray-800 truncate">{cliente.nombre}</p>
                       <Badge tone={nivelTone}>{cliente.nivel}</Badge>
+                      {cliente.canal && <Badge tone="blue">{CANAL_LABEL[cliente.canal] ?? cliente.canal}</Badge>}
                       {promos.length > 0 && (
                         <Badge tone="green">{promos.length} promo{promos.length > 1 ? "s" : ""}</Badge>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-500 truncate">{cliente.pedidos.length} movimiento{cliente.pedidos.length !== 1 ? "s" : ""} de puntos</p>
+                    <p className="text-[11px] text-gray-500 truncate">{cliente.telefono ? `${cliente.telefono} · ` : ""}{cliente.pedidosTotales} pedido{cliente.pedidosTotales !== 1 ? "s" : ""}{cliente.pedidosTotales > 0 ? ` · ${formatMoney(cliente.gastado)} · último ${cliente.ultimoPedido}` : ""}</p>
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
@@ -271,6 +288,11 @@ export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }
               </div>
             );
           })}
+          {filtrados.length > mostrados.length && (
+            <Button variant="secondary" size="sm" fullWidth onClick={() => setVisible(v => v + PAGE_SIZE)}>
+              Mostrar más ({filtrados.length - mostrados.length} restantes)
+            </Button>
+          )}
         </div>
       )}
     </div>

@@ -15,13 +15,13 @@ interface Props {
 
 export function ChannelDonut({ channels, theme }: Props) {
   const p = chartPalette(theme);
-  const data = channels.map((c) => ({ ...c, name: CHANNEL_LABELS[c.channel] ?? c.channel }));
+  const data = channels.filter((c) => c.orders > 0).map((c) => ({ ...c, name: CHANNEL_LABELS[c.channel] ?? c.channel }));
   const surface = theme === "dark" ? "#151e30" : "#ffffff";
 
   return (
     <ChartCard
-      title="Pedidos por canal"
-      subtitle="Participación de cada canal de venta."
+      title="Ventas por canal"
+      subtitle="Participación de cada canal: web, WhatsApp, mostrador, PedidosYa, Rappi, Morfy y local."
       empty={data.length === 0}
       summary={`Anillo con ${data.length} canales: ${data.map((d) => `${d.name} ${d.share}%`).join(", ")}.`}
     >
