@@ -29,14 +29,14 @@ const at = (day: string, hhmm: string) => `${day}T${hhmm}:00Z`;
 /** Pedido creado a las 14:00Z del día dado, entregado `deliverMin` minutos después (null = sin entregar). */
 const order = (
   id: string,
-  opts: { day?: string; deliverMin?: number | null; prepMin?: number | null; total?: number; status?: string; channel?: string } = {},
+  opts: { day?: string; deliverMin?: number | null; prepMin?: number | null; total?: number; status?: string; channel?: string; fudo_source?: string | null } = {},
 ): ReportOrder => {
   const day = opts.day ?? "2026-10-03";
   const created = new Date(at(day, "14:00")).getTime();
   const plus = (m: number | null | undefined) => (m == null ? null : new Date(created + m * 60_000).toISOString());
   return {
     id, client_id: "c1", status: opts.status ?? "Finalizados", total: opts.total ?? 1000, delivery_fee: 100,
-    channel: opts.channel ?? "web", payment_method: "Efectivo", items_desc: "1x Pizza",
+    channel: opts.channel ?? "web", fudo_source: opts.fudo_source ?? null, payment_method: "Efectivo", items_desc: "1x Pizza",
     created_at: at(day, "14:00"), accepted_at: null,
     ready_at: plus(opts.prepMin === undefined ? 15 : opts.prepMin),
     picked_up_at: null,
@@ -250,8 +250,27 @@ describe("byChannel", () => {
         order("d", { channel: "mostrador", status: "Cancelado" })],
       RANGE,
     );
-    assert.deepEqual(rows.map((r) => [r.channel, r.orders, r.share]), [["web", 2, 66.7], ["whatsapp", 1, 33.3]]);
+    // El canal con solo cancelados queda en la tabla con 0 pedidos (y 1 cancelado).
+    assert.deepEqual(rows.map((r) => [r.channel, r.orders, r.share]), [["web", 2, 66.7], ["whatsapp", 1, 33.3], ["mostrador", 0, 0]]);
+    assert.equal(rows[2].cancelled, 1);
     assert.equal(rows[1].revenue, 3000);
+  });
+
+  it("separa los pedidos de Fudo por su canal y cuenta cancelados aparte", () => {
+    const rows = byChannel(
+      [order("a", { channel: "fudo", fudo_source: "pedidosya", total: 4000 }),
+        order("b", { channel: "fudo", fudo_source: "pedidosya", total: 2000 }),
+        order("c", { channel: "fudo", fudo_source: "rappi" }),
+        order("d", { channel: "fudo", fudo_source: null }),
+        order("e", { channel: "fudo", fudo_source: "pedidosya", status: "Cancelado" })],
+      RANGE,
+    );
+    const py = rows.find((r) => r.channel === "pedidosya");
+    assert.deepEqual(rows.map((r) => r.channel).sort(), ["fudo", "pedidosya", "rappi"]);
+    assert.equal(py?.orders, 2);
+    assert.equal(py?.cancelled, 1);
+    assert.equal(py?.revenue, 6000);
+    assert.equal(py?.avgTicket, 3000);
   });
 
   it("período vacío da lista vacía", () => {
@@ -388,7 +407,7 @@ describe("mock JSON", () => {
     assert.deepEqual(Object.keys(mock.trends).sort(), Object.keys(snap.trends).sort());
     assert.deepEqual(Object.keys(mock.series[0]).sort(), ["date", "onTime", "orders", "prepMinutes"]);
     assert.deepEqual(Object.keys(mock.zones[0]).sort(), ["label", "onTime", "orders", "previousOnTime", "revenue", "slaMinutes", "zoneId"]);
-    assert.deepEqual(Object.keys(mock.channels[0]).sort(), ["channel", "orders", "revenue", "share"]);
+    assert.deepEqual(Object.keys(mock.channels[0]).sort(), ["avgTicket", "cancelled", "channel", "delivered", "orders", "revenue", "share"]);
     assert.deepEqual(Object.keys(mock.insights[0]).sort(), ["action", "severity", "text"]);
     assert.equal(mock.series.length, 7);
     assert.deepEqual(mock.zones.map((z) => z.zoneId), ["Z1", "Z2", "Z3", "Z4", "Z5", "Z6"]);

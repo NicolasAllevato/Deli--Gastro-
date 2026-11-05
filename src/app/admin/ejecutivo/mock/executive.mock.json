@@ -57,9 +57,9 @@
     { "id": "Z6", "label": "Zona 6" }
   ],
   "channels": [
-    { "channel": "web", "orders": 172, "revenue": 1480000, "share": 47.6 },
-    { "channel": "whatsapp", "orders": 131, "revenue": 1150000, "share": 36.3 },
-    { "channel": "mostrador", "orders": 58, "revenue": 384350, "share": 16.1 }
+    { "channel": "web", "orders": 172, "delivered": 165, "cancelled": 7, "revenue": 1480000, "avgTicket": 8605, "share": 47.6 },
+    { "channel": "whatsapp", "orders": 131, "delivered": 126, "cancelled": 5, "revenue": 1150000, "avgTicket": 8779, "share": 36.3 },
+    { "channel": "mostrador", "orders": 58, "delivered": 58, "cancelled": 0, "revenue": 384350, "avgTicket": 6627, "share": 16.1 }
   ],
   "complaints": [
     { "orderId": "demo-ord-0341", "rating": 2, "comment": "Llegó frío y tardó mucho.", "createdAt": "2026-10-03T23:40:00.000Z" },

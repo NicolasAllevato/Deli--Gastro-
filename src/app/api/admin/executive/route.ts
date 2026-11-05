@@ -28,7 +28,7 @@ const rangeSchema = z.enum(RANGE_KEYS as [RangeKey, ...RangeKey[]]);
 const zoneSchema = z.string().trim().regex(ZONE_ID_PATTERN);
 
 const ORDER_COLUMNS =
-  "id, client_id, status, total, delivery_fee, channel, payment_method, items_desc, created_at, accepted_at, ready_at, picked_up_at, delivered_at, delivery_lat, delivery_lng";
+  "id, client_id, status, total, delivery_fee, channel, fudo_source, payment_method, items_desc, created_at, accepted_at, ready_at, picked_up_at, delivered_at, delivery_lat, delivery_lng";
 
 type OrderRow = ReportOrder & OrderCoords & { created_at: string };
 

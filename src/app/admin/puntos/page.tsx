@@ -16,11 +16,13 @@ function formatDate(iso: string) {
 export default async function AdminPuntosPage() {
   const supabase = createAdminClient();
 
-  const [{ data: clients }, { data: ledger }, { data: categories }, { data: products }] = await Promise.all([
+  const [{ data: clients }, { data: ledger }, { data: categories }, { data: products }, { data: orders }] = await Promise.all([
     supabase
       .from("clients")
-      .select("id, name, total_points, tier")
-      .order("total_points", { ascending: false }),
+      .select("id, name, phone, total_points, tier")
+      .order("total_points", { ascending: false })
+      .order("name")
+      .limit(5000),
     supabase
       .from("points_ledger")
       .select("id, client_id, delta, description, created_at")
@@ -28,7 +30,26 @@ export default async function AdminPuntosPage() {
       .limit(500),
     supabase.from("categories").select("id, name, points_per_100").order("name"),
     supabase.from("products").select("id, name, price, category_id, points_per_100").order("name"),
+    // Actividad real de cada cliente (pedidos de la app y de Fudo ya vinculados).
+    supabase
+      .from("orders")
+      .select("client_id, total, created_at")
+      .not("client_id", "is", null)
+      .neq("status", "Cancelado")
+      .order("created_at", { ascending: false })
+      .limit(5000),
   ]);
+
+  const activity = new Map<string, { count: number; spent: number; last: string }>();
+  for (const o of orders ?? []) {
+    if (!o.client_id) continue;
+    const prev = activity.get(o.client_id);
+    activity.set(o.client_id, {
+      count: (prev?.count ?? 0) + 1,
+      spent: (prev?.spent ?? 0) + Number(o.total),
+      last: prev?.last ?? o.created_at,
+    });
+  }
 
   const toRate = (v: number | string | null) => (v === null ? null : Number(v));
   const categorias: CategoriaPuntos[] = (categories ?? []).map((c) => ({
@@ -53,6 +74,10 @@ export default async function AdminPuntosPage() {
   const clientes: ClientePuntos[] = (clients ?? []).map(c => ({
     id: c.id,
     nombre: c.name,
+    telefono: c.phone ?? null,
+    pedidosTotales: activity.get(c.id)?.count ?? 0,
+    gastado: activity.get(c.id)?.spent ?? 0,
+    ultimoPedido: activity.get(c.id) ? formatDate(activity.get(c.id)!.last) : null,
     puntosTotales: c.total_points,
     nivel: c.tier as ClientTier,
     pedidos: (ledgerMap[c.id] ?? []).map(e => ({

@@ -13,7 +13,7 @@ import { KpiCard } from "./_components/KpiCard";
 import { PunctualityPrepChart } from "./_components/PunctualityPrepChart";
 import { SettingsDrawer } from "./_components/SettingsDrawer";
 import { EmptyView, ErrorView, LoadingView } from "./_components/StateViews";
-import { ZoneChart } from "./_components/ZoneChart";
+import { ChannelResultsTable } from "./_components/ChannelResultsTable";
 import { useExecTheme, type ExecTheme } from "./_components/useExecTheme";
 import { useExecutiveData } from "./useExecutiveData";
 
@@ -32,7 +32,7 @@ function Dashboard({ data, settings, theme }: { data: ExecutiveSnapshot; setting
       </div>
       <div className="grid gap-4 lg:grid-cols-2 min-w-0">
         <PunctualityPrepChart series={data.series} theme={theme} />
-        <ZoneChart zones={data.zones} theme={theme} />
+        <ChannelResultsTable channels={data.channels} />
       </div>
     </div>
   );

@@ -10,6 +10,8 @@ export interface ReportOrder {
   total: number;
   delivery_fee: number;
   channel: string;
+  /** Canal dentro de Fudo (pedidosya, rappi, morfy, local); solo en pedidos con channel = 'fudo'. */
+  fudo_source?: string | null;
   payment_method: string | null;
   items_desc: string;
   created_at: string;

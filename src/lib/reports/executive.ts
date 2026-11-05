@@ -66,7 +66,19 @@ export interface ZoneRow {
   slaMinutes: number;
 }
 
-export interface ChannelRow { channel: string; orders: number; revenue: number; share: number }
+/**
+ * Resultado de un canal de venta. `orders` y `revenue` excluyen cancelados; `cancelled` se cuenta aparte.
+ * Los pedidos de Fudo se separan por su canal (pedidosya, rappi, morfy, local).
+ */
+export interface ChannelRow {
+  channel: string;
+  orders: number;
+  delivered: number;
+  cancelled: number;
+  revenue: number;
+  avgTicket: number | null;
+  share: number;
+}
 
 export type Severity = "critical" | "warning" | "info";
 export interface Insight { severity: Severity; text: string; action: string }
@@ -239,15 +251,29 @@ export function byZone(
     .sort((a, b) => b.orders - a.orders || a.zoneId.localeCompare(b.zoneId));
 }
 
+/** Canal de un pedido: los de Fudo se abren por su origen (PedidosYa, Rappi, Morfy o local). */
+export const channelOf = (o: ReportOrder): string => (o.channel === "fudo" ? o.fudo_source || "fudo" : o.channel);
+
 export function byChannel(orders: readonly ReportOrder[], bounds: Bounds): ChannelRow[] {
-  const confirmed = confirmedIn(orders, bounds);
+  const inRange = orders.filter((o) => inBounds(o.created_at, bounds));
+  const confirmed = inRange.filter((o) => !isCancelled(o));
   const rows = new Map<string, ChannelRow>();
-  for (const o of confirmed) {
-    const row = rows.get(o.channel) ?? { channel: o.channel, orders: 0, revenue: 0, share: 0 };
-    rows.set(o.channel, { ...row, orders: row.orders + 1, revenue: row.revenue + totalOf(o) });
+  for (const o of inRange) {
+    const key = channelOf(o);
+    const row = rows.get(key) ?? { channel: key, orders: 0, delivered: 0, cancelled: 0, revenue: 0, avgTicket: null, share: 0 };
+    rows.set(
+      key,
+      isCancelled(o)
+        ? { ...row, cancelled: row.cancelled + 1 }
+        : { ...row, orders: row.orders + 1, delivered: row.delivered + (o.delivered_at ? 1 : 0), revenue: row.revenue + totalOf(o) },
+    );
   }
   return [...rows.values()]
-    .map((r) => ({ ...r, share: pct(r.orders, confirmed.length) ?? 0 }))
+    .map((r) => ({
+      ...r,
+      avgTicket: r.orders > 0 ? round(r.revenue / r.orders) : null,
+      share: pct(r.orders, confirmed.length) ?? 0,
+    }))
     .sort((a, b) => b.orders - a.orders || a.channel.localeCompare(b.channel));
 }
 
