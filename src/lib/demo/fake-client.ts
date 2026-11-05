@@ -99,6 +99,13 @@ class DemoQueryBuilder implements PromiseLike<QueryResult> {
     return this;
   }
 
+  /** Igual que PostgREST: filas `from`..`to` inclusive. */
+  range(from: number, to: number): this {
+    this.plan.offset = from;
+    this.plan.limit = Math.max(0, to - from + 1);
+    return this;
+  }
+
   single(): this {
     this.plan.single = "single";
     return this;
