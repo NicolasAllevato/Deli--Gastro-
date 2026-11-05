@@ -16,6 +16,19 @@ export default function TerminosPage() {
       }
       sections={[
         {
+          title: "Titular del servicio",
+          body: (
+            <p>
+              {BRAND.company} es el nombre comercial de {BRAND.legal.holder} (empresa unipersonal), CUIT{" "}
+              {BRAND.legal.cuit}, con domicilio en {BRAND.legal.address}. Contacto:{" "}
+              <a className="font-bold underline" href={`mailto:${BRAND.contactEmail}`}>
+                {BRAND.contactEmail}
+              </a>
+              .
+            </p>
+          ),
+        },
+        {
           title: "El servicio",
           body: (
             <p>
