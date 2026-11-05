@@ -78,9 +78,10 @@ const base = () => ({
     { id: 9002, productId: 999, quantity: 1, price: 14990, canceled: false, comment: null },
   ]]]),
   productsByFudoId: new Map([[104, { id: "p-margarita", name: "Pizza Margarita" }]]),
-  existing: [] as Array<{ id: string; fudo_order_id: number; channel: string; status: string; fudo_sale_state: string | null; client_id?: string | null }>,
+  existing: [] as Array<{ id: string; fudo_order_id: number; channel: string; status: string; fudo_sale_state: string | null; client_id?: string | null; fudo_source?: string | null }>,
   clientsByFudoId: new Map<number, string>(),
   clientsByPhone: new Map<string, string>(),
+  paymentNamesBySale: undefined as Map<number, string[]> | undefined,
 });
 
 describe("planSalesImport", () => {
@@ -168,5 +169,40 @@ describe("planSalesImport", () => {
       { id: "o3", fudo_order_id: 502, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE", client_id: null },
     ];
     assert.deepEqual(planSalesImport(input).relinks, [{ client_id: "c-77", orderIds: ["o1"] }]);
+  });
+});
+
+describe("canal de venta de Fudo (medio de pago)", async () => {
+  const { fudoSourceFromMethods, paymentMethodIds, parsePaymentMethods } = await import("../workers/fudo-gateway/src/sales.ts");
+
+  it("deduce PedidosYa, Rappi y Morfy del nombre del medio; si no, local", () => {
+    assert.equal(fudoSourceFromMethods(["Online Pedidos Ya"]), "pedidosya");
+    assert.equal(fudoSourceFromMethods(["Efectivo Pedidos Ya"]), "pedidosya");
+    assert.equal(fudoSourceFromMethods(["Pedidosya"]), "pedidosya");
+    assert.equal(fudoSourceFromMethods(["Online Rappi"]), "rappi");
+    assert.equal(fudoSourceFromMethods(["Morfy"]), "morfy");
+    assert.equal(fudoSourceFromMethods(["Efectivo", "Mercado pago"]), "local");
+    assert.equal(fudoSourceFromMethods([]), "local");
+  });
+
+  it("arma pago → medio y medio → nombre desde la respuesta de Fudo", () => {
+    const included = [
+      { type: "Payment", id: "50991", relationships: { paymentMethod: { data: { id: "8", type: "PaymentMethod" } } } },
+      { type: "Item", id: "1", attributes: {} },
+    ];
+    assert.deepEqual([...paymentMethodIds(included)], [[50991, 8]]);
+    assert.deepEqual([...parsePaymentMethods([{ id: "8", attributes: { name: "Online Pedidos Ya" } }])], [[8, "Online Pedidos Ya"]]);
+  });
+
+  it("guarda canal, nombre y medio al importar y los completa en pedidos viejos", () => {
+    const input = base();
+    input.sales = parseFudoSales({ data: [rawSale(), { ...rawSale(), id: "501" }] });
+    input.paymentNamesBySale = new Map([[500, ["Online Rappi"]], [501, ["Efectivo"]]]);
+    input.existing = [{ id: "o1", fudo_order_id: 501, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE", fudo_source: null }];
+    const plan = planSalesImport(input);
+    assert.equal(plan.inserts[0].fudo_source, "rappi");
+    assert.equal(plan.inserts[0].fudo_payment, "Online Rappi");
+    assert.equal(plan.enrich.length, 1);
+    assert.equal(plan.enrich[0].fudo_source, "local");
   });
 });

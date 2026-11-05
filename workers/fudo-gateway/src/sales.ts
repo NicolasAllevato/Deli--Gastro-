@@ -22,6 +22,19 @@ export interface FudoSale {
   customerName: string | null;
   comment: string | null;
   itemIds: number[];
+  paymentIds: number[];
+}
+
+/** Canal de venta de un pedido de Fudo. Fudo no lo informa: se deduce del medio de pago. */
+export type FudoSource = "pedidosya" | "rappi" | "morfy" | "local";
+
+/** PedidosYa / Rappi / Morfy según el nombre del medio de pago (`Online Pedidos Ya`, `Efectivo Rappi`…); si no, local. */
+export function fudoSourceFromMethods(names: readonly string[]): FudoSource {
+  const all = names.join(" ").toLowerCase().replace(/\s+/g, "");
+  if (all.includes("pedidosya") || all.includes("peya")) return "pedidosya";
+  if (all.includes("rappi")) return "rappi";
+  if (all.includes("morfy")) return "morfy";
+  return "local";
 }
 
 export interface FudoItem {
@@ -88,7 +101,32 @@ export function parseFudoSales(raw: unknown): FudoSale[] {
       customerName: str(a.customerName),
       comment: str(a.comment),
       itemIds: relIds(e, "items"),
+      paymentIds: relIds(e, "payments"),
     });
+  }
+  return out;
+}
+
+/** `included` de Fudo: id de pago → id de medio de pago. */
+export function paymentMethodIds(included: readonly unknown[]): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const e of included) {
+    if (!isObject(e) || e.type !== "Payment") continue;
+    const id = positiveInt(e.id);
+    const method = relId(e, "paymentMethod");
+    if (id !== null && method !== null) out.set(id, method);
+  }
+  return out;
+}
+
+/** `GET /payment-methods`: id → nombre. */
+export function parsePaymentMethods(list: readonly unknown[]): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const e of list) {
+    if (!isObject(e) || !isObject(e.attributes)) continue;
+    const id = positiveInt(e.id);
+    const name = str(e.attributes.name);
+    if (id !== null && name) out.set(id, name);
   }
   return out;
 }
@@ -198,6 +236,9 @@ export interface SaleOrderInsert {
   fudo_sale_type: FudoSaleType;
   fudo_sale_state: string;
   client_id: string | null;
+  customer_name: string | null;
+  fudo_source: FudoSource;
+  fudo_payment: string | null;
   lines: OrderLineInsert[];
 }
 
@@ -214,6 +255,15 @@ export interface ExistingOrder {
   status: string;
   fudo_sale_state: string | null;
   client_id?: string | null;
+  fudo_source?: string | null;
+}
+
+/** Completa canal, nombre y medio de pago en pedidos importados antes de que existieran esas columnas. */
+export interface SaleOrderEnrich {
+  id: string;
+  fudo_source: FudoSource;
+  customer_name: string | null;
+  fudo_payment: string | null;
 }
 
 /** Pedidos ya importados sin cliente que ahora se pueden vincular, agrupados por cliente. */
@@ -229,15 +279,28 @@ export interface SalesPlanInput {
   existing: ExistingOrder[];
   clientsByFudoId: ReadonlyMap<number, string>;
   clientsByPhone: ReadonlyMap<string, string>;
+  /** Nombres de los medios de pago de cada venta (id de venta → nombres). */
+  paymentNamesBySale?: ReadonlyMap<number, string[]>;
 }
 
 export interface SalesPlan {
   inserts: SaleOrderInsert[];
   updates: SaleOrderUpdate[];
   relinks: ClientRelink[];
+  enrich: SaleOrderEnrich[];
 }
 
 const NOTES_MAX = 300;
+
+function saleMeta(sale: FudoSale, input: SalesPlanInput): Omit<SaleOrderEnrich, "id"> {
+  const names = input.paymentNamesBySale?.get(sale.id) ?? [];
+  const customer = sale.anon?.name ?? sale.customerName;
+  return {
+    fudo_source: fudoSourceFromMethods(names),
+    customer_name: customer ? customer.slice(0, 120) : null,
+    fudo_payment: names.length ? [...new Set(names)].join(" + ").slice(0, 80) : null,
+  };
+}
 
 function clientFor(sale: FudoSale, input: SalesPlanInput): string | null {
   const key = phoneKey(sale.anon?.phone);
@@ -263,7 +326,7 @@ function linesFor(items: FudoItem[], products: SalesPlanInput["productsByFudoId"
 }
 
 export function planSalesImport(input: SalesPlanInput): SalesPlan {
-  const plan: SalesPlan = { inserts: [], updates: [], relinks: [] };
+  const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [] };
   const byFudoId = new Map(input.existing.map((o) => [o.fudo_order_id, o]));
   const relinks = new Map<string, string[]>();
 
@@ -282,6 +345,8 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
       const relinkTo = existing.client_id === null ? clientFor(sale, input) : null;
       if (relinkTo) relinks.set(relinkTo, [...(relinks.get(relinkTo) ?? []), existing.id]);
+      // Pedidos importados antes de la migración 024: se completan canal, nombre y medio de pago una vez.
+      if (existing.fudo_source === null && input.paymentNamesBySale) plan.enrich.push({ id: existing.id, ...saleMeta(sale, input) });
       continue;
     }
 
@@ -301,6 +366,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       fudo_sale_type: sale.saleType,
       fudo_sale_state: sale.saleState,
       client_id: clientId,
+      ...saleMeta(sale, input),
       lines,
     });
   }
