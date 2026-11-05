@@ -107,7 +107,11 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
   const finish = async (code: string) => {
     // El mensaje con los ids puede llegar un instante después del callback de FB.login.
     for (let i = 0; i < 20 && !ids.current; i++) await new Promise((r) => setTimeout(r, 150));
-    if (!ids.current) throw new Error("Meta no informó el número elegido. Intentá de nuevo.");
+    if (!ids.current) {
+      throw new Error(
+        "Meta cerró la ventana sin hacer el alta de WhatsApp (no pidió número ni QR). Suele pasar mientras la verificación del negocio está pendiente o si el número no cumple los requisitos de coexistencia. Reintentá cuando Meta apruebe la verificación.",
+      );
+    }
     await submit(code, ids.current, pin);
   };
 

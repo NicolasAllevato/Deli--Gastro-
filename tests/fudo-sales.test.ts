@@ -78,7 +78,7 @@ const base = () => ({
     { id: 9002, productId: 999, quantity: 1, price: 14990, canceled: false, comment: null },
   ]]]),
   productsByFudoId: new Map([[104, { id: "p-margarita", name: "Pizza Margarita" }]]),
-  existing: [] as Array<{ id: string; fudo_order_id: number; channel: string; status: string; fudo_sale_state: string | null }>,
+  existing: [] as Array<{ id: string; fudo_order_id: number; channel: string; status: string; fudo_sale_state: string | null; client_id?: string | null }>,
   clientsByFudoId: new Map<number, string>(),
   clientsByPhone: new Map<string, string>(),
 });
@@ -154,5 +154,19 @@ describe("planSalesImport", () => {
     const plan = planSalesImport(input);
     assert.equal(plan.inserts.length, 0);
     assert.equal(plan.updates.length, 0);
+  });
+
+  it("vincula pedidos ya importados sin cliente, sin pisar uno asignado", () => {
+    const input = base();
+    input.sales = parseFudoSales({
+      data: [rawSale({}, { customer: { data: { id: "77" } } }), { ...rawSale({}, { customer: { data: { id: "77" } } }), id: "501" }, { ...rawSale(), id: "502" }],
+    });
+    input.clientsByFudoId.set(77, "c-77");
+    input.existing = [
+      { id: "o1", fudo_order_id: 500, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE", client_id: null },
+      { id: "o2", fudo_order_id: 501, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE", client_id: "otro" },
+      { id: "o3", fudo_order_id: 502, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE", client_id: null },
+    ];
+    assert.deepEqual(planSalesImport(input).relinks, [{ client_id: "c-77", orderIds: ["o1"] }]);
   });
 });

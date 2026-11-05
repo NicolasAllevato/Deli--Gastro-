@@ -12,6 +12,7 @@ export interface SalesSyncSummary {
   salesSeen: number;
   ordersCreated: number;
   ordersUpdated: number;
+  ordersRelinked?: number;
   dryRun: boolean;
 }
 
@@ -67,7 +68,7 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
 
     const existing: ExistingOrder[] = [];
     for (const ids of chunk(sales.map((s) => s.id), ID_BATCH)) {
-      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state`)));
+      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id`)));
     }
     const known = new Set(existing.map((o) => o.fudo_order_id));
 
@@ -124,9 +125,21 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
           body: JSON.stringify({ status: u.status, fudo_sale_state: u.fudo_sale_state }),
         });
       }
-      if (plan.inserts.length || plan.updates.length) await logRun(env, "sales", plan.inserts.length, plan.updates.length, null);
+      // Un PATCH por cliente (no por pedido); client_id=is.null para no pisar uno asignado entre tanto.
+      for (const r of plan.relinks) {
+        for (const ids of chunk(r.orderIds, ID_BATCH)) {
+          await rest(env, `orders?id=in.(${ids.join(",")})&channel=eq.fudo&client_id=is.null`, {
+            method: "PATCH",
+            headers: { prefer: "return=minimal" },
+            body: JSON.stringify({ client_id: r.client_id }),
+          });
+        }
+      }
+      const relinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
+      if (plan.inserts.length || plan.updates.length || relinked) await logRun(env, "sales", plan.inserts.length, plan.updates.length + relinked, null);
     }
-    return { salesSeen: sales.length, ordersCreated: plan.inserts.length, ordersUpdated: plan.updates.length, dryRun };
+    const ordersRelinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
+    return { salesSeen: sales.length, ordersCreated: plan.inserts.length, ordersUpdated: plan.updates.length, ordersRelinked, dryRun };
   } catch (e) {
     if (!dryRun) await logRun(env, "sales", 0, 0, e instanceof Error ? e.message : String(e));
     throw e;

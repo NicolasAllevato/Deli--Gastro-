@@ -1,0 +1,5 @@
+#!/bin/sh
+# Refresca las copias locales de las páginas legales que usa la app de Meta y las suma al commit.
+node scripts/snapshot-legal.mjs >/dev/null 2>&1 || true
+git add docs/meta/*.html 2>/dev/null || true
+exit 0

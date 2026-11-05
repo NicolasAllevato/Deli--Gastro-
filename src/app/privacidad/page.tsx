@@ -17,6 +17,15 @@ export default function PrivacidadPage() {
       }
       sections={[
         {
+          title: "Quién trata tus datos",
+          body: (
+            <p>
+              {BRAND.company}, nombre comercial de {BRAND.legal.holder} (empresa unipersonal), CUIT{" "}
+              {BRAND.legal.cuit}, con domicilio en {BRAND.legal.address}.
+            </p>
+          ),
+        },
+        {
           title: "Qué datos recopilamos",
           body: (
             <ul className="list-disc pl-5 flex flex-col gap-1">
