@@ -5,8 +5,8 @@ export const BRAND = {
   company: "Opsyn Soluciones",
   year: 2026,
   tagline: "Delivery inteligente: pedidos, WhatsApp con IA y fidelización en una sola plataforma.",
-  contactEmail: "opsyn.soluciones@gmail.com",
-  legalUpdated: "4 de noviembre de 2026",
+  contactEmail: "contacto@la-gambeta.com",
+  legalUpdated: "5 de noviembre de 2026",
   /** Titular del servicio, tal como figura en la constancia de ARCA (lo pide Meta para verificar). */
   legal: {
     holder: "Nicolás Hernán Allevato",

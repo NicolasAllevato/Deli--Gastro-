@@ -14,11 +14,17 @@ y un trigger hace lo mismo con los pedidos nuevos (~1.080 clientes; solo 1 pedid
 gastado, último pedido y canal. Tablero con indicador de conexión. Términos y privacidad con titular, CUIT y domicilio. Deploy seguro con `scripts/cf-deploy.sh`.
 
 **Pendiente, por orden:**
-1. **WhatsApp con coexistencia (bloqueado por Meta):** configuración de Embedded Signup creada (`1553288184524169`, cargada en la app) y
-   coexistencia prendida, pero Meta no corre el alta hasta aprobar la **verificación del negocio OPSYN** (enviada 2026-11-04, 1–5 días
-   hábiles). Después: "Conectar con Facebook" con el +54 9 11 2774-4537 (QR desde WhatsApp Business, no registrar por API), verificar
+1. **WhatsApp con coexistencia (bloqueado por Meta):** configuración de Embedded Signup creada (`1553288184524169`, cargada en la app
+   **Opsyn Dely**, id `1655370112887275`, ex "La gambeta dely") y coexistencia prendida, pero Meta no corre el alta hasta aprobar la
+   **verificación del negocio** del portfolio OPSYN soluciones inteligentes (`1751120339216553`; enviada 2026-11-04, **RECHAZADA el
+   2026-11-05**, motivo exacto sin ver: el Centro de seguridad no lo muestra, está en el mail a opsyn.soluciones@gmail.com).
+   Hecho el 2026-11-05: `contacto@la-gambeta.com` (Email Routing → opsyn.soluciones@gmail.com, probado), dominio `la-gambeta.com`
+   verificado en Meta (TXT), correo de contacto de la app, pie con titular/CUIT/domicilio/correo y la raíz `la-gambeta.com` redirigiendo
+   (307) a la app. Falta: (a) en Información del negocio, nombre legal `ALLEVATO NICOLAS HERNAN`, dirección igual a ARCA (Piedras 1841,
+   piso 8, dpto A, 1140 CABA) y sitio `https://la-gambeta.com`; (b) subir constancia de ARCA (vence **2026-11-22**) y factura de Movistar al
+   borrador del Centro de seguridad y reenviar; (c) la actividad registrada en ARCA (702092, asesoramiento empresarial) no es de software:
+   posible fricción. Después: "Conectar con Facebook" con el +54 9 11 2774-4537 (QR desde WhatsApp Business, no registrar por API), verificar
    suscripción y mensaje real. Luego publicar la app (go_live) y repetir con el número del local (+54 11 3084-8283, su propio portfolio, Tech Provider).
-   La constancia de ARCA vence el **2026-11-22**.
 2. **Crear pedidos de la app en Fudo (Fase 4):** `POST /sales` (TAKEAWAY; delivery con dirección y teléfono en el comentario) +
    `POST /items` en serie + `POST /payments`, detrás de un interruptor `FUDO_WRITES` apagado. Hace falta una venta de prueba real con el
    usuario presente y anularla al final. Después cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en el Worker de la app y mapear medios de pago.

@@ -96,6 +96,14 @@ const nextConfig: NextConfig = {
         destination: `${NEW_APP_ORIGIN}/:path`,
         permanent: false,
       },
+      {
+        // Raíz del dominio (la-gambeta.com): es el sitio web que figura en Meta. Mientras no haya una
+        // página propia, manda al dominio de la app. Temporal: la raíz puede tener su propio sitio después.
+        source: "/:path((?!api(?:/|$)).*)",
+        has: [{ type: "host", value: "la-gambeta.com" }],
+        destination: `${NEW_APP_ORIGIN}/:path`,
+        permanent: false,
+      },
     ];
   },
 };
