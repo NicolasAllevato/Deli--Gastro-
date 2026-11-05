@@ -7,6 +7,7 @@ import type { RangeKey } from "@/lib/reports/range";
 import type { ExecutiveSnapshot } from "@/lib/reports/executive";
 import { ChannelDonut } from "./_components/ChannelDonut";
 import { CopilotCard } from "./_components/CopilotCard";
+import { DataStatus } from "./_components/DataStatus";
 import { FiltersBar } from "./_components/FiltersBar";
 import { KpiCard } from "./_components/KpiCard";
 import { PunctualityPrepChart } from "./_components/PunctualityPrepChart";
@@ -54,6 +55,7 @@ export default function EjecutivoClient() {
         <div className="min-w-0">
           <h1 className="font-headline font-black text-2xl">Tablero ejecutivo</h1>
           <p className="text-sm exec-muted">Indicadores clave, comparados con el período anterior.</p>
+          <DataStatus loading={loading} error={error} orders={data?.kpis.current.orders ?? null} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="exec-chip" onClick={() => setSettingsOpen(true)}>
