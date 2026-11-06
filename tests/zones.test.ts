@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   findZone,
+  findZoneIn,
+  orderZones,
   pointInShape,
   quoteDelivery,
   type DeliveryZone,
@@ -73,6 +75,26 @@ describe("findZone", () => {
 
   it("devuelve null si ninguna zona cubre el punto", () => {
     assert.equal(findZone({ lat: -35.5, lng: -58.39 }, [near, far, north]), null);
+  });
+});
+
+describe("orderZones / findZoneIn", () => {
+  const inactive = zone({ id: "off", sort_order: -1, is_active: false, shape: near.shape });
+  const all = [far, inactive, north, near];
+
+  it("orderZones filtra inactivas, ordena por sort_order y no muta la entrada", () => {
+    const copy = [...all];
+    const expected = all.filter((z) => z.is_active).sort((a, b) => a.sort_order - b.sort_order).map((z) => z.id);
+    assert.deepEqual(orderZones(all).map((z) => z.id), expected);
+    assert.deepEqual(all, copy);
+  });
+
+  it("findZoneIn con zonas preordenadas da lo mismo que findZone", () => {
+    const ordered = orderZones(all);
+    const points = [LOCAL, { lat: -34.5, lng: -58.39 }, { lat: -35.5, lng: -58.39 }, { lat: -34.58, lng: -58.45 }];
+    for (const point of points) {
+      assert.equal(findZoneIn(point, ordered)?.id ?? null, findZone(point, all)?.id ?? null);
+    }
   });
 });
 

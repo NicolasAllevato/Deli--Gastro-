@@ -4,8 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { readConfig } from "@/lib/orders-server";
 import { listZones } from "@/lib/zones-server";
-import type { ReportOrder } from "@/lib/reports/analytics";
-import { buildExecutiveSnapshot, previousBounds } from "@/lib/reports/executive";
+import { buildExecutiveSnapshot, previousBounds, type ExecutiveOrder } from "@/lib/reports/executive";
 import {
   buildZoneResolver,
   fetchByCursor,
@@ -28,9 +27,9 @@ const rangeSchema = z.enum(RANGE_KEYS as [RangeKey, ...RangeKey[]]);
 const zoneSchema = z.string().trim().regex(ZONE_ID_PATTERN);
 
 const ORDER_COLUMNS =
-  "id, client_id, status, total, delivery_fee, channel, fudo_source, fudo_sale_type, payment_method, items_desc, created_at, accepted_at, ready_at, picked_up_at, delivered_at, delivery_lat, delivery_lng";
+  "id, status, total, channel, fudo_source, fudo_sale_type, created_at, ready_at, delivered_at, delivery_lat, delivery_lng";
 
-type OrderRow = ReportOrder & OrderCoords & { created_at: string };
+type OrderRow = ExecutiveOrder & OrderCoords;
 
 const fail = (error: string, status: number) =>
   NextResponse.json({ error }, { status, headers: NO_STORE });
@@ -92,15 +91,12 @@ export async function GET(req: NextRequest) {
       listZones(db),
       loadReviews(db, since, bounds.to),
     ]);
-    const orders: ReportOrder[] = ordersRes.rows.map((o) => ({
-      ...o,
-      total: Number(o.total),
-      delivery_fee: Number(o.delivery_fee),
-    }));
+    // Las filas son recién leídas y locales: se normaliza `total` (numeric llega como texto) sin copiarlas.
+    for (const row of ordersRes.rows) row.total = Number(row.total);
     const { zoneOf, zoneNames } = buildZoneResolver(ordersRes.rows, zones);
 
     const snapshot = buildExecutiveSnapshot({
-      orders,
+      orders: ordersRes.rows,
       reviews: toReviewInputs(reviewsRes.rows),
       bounds,
       settings,

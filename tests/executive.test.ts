@@ -58,6 +58,25 @@ const review = (rating: number, day = "2026-10-03", orderId: string | null = nul
 // SLA por defecto 40 + tolerancia 5 = 45 minutos.
 const S = DEFAULTS;
 
+describe("sin mutar ni copiar de más", () => {
+  it("buildExecutiveSnapshot no muta entradas congeladas, con y sin zona", () => {
+    const orders = Object.freeze([order("a"), order("b", { day: "2026-10-02" })].map((o) => Object.freeze(o)));
+    const reviews = Object.freeze([] as ReviewInput[]);
+    const zoneOf: ZoneOf = (o) => (o.id === "a" ? "Z1" : null);
+    const base = { orders, reviews, bounds: RANGE, settings: DEFAULTS, zoneOf, now: LATER };
+    const all = buildExecutiveSnapshot(base);
+    const scoped = buildExecutiveSnapshot({ ...base, zone: "Z1" });
+    assert.equal(all.kpis.current.orders, 2);
+    assert.equal(scoped.kpis.current.orders, 1);
+  });
+
+  it("dailySeries agrupa muchos pedidos del mismo día", () => {
+    const many = Array.from({ length: 500 }, (_, i) => order(`m${i}`));
+    const series = dailySeries(many, RANGE, DEFAULTS, () => null, LATER);
+    assert.equal(series.find((p) => p.date === "2026-10-03")?.orders, 500);
+  });
+});
+
 describe("previousBounds", () => {
   it("devuelve el período anterior de igual duración", () => {
     const prev = previousBounds(RANGE);
