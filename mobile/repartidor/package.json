@@ -5,8 +5,8 @@
   "description": "App Android del repartidor: abre /repartidor y comparte la ubicación en segundo plano.",
   "scripts": {
     "sync": "cap sync android",
-    "apk:debug": "cap sync android && cd android && gradlew.bat assembleDebug",
-    "apk:release": "cap sync android && cd android && gradlew.bat assembleRelease"
+    "apk:debug": "cap sync android && cd android && .\\gradlew.bat assembleDebug",
+    "apk:release": "cap sync android && cd android && .\\gradlew.bat assembleRelease"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "1.3.1",
