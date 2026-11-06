@@ -252,7 +252,15 @@ export function byZone(
 }
 
 /** Canal de un pedido: los de Fudo se abren por su origen (PedidosYa, Rappi, Morfy o local). */
-export const channelOf = (o: ReportOrder): string => (o.channel === "fudo" ? o.fudo_source || "fudo" : o.channel);
+const SALE_TYPE_KEY: Readonly<Record<string, string>> = { DELIVERY: "delivery", TAKEAWAY: "takeaway", "EAT-IN": "salon" };
+
+export const channelOf = (o: ReportOrder): string => {
+  if (o.channel !== "fudo") return o.channel;
+  const source = o.fudo_source || "fudo";
+  if (source !== "local" && source !== "fudo") return source;
+  const sub = o.fudo_sale_type ? SALE_TYPE_KEY[o.fudo_sale_type] : undefined;
+  return sub ? `local_${sub}` : source;
+};
 
 export function byChannel(orders: readonly ReportOrder[], bounds: Bounds): ChannelRow[] {
   const inRange = orders.filter((o) => inBounds(o.created_at, bounds));

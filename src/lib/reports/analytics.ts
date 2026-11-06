@@ -12,6 +12,8 @@ export interface ReportOrder {
   channel: string;
   /** Canal dentro de Fudo (pedidosya, rappi, morfy, local); solo en pedidos con channel = 'fudo'. */
   fudo_source?: string | null;
+  /** Tipo de venta en Fudo (DELIVERY, TAKEAWAY, EAT-IN); abre el canal local en delivery / take away / salón. */
+  fudo_sale_type?: string | null;
   payment_method: string | null;
   items_desc: string;
   created_at: string;
