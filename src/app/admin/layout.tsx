@@ -20,7 +20,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="flex h-dvh w-full bg-background overflow-hidden">
+    // `fixed inset-0` + `overflow-clip`: el shell siempre ocupa todo el viewport y no se puede
+    // desplazar por scrollIntoView/foco (con overflow-hidden sí, y la página quedaba cortada).
+    <div className="fixed inset-0 flex bg-background overflow-clip">
 
       {/* Backdrop mobile */}
       {sidebarOpen && (
@@ -110,7 +112,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-clip">
 
         {/* TopBar */}
         <header className="flex items-center justify-between px-4 md:px-5 py-3 m-3 mb-2 neumorphic rounded-2xl flex-shrink-0">

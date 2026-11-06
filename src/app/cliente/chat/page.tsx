@@ -66,7 +66,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto h-[calc(100vh-6rem)] pb-6 flex flex-col">
+    <div className="max-w-2xl mx-auto h-[calc(100dvh-6rem)] pb-6 flex flex-col">
       <div className="flex items-center gap-4 mb-6 flex-shrink-0">
         <Link
           href="/cliente"
