@@ -5,7 +5,8 @@ import type { Bounds } from "@/lib/reports/range";
 import { clientFor, loadWhatsAppSettings } from "@/lib/whatsapp/config";
 import type { WhatsAppClient } from "@/lib/whatsapp/client";
 import { sanitizeParam, templateByName } from "@/lib/whatsapp/templates";
-import { emailConfig, sendEmail as sendViaProvider, type EmailConfig, type EmailMessage } from "./email.ts";
+import { getEmailBinding } from "./email-binding.ts";
+import { resolveEmailSender, type EmailSender } from "./email.ts";
 import {
   DAILY_SUMMARY_KEY,
   DAILY_SUMMARY_LAST_KEY,
@@ -39,8 +40,7 @@ export interface SendReport {
 
 /** Dependencias reemplazables para probar sin salir a internet. */
 export interface SendDeps {
-  email?: EmailConfig | null;
-  sendEmail?: (config: EmailConfig, message: Omit<EmailMessage, "from">) => Promise<void>;
+  email?: EmailSender | null;
   whatsapp?: WhatsAppClient | null;
 }
 
@@ -93,10 +93,10 @@ async function deliver(
   const summary = buildDailySummary(await loadDayOrders(db, dayBounds(now)), dayBounds(now), date);
   const recipients = settings.destinatarios.filter(hasContact);
 
-  const mail = deps.email === undefined ? emailConfig(ctx.emailFrom) : deps.email;
+  const mail =
+    deps.email === undefined ? resolveEmailSender(ctx.emailFrom, { binding: await getEmailBinding() }) : deps.email;
   const wa = deps.whatsapp === undefined ? clientFor(await loadWhatsAppSettings(db)) : deps.whatsapp;
   const template = templateByName(SUMMARY_TEMPLATE);
-  const send = deps.sendEmail ?? ((config, message) => sendViaProvider(config, message));
 
   const report: SendReport = {
     date,
@@ -108,7 +108,7 @@ async function deliver(
   for (const person of recipients) {
     if (mail && person.email) {
       try {
-        await send(mail, { to: person.email, subject: rendered.subject, text: rendered.text, html: rendered.html });
+        await mail.send({ to: person.email, subject: rendered.subject, text: rendered.text, html: rendered.html });
         report.email.sent += 1;
       } catch (error: unknown) {
         report.email.failed += 1;

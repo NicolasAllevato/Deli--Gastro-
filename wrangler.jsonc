@@ -18,5 +18,7 @@
   "vars": {
     "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com"
   },
+  // Cloudflare Email Sending (resumen diario). Requiere onboardear la-gambeta.com: docs/EMAIL_CLOUDFLARE.md.
+  "send_email": [{ "name": "EMAIL" }],
   "observability": { "enabled": true }
 }

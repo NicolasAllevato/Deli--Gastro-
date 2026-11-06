@@ -6,36 +6,65 @@ export interface EmailMessage {
   html: string;
 }
 
-export interface EmailConfig {
-  apiKey: string;
-  from: string;
+export type EmailBody = Omit<EmailMessage, "from">;
+
+/** Interfaz mínima de envío: el resto del resumen diario no sabe qué proveedor hay detrás. */
+export interface EmailSender {
+  readonly provider: "cloudflare" | "resend";
+  readonly from: string;
+  send(message: EmailBody): Promise<void>;
 }
+
+/** Forma mínima del binding `send_email` de Workers (Cloudflare Email Sending). */
+export interface CloudflareEmailBinding {
+  send(message: EmailMessage): Promise<unknown>;
+}
+
+export type EnvLike = Readonly<Record<string, string | undefined>>;
+
+/** Remitente por defecto: casilla del local en el dominio onboardeado en Cloudflare. */
+export const DEFAULT_EMAIL_FROM = "contacto@la-gambeta.com";
 
 const SEND_TIMEOUT_MS = 15_000;
 
-/**
- * Configuración del servicio de correo (Resend). Sin `RESEND_API_KEY` o sin remitente
- * (`notif_email_from` de Configuración o `RESUMEN_EMAIL_FROM`) los mails se omiten.
- */
-export function emailConfig(
-  configuredFrom: string | undefined,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): EmailConfig | null {
-  const apiKey = env.RESEND_API_KEY?.trim();
-  const from = configuredFrom?.trim() || env.RESUMEN_EMAIL_FROM?.trim();
-  return apiKey && from ? { apiKey, from } : null;
+export function cloudflareSender(binding: CloudflareEmailBinding, from: string): EmailSender {
+  return {
+    provider: "cloudflare",
+    from,
+    async send(message) {
+      await binding.send({ from, ...message });
+    },
+  };
 }
 
-export async function sendEmail(
-  config: EmailConfig,
-  message: Omit<EmailMessage, "from">,
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  const res = await fetchImpl("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: config.from, ...message, to: [message.to] }),
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`El servicio de correo respondió ${res.status}.`);
+export function resendSender(apiKey: string, from: string, fetchImpl: typeof fetch = fetch): EmailSender {
+  return {
+    provider: "resend",
+    from,
+    async send(message) {
+      const res = await fetchImpl("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ from, ...message, to: [message.to] }),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`El servicio de correo respondió ${res.status}.`);
+    },
+  };
+}
+
+/**
+ * Elige el proveedor: Cloudflare Email Sending si el binding `EMAIL` está disponible; si no, Resend
+ * solo cuando hay `RESEND_API_KEY`; si no hay ninguno devuelve null y los mails se omiten.
+ * Remitente: `notif_email_from` de Configuración, luego `RESUMEN_EMAIL_FROM`, luego el por defecto.
+ */
+export function resolveEmailSender(
+  configuredFrom: string | undefined,
+  options: { binding?: CloudflareEmailBinding | null; env?: EnvLike } = {},
+): EmailSender | null {
+  const env = options.env ?? process.env;
+  const from = configuredFrom?.trim() || env.RESUMEN_EMAIL_FROM?.trim() || DEFAULT_EMAIL_FROM;
+  if (options.binding) return cloudflareSender(options.binding, from);
+  const apiKey = env.RESEND_API_KEY?.trim();
+  return apiKey ? resendSender(apiKey, from) : null;
 }
