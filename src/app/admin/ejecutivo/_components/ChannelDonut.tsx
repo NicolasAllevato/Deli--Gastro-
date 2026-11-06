@@ -21,7 +21,7 @@ export function ChannelDonut({ channels, theme }: Props) {
   return (
     <ChartCard
       title="Ventas por canal"
-      subtitle="Participación de cada canal: web, WhatsApp, mostrador, PedidosYa, Rappi, Morfy y local."
+      subtitle="Participación de cada canal: web, WhatsApp, mostrador, PedidosYa, Rappi, Morfy y Fudo (delivery, take away y salón)."
       empty={data.length === 0}
       summary={`Anillo con ${data.length} canales: ${data.map((d) => `${d.name} ${d.share}%`).join(", ")}.`}
     >
