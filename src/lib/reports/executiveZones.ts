@@ -1,6 +1,5 @@
-import { findZone, type DeliveryZone } from "../zones.ts";
-import type { ReportOrder } from "./analytics.ts";
-import type { ReviewInput, ZoneOf } from "./executive.ts";
+import { findZoneIn, orderZones, type DeliveryZone } from "../zones.ts";
+import type { ExecutiveOrder, ReviewInput, ZoneOf } from "./executive.ts";
 
 export interface OrderCoords {
   id: string;
@@ -28,15 +27,16 @@ export function buildZoneResolver(
   zones: readonly DeliveryZone[],
 ): { zoneOf: ZoneOf; zoneNames: Record<string, string> } {
   const zoneByOrder = new Map<string, string>();
+  const ordered = orderZones(zones);
   for (const c of coords) {
     const lat = toCoord(c.delivery_lat);
     const lng = toCoord(c.delivery_lng);
     if (lat === null || lng === null) continue;
-    const zone = findZone({ lat, lng }, zones);
+    const zone = findZoneIn({ lat, lng }, ordered);
     if (zone) zoneByOrder.set(c.id, zone.id);
   }
   return {
-    zoneOf: (order: ReportOrder) => zoneByOrder.get(order.id) ?? null,
+    zoneOf: (order: ExecutiveOrder) => zoneByOrder.get(order.id) ?? null,
     zoneNames: Object.fromEntries(zones.map((z) => [z.id, z.name])),
   };
 }

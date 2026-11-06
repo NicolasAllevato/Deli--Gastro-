@@ -1,5 +1,11 @@
 import { inBounds, localDateKey, type Bounds, type RangeKey } from "./range.ts";
 import type { ReportOrder } from "./analytics.ts";
+
+/** Columnas de un pedido que realmente lee el tablero ejecutivo. */
+export type ExecutiveOrder = Pick<
+  ReportOrder,
+  "id" | "status" | "total" | "channel" | "fudo_source" | "fudo_sale_type" | "created_at" | "ready_at" | "delivered_at"
+>;
 import {
   KPI_KEYS,
   isZoneVisible,
@@ -31,7 +37,7 @@ export interface ReviewInput {
 }
 
 /** Resuelve la zona de un pedido (id) o null si no tiene. Se inyecta para no importar nada de servidor. */
-export type ZoneOf = (order: ReportOrder) => string | null;
+export type ZoneOf = (order: ExecutiveOrder) => string | null;
 
 export interface Kpis {
   orders: number;
@@ -86,12 +92,12 @@ export interface Insight { severity: Severity; text: string; action: string }
 export interface ComplaintRow { orderId: string | null; rating: number; comment: string | null; createdAt: string }
 
 const round = (n: number, decimals = 0) => Math.round(n * 10 ** decimals) / 10 ** decimals;
-const isCancelled = (o: ReportOrder) => o.status === "Cancelado";
+const isCancelled = (o: ExecutiveOrder) => o.status === "Cancelado";
 const ms = (iso: string) => new Date(iso).getTime();
 const pct = (part: number, total: number): number | null => (total > 0 ? round((part / total) * 100, 1) : null);
-const zoneIdOf = (o: ReportOrder, zoneOf: ZoneOf): string => zoneOf(o) ?? NO_ZONE;
+const zoneIdOf = (o: ExecutiveOrder, zoneOf: ZoneOf): string => zoneOf(o) ?? NO_ZONE;
 
-const confirmedIn = (orders: readonly ReportOrder[], bounds: Bounds): ReportOrder[] =>
+const confirmedIn = (orders: readonly ExecutiveOrder[], bounds: Bounds): ExecutiveOrder[] =>
   orders.filter((o) => !isCancelled(o) && inBounds(o.created_at, bounds));
 
 /** Período anterior de igual duración, pegado al actual. */
@@ -102,7 +108,7 @@ export function previousBounds(bounds: Bounds): Bounds {
 }
 
 /** Límite (ms epoch) para entregar un pedido: creación + SLA de su zona + tolerancia. */
-function deadlineOf(order: ReportOrder, settings: ExecutiveSettings, zoneOf: ZoneOf): number {
+function deadlineOf(order: ExecutiveOrder, settings: ExecutiveSettings, zoneOf: ZoneOf): number {
   const allowed = slaForZone(settings, zoneOf(order)) + settings.sla.toleranceMinutes;
   return ms(order.created_at) + allowed * MINUTE_MS;
 }
@@ -112,7 +118,7 @@ function deadlineOf(order: ReportOrder, settings: ExecutiveSettings, zoneOf: Zon
  * su plazo (atrasados). Los pedidos en curso que todavía están en plazo no cuentan ni a favor ni en contra.
  */
 function onTimePct(
-  confirmed: readonly ReportOrder[],
+  confirmed: readonly ExecutiveOrder[],
   settings: ExecutiveSettings,
   zoneOf: ZoneOf,
   now: number,
@@ -132,13 +138,13 @@ function onTimePct(
 }
 
 const isNum = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
-const totalOf = (o: ReportOrder): number => {
+const totalOf = (o: ExecutiveOrder): number => {
   const n = Number(o.total);
   return Number.isFinite(n) ? n : 0;
 };
-const sumTotals = (list: readonly ReportOrder[]): number => list.reduce((sum, o) => sum + totalOf(o), 0);
+const sumTotals = (list: readonly ExecutiveOrder[]): number => list.reduce((sum, o) => sum + totalOf(o), 0);
 
-function prepAverage(confirmed: readonly ReportOrder[]): number | null {
+function prepAverage(confirmed: readonly ExecutiveOrder[]): number | null {
   const minutes = confirmed
     .filter((o) => o.ready_at)
     .map((o) => (ms(o.ready_at as string) - ms(o.created_at)) / MINUTE_MS)
@@ -147,7 +153,7 @@ function prepAverage(confirmed: readonly ReportOrder[]): number | null {
 }
 
 export function computeKpis(
-  orders: readonly ReportOrder[],
+  orders: readonly ExecutiveOrder[],
   reviews: readonly ReviewInput[],
   bounds: Bounds,
   settings: ExecutiveSettings,
@@ -195,16 +201,18 @@ export function trend(current: number | null, previous: number | null, goodDirec
 
 /** Puntualidad y preparación día por día (hora de Buenos Aires). Los días sin pedidos quedan en null. */
 export function dailySeries(
-  orders: readonly ReportOrder[],
+  orders: readonly ExecutiveOrder[],
   bounds: Bounds,
   settings: ExecutiveSettings,
   zoneOf: ZoneOf,
   now: number = Date.now(),
 ): DailyPoint[] {
-  const byDay = new Map<string, ReportOrder[]>();
+  const byDay = new Map<string, ExecutiveOrder[]>();
   for (const o of confirmedIn(orders, bounds)) {
     const key = localDateKey(o.created_at);
-    byDay.set(key, [...(byDay.get(key) ?? []), o]);
+    const bucket = byDay.get(key);
+    if (bucket) bucket.push(o);
+    else byDay.set(key, [o]);
   }
 
   const points: DailyPoint[] = [];
@@ -219,18 +227,20 @@ export function dailySeries(
 
 /** Demanda, facturación y puntualidad por zona. Oculta las zonas que los ajustes marcan como no visibles. */
 export function byZone(
-  orders: readonly ReportOrder[],
+  orders: readonly ExecutiveOrder[],
   bounds: Bounds,
   settings: ExecutiveSettings,
   zoneOf: ZoneOf,
   names: Readonly<Record<string, string>> = {},
   now: number = Date.now(),
 ): ZoneRow[] {
-  const groupByZone = (list: readonly ReportOrder[]) => {
-    const groups = new Map<string, ReportOrder[]>();
+  const groupByZone = (list: readonly ExecutiveOrder[]) => {
+    const groups = new Map<string, ExecutiveOrder[]>();
     for (const o of list) {
       const id = zoneIdOf(o, zoneOf);
-      groups.set(id, [...(groups.get(id) ?? []), o]);
+      const bucket = groups.get(id);
+      if (bucket) bucket.push(o);
+      else groups.set(id, [o]);
     }
     return groups;
   };
@@ -254,7 +264,7 @@ export function byZone(
 /** Canal de un pedido: los de Fudo se abren por su origen (PedidosYa, Rappi, Morfy o local). */
 const SALE_TYPE_KEY: Readonly<Record<string, string>> = { DELIVERY: "delivery", TAKEAWAY: "takeaway", "EAT-IN": "salon" };
 
-export const channelOf = (o: ReportOrder): string => {
+export const channelOf = (o: ExecutiveOrder): string => {
   if (o.channel !== "fudo") return o.channel;
   const source = o.fudo_source || "fudo";
   if (source !== "local" && source !== "fudo") return source;
@@ -262,7 +272,7 @@ export const channelOf = (o: ReportOrder): string => {
   return sub ? `local_${sub}` : source;
 };
 
-export function byChannel(orders: readonly ReportOrder[], bounds: Bounds): ChannelRow[] {
+export function byChannel(orders: readonly ExecutiveOrder[], bounds: Bounds): ChannelRow[] {
   const inRange = orders.filter((o) => inBounds(o.created_at, bounds));
   const confirmed = inRange.filter((o) => !isCancelled(o));
   const rows = new Map<string, ChannelRow>();
@@ -368,7 +378,7 @@ export function buildInsights(snapshot: InsightInput, settings: ExecutiveSetting
 }
 
 export interface SnapshotInput {
-  orders: readonly ReportOrder[];
+  orders: readonly ExecutiveOrder[];
   reviews: readonly ReviewInput[];
   bounds: Bounds;
   settings: ExecutiveSettings;
@@ -400,9 +410,11 @@ export interface ExecutiveSnapshot {
   truncated: boolean;
 }
 
-function scopeToZone(input: SnapshotInput): { orders: ReportOrder[]; reviews: ReviewInput[] } {
+function scopeToZone(
+  input: SnapshotInput,
+): { orders: readonly ExecutiveOrder[]; reviews: readonly ReviewInput[] } {
   const { zone, zoneOf } = input;
-  if (!zone) return { orders: [...input.orders], reviews: [...input.reviews] };
+  if (!zone) return { orders: input.orders, reviews: input.reviews };
   const orders = input.orders.filter((o) => zoneIdOf(o, zoneOf) === zone);
   const ids = new Set(orders.map((o) => o.id));
   return { orders, reviews: input.reviews.filter((r) => r.order_id != null && ids.has(r.order_id)) };

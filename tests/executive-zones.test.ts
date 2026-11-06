@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { findZone } from "../src/lib/zones.ts";
 import { buildZoneResolver, fetchByCursor, toReviewInputs } from "../src/lib/reports/executiveZones.ts";
 import type { DeliveryZone } from "../src/lib/zones.ts";
 import type { ReportOrder } from "../src/lib/reports/analytics.ts";
@@ -75,6 +76,22 @@ test("fetchByCursor devuelve truncated: true al llegar al tope con la Ãºltima pÃ
   );
   assert.equal(result.rows.length, 3);
   assert.equal(result.truncated, true);
+});
+
+test("buildZoneResolver da el mismo resultado que findZone por pedido (zonas desordenadas e inactivas)", () => {
+  const zones = [zone("Z2", "Norte", -34, 2), zone("Z0", "Off", -34, 0, false), zone("Z1", "Centro", -34, 1)];
+  const copy = JSON.stringify(zones);
+  const coords = Array.from({ length: 40 }, (_, i) => ({
+    id: `o${i}`,
+    delivery_lat: i % 7 === 0 ? null : -34 + (i - 20) * 0.01,
+    delivery_lng: -58,
+  }));
+  const { zoneOf } = buildZoneResolver(coords, zones);
+  for (const c of coords) {
+    const expected = c.delivery_lat === null ? null : (findZone({ lat: c.delivery_lat, lng: -58 }, zones)?.id ?? null);
+    assert.equal(zoneOf(order(c.id)), expected);
+  }
+  assert.equal(JSON.stringify(zones), copy);
 });
 
 test("fetchByCursor propaga errores", async () => {

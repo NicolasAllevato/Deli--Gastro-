@@ -46,9 +46,16 @@ export function pointInShape(point: GeoPoint, shape: ZoneShape): boolean {
 
 /** Primera zona activa (por `sort_order`) que contiene el punto. */
 export function findZone(point: GeoPoint, zones: readonly DeliveryZone[]): DeliveryZone | null {
-  const ordered = [...zones]
-    .filter((z) => z.is_active)
-    .sort((a, b) => a.sort_order - b.sort_order);
+  return findZoneIn(point, orderZones(zones));
+}
+
+/** Zonas activas por `sort_order`; se calcula una vez para buscar muchos puntos con `findZoneIn`. */
+export function orderZones(zones: readonly DeliveryZone[]): DeliveryZone[] {
+  return zones.filter((z) => z.is_active).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+/** Como `findZone`, pero con zonas ya filtradas y ordenadas por `orderZones`. */
+export function findZoneIn(point: GeoPoint, ordered: readonly DeliveryZone[]): DeliveryZone | null {
   return ordered.find((z) => pointInShape(point, z.shape)) ?? null;
 }
 
