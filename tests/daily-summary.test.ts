@@ -6,7 +6,7 @@ import type { DailySummarySettings } from "../src/lib/daily-summary/settings.ts"
 // Import dinámico: los módulos usan el alias `@/` que registra el helper de la base falsa.
 const { isDue, localClock, parseSettings } = await import("../src/lib/daily-summary/settings.ts");
 const { buildDailySummary, renderEmail, whatsappParams } = await import("../src/lib/daily-summary/summary.ts");
-const { emailConfig } = await import("../src/lib/daily-summary/email.ts");
+const { resolveEmailSender, DEFAULT_EMAIL_FROM } = await import("../src/lib/daily-summary/email.ts");
 const { runDailySummaryIfDue, sendDailySummaryNow } = await import("../src/lib/daily-summary/send.ts");
 
 // 16/10/2026 23:45 en Buenos Aires = 17/10 02:45 UTC.
@@ -105,15 +105,39 @@ describe("buildDailySummary", () => {
   });
 });
 
-describe("emailConfig", () => {
-  it("necesita clave y remitente", () => {
-    assert.equal(emailConfig(undefined, {}), null);
-    assert.equal(emailConfig("a@b.com", {}), null);
-    assert.deepEqual(emailConfig("a@b.com", { RESEND_API_KEY: "k" }), { apiKey: "k", from: "a@b.com" });
-    assert.deepEqual(emailConfig("", { RESEND_API_KEY: "k", RESUMEN_EMAIL_FROM: "z@b.com" }), {
-      apiKey: "k",
-      from: "z@b.com",
-    });
+describe("resolveEmailSender", () => {
+  const sent: unknown[] = [];
+  const binding = {
+    send: async (m: unknown) => {
+      sent.push(m);
+      return { messageId: "id" };
+    },
+  };
+  const body = { to: "ana@x.com", subject: "s", text: "t", html: "<p>t</p>" };
+
+  it("usa el binding de Cloudflare con el remitente por defecto", async () => {
+    const sender = resolveEmailSender(undefined, { binding, env: {} });
+    assert.equal(sender?.provider, "cloudflare");
+    assert.equal(sender?.from, DEFAULT_EMAIL_FROM);
+    assert.equal(DEFAULT_EMAIL_FROM, "contacto@la-gambeta.com");
+    await sender!.send(body);
+    assert.deepEqual(sent[0], { from: DEFAULT_EMAIL_FROM, ...body });
+  });
+
+  it("el remitente sale de Configuración, luego de RESUMEN_EMAIL_FROM", () => {
+    assert.equal(resolveEmailSender("a@b.com", { binding, env: { RESUMEN_EMAIL_FROM: "z@b.com" } })?.from, "a@b.com");
+    assert.equal(resolveEmailSender(" ", { binding, env: { RESUMEN_EMAIL_FROM: "z@b.com" } })?.from, "z@b.com");
+  });
+
+  it("sin binding degrada a Resend solo si hay clave", () => {
+    assert.equal(resolveEmailSender(undefined, { binding: null, env: {} }), null);
+    const sender = resolveEmailSender("a@b.com", { binding: null, env: { RESEND_API_KEY: "k" } });
+    assert.equal(sender?.provider, "resend");
+    assert.equal(sender?.from, "a@b.com");
+  });
+
+  it("Cloudflare gana sobre Resend cuando ambos están", () => {
+    assert.equal(resolveEmailSender(undefined, { binding, env: { RESEND_API_KEY: "k" } })?.provider, "cloudflare");
   });
 });
 
@@ -125,9 +149,12 @@ describe("envío del resumen", () => {
       mails,
       messages,
       deps: {
-        email: { apiKey: "k", from: "local@x.com" },
-        sendEmail: async (_c: unknown, m: { to: string }) => {
-          mails.push(m.to);
+        email: {
+          provider: "cloudflare",
+          from: "local@x.com",
+          send: async (m: { to: string }) => {
+            mails.push(m.to);
+          },
         },
         whatsapp: {
           sendTemplate: async (to: string, name: string, _l: string, params: string[]) => {
@@ -182,7 +209,7 @@ describe("envío del resumen", () => {
       }),
     );
     const f = fakes();
-    f.deps.sendEmail = async (_c, m) => {
+    f.deps.email.send = async (m: { to: string }) => {
       if (m.to.startsWith("falla")) throw new Error("boom");
       f.mails.push(m.to);
     };
