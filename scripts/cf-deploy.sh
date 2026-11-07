@@ -16,9 +16,9 @@ mv "$ENV_FILE" "$STASH"
 restore() { [ -f "$STASH" ] && mv "$STASH" "$ENV_FILE" && echo ".env.local restaurado."; }
 trap restore EXIT INT TERM
 
-# Solo las NEXT_PUBLIC_* (se hornean en el build), con la URL del dominio nuevo.
+# Solo las NEXT_PUBLIC_* y R2_PUBLIC_BASE_URL (host de fotos para next/image y la CSP; se hornean en el build), con la URL del dominio nuevo.
 set -a
-eval "$(grep -E '^NEXT_PUBLIC_' "$STASH" | grep -v '^NEXT_PUBLIC_APP_URL')"
+eval "$(grep -E '^(NEXT_PUBLIC_|R2_PUBLIC_BASE_URL=)' "$STASH" | grep -v '^NEXT_PUBLIC_APP_URL')"
 set +a
 export NEXT_PUBLIC_APP_URL="https://opsyndely.la-gambeta.com"
 
