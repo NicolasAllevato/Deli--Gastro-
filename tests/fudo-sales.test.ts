@@ -127,9 +127,25 @@ describe("planSalesImport", () => {
     const input = base();
     input.sales = parseFudoSales({ data: [rawSale({ saleState: "DELIVERY-SENT" })] });
     input.existing = [{ id: "o1", fudo_order_id: 500, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE" }];
-    const plan = planSalesImport(input);
+    const plan = planSalesImport({ ...input, now: "2026-11-06T20:00:00Z" });
     assert.equal(plan.inserts.length, 0);
-    assert.deepEqual(plan.updates, [{ id: "o1", status: "En Camino", fudo_sale_state: "DELIVERY-SENT" }]);
+    assert.deepEqual(plan.updates, [{ id: "o1", status: "En Camino", fudo_sale_state: "DELIVERY-SENT", ready_at: "2026-11-06T20:00:00Z" }]);
+  });
+
+  it("fecha el cierre al detectarlo y prefiere el que informa Fudo", () => {
+    const now = "2026-11-06T20:00:00Z";
+    const existing = [{ id: "o1", fudo_order_id: 500, channel: "fudo", status: "En Camino", fudo_sale_state: "DELIVERY-SENT" }];
+    const plan = (attrs: Record<string, unknown>) =>
+      planSalesImport({ ...base(), sales: parseFudoSales({ data: [rawSale({ saleState: "CLOSED", ...attrs })] }), existing, now }).updates[0];
+    assert.equal(plan({}).delivered_at, now);
+    assert.equal(plan({ closedAt: "2026-11-06T19:58:00Z" }).delivered_at, "2026-11-06T19:58:00Z");
+    assert.equal(plan({}).ready_at, undefined);
+  });
+
+  it("una venta que entra ya cerrada no inventa la hora de cierre", () => {
+    const input = base();
+    input.sales = parseFudoSales({ data: [rawSale({ saleState: "CLOSED" })] });
+    assert.equal(planSalesImport(input).inserts[0].delivered_at, null);
   });
 
   it("nunca retrocede lo que el admin ya movió en el tablero", () => {

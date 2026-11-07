@@ -9,6 +9,8 @@
       "revenue": 3014350,
       "onTime": 88.4,
       "prepMinutes": 18.2,
+      "prepOnTarget": 54.6,
+      "totalMinutes": 38.4,
       "csat": 4.4,
       "complaints": 3.4,
       "avgTicket": 8350
@@ -19,6 +21,8 @@
       "revenue": 2687872,
       "onTime": 90.6,
       "prepMinutes": 17.5,
+      "prepOnTarget": 58.1,
+      "totalMinutes": 37.2,
       "csat": 4.5,
       "complaints": 2.5,
       "avgTicket": 8096

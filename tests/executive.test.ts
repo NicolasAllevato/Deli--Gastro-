@@ -94,7 +94,7 @@ describe("computeKpis", () => {
     order("a", { deliverMin: 30, prepMin: 10 }), // a tiempo
     order("b", { deliverMin: 45, prepMin: 20 }), // justo en el límite: a tiempo
     order("c", { deliverMin: 46, prepMin: 30 }), // tarde por un minuto
-    order("d", { deliverMin: null, prepMin: null }), // sin entregar: cuenta como no puntual
+    order("d", { deliverMin: null, prepMin: null, status: "En Camino" }), // sin entregar: cuenta como no puntual
     order("e", { status: "Cancelado", total: 9999 }), // cancelado: no cuenta
     order("f", { day: "2026-08-01" }), // fuera del período
   ];
@@ -135,7 +135,7 @@ describe("computeKpis", () => {
   });
 
   it("puntualidad: un pedido en curso todavía en plazo no baja el porcentaje", () => {
-    const fresh = order("fresh", { deliverMin: null, prepMin: null });
+    const fresh = order("fresh", { deliverMin: null, prepMin: null, status: "En Camino" });
     const createdMs = new Date(fresh.created_at).getTime();
     const inPlazo = createdMs + 10 * 60_000;
     const base = [order("ok", { deliverMin: 30 })];
@@ -179,8 +179,24 @@ describe("computeKpis", () => {
   it("un período vacío no divide por cero", () => {
     const k = computeKpis([], [], RANGE, S, zoneOf);
     assert.deepEqual(k, {
-      orders: 0, delivered: 0, revenue: 0, onTime: null, prepMinutes: null, csat: null, complaints: null, avgTicket: null,
+      orders: 0, delivered: 0, revenue: 0, onTime: null, prepMinutes: null, prepOnTarget: null, totalMinutes: null,
+      csat: null, complaints: null, avgTicket: null,
     });
+  });
+
+  it("mide pedidos de Fudo por updated_at y deja afuera los de una importación masiva", () => {
+    const fudo = (id: string, type: string, minutes: number) => {
+      const o = order(id, { deliverMin: null, prepMin: null, channel: "fudo" });
+      return { ...o, fudo_sale_type: type, updated_at: new Date(Date.parse(o.created_at) + minutes * 60_000).toISOString() };
+    };
+    const k = computeKpis(
+      [fudo("t1", "TAKEAWAY", 10), fudo("t2", "TAKEAWAY", 30), fudo("d1", "DELIVERY", 50), fudo("viejo", "TAKEAWAY", 26_000)],
+      [], RANGE, S, zoneOf, LATER,
+    );
+    assert.equal(k.prepMinutes, 20); // solo take away: en delivery el cierre incluye el viaje
+    assert.equal(k.prepOnTarget, 50); // meta de 18 min
+    assert.equal(k.totalMinutes, 30);
+    assert.equal(k.onTime, 66.7); // el histórico sin hora confiable no cuenta como atrasado
   });
 
   it("sin entregas no calcula reclamos", () => {

@@ -8,6 +8,8 @@ interface Props {
   value: number | null;
   trend: Trend;
   setting: KpiSetting;
+  /** Dato complementario: el tiempo de un KPI en porcentaje, o el porcentaje de uno en minutos. */
+  detail?: string;
 }
 
 const STATUS: Record<KpiStatus, { text: string; color: string }> = {
@@ -38,12 +40,13 @@ function TrendBadge({ kpi, trend }: { kpi: KpiKey; trend: Trend }) {
   );
 }
 
-export function KpiCard({ kpi, value, trend, setting }: Props) {
+export function KpiCard({ kpi, value, trend, setting, detail }: Props) {
   const status = STATUS[kpiStatus(setting, value)];
   return (
     <article className="exec-card p-3 sm:p-4 flex flex-col gap-2 [&:last-child:nth-child(odd)]:col-span-2 lg:[&:last-child:nth-child(odd)]:col-span-1" aria-label={KPI_LABELS[kpi]}>
       <h3 className="text-[11px] font-bold uppercase tracking-widest exec-muted">{KPI_LABELS[kpi]}</h3>
       <p className="text-2xl sm:text-3xl font-headline font-black leading-none">{formatKpi(kpi, value)}</p>
+      {detail && <p className="text-xs font-bold">{detail}</p>}
       <TrendBadge kpi={kpi} trend={trend} />
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs mt-1">
         <span className="exec-muted">{formatTarget(kpi, setting)}</span>
