@@ -1,9 +1,9 @@
 /**
- * Reenvío de bot-dely.opsyn.app → Worker whatsapp-bot (cuenta "Opsyn Dely").
+ * Reenvío de bot-dely.opsyn.app → Worker whatsapp-bot (cuenta "Opsyn-La gambeta Dely").
  * Vive en la cuenta "Opsyn wallet" porque ahí está registrado opsyn.app; no guarda nada ni tiene secretos.
  * El cuerpo se reenvía sin tocar para que la firma HMAC de Meta (X-Hub-Signature-256) siga siendo válida.
  */
-const UPSTREAM = "https://whatsapp-bot.opsyn-dely.workers.dev";
+const UPSTREAM = "https://whatsapp-bot.opsyn-la-gambeta-dely.workers.dev";
 /** Solo las rutas del bot: nada más se reenvía (evita usar el proxy para otros destinos). */
 const ALLOWED_PATHS = new Set(["/webhook", "/health"]);
 

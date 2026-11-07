@@ -30,8 +30,8 @@ gastado, último pedido y canal. Tablero con indicador de conexión. Términos y
    usuario presente y anularla al final. Después cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET` en el Worker de la app y mapear medios de pago.
 3. **Seguridad:** rotar el API secret de Fudo, la contraseña de `deli_bot` (y actualizar Hyperdrive y `Desktopdeli_bot_supabase.txt`),
    la del admin de prueba y los secretos de Meta/Cloudflare que pasaron por el chat.
-4. **Limpieza:** borrar a mano (dashboard) los Workers viejos `fudo-gateway` y `whatsapp-bot` de la cuenta "Opsyn Dely" (`53d56863…`):
-   no usar `wrangler delete` desde la raíz del repo (toma la cuenta del `wrangler.jsonc` y borró el gateway nuevo). Sacar las
+4. **Limpieza:** los Workers viejos de la cuenta "Opsyn Dely" (`53d56863…`) no se borran (decidido 2026-11-06), pero nada debe apuntarles.
+   Ojo: `wrangler delete` desde la raíz del repo toma la cuenta del `wrangler.jsonc` y borró el gateway nuevo. Sacar las
    Redirect URLs de `dely.opsyn.app` en Supabase Auth. Pausar Vercel cuando ya nadie use `dely.opsyn.app/api`.
 5. **Verificar en producción (con sesión):** tablero (canales y tabla) y Puntos (~1.080 clientes). Límites conocidos: los anónimos se agrupan
    por nombre (Ana, Lleve… pueden ser varias personas) y un pedido anónimo no se revincula solo si su cliente real se importa después.

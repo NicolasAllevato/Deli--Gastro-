@@ -4,9 +4,7 @@ compatibility_date = "2026-08-27"
 compatibility_flags = ["nodejs_compat"]
 account_id = "e7351dd776e005da826ba6f2a5aae4c1"
 
-# Webhook de Meta: https://bot-dely.opsyn.app/webhook. El dominio ya está comprado y responde (verificado el 2026-11-03);
-# está enlazado desde el dashboard de Cloudflare. Si se quiere versionar acá:
-# routes = [{ pattern = "bot-dely.opsyn.app", custom_domain = true }]
+# bot-dely.opsyn.app/webhook llega acá por el Worker dely-proxy (cuenta Opsyn wallet), no por una ruta de este Worker.
 workers_dev = true
 routes = [{ pattern = "bot.la-gambeta.com", custom_domain = true }]
 
