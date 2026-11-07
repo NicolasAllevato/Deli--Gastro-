@@ -63,8 +63,9 @@ Todas las skills están en `./Skills/`. Leer el SKILL.md correspondiente antes d
 - NUNCA desplegar, crear recursos ni loguearse en otra cuenta (Opsyn wallet, Proyectos OPSYN, Opsyn Dely). Si algo vive en otra cuenta, se migra a esta.
 - Ninguna URL, secreto o webhook nuevo apunta a `opsyn-dely.workers.dev` ni a `frankie-400.workers.dev`.
 - Antes de desplegar, confirmar que el `account_id` del wrangler sea el de arriba. App: `bash scripts/cf-deploy.sh`.
-- Workers de esta cuenta: `opsyn-dely` (`opsyndely.la-gambeta.com`), `whatsapp-bot`, `fudo-gateway`.
-- Falta migrar: `uploads`, `pedidos-webhook`, `finanzas-sync`, `encuestas-cron`. `dely-proxy` queda sin uso cuando el webhook de Meta apunte directo a `whatsapp-bot`.
+- Workers de esta cuenta: `opsyn-dely` (`opsyndely.la-gambeta.com`), `whatsapp-bot`, `fudo-gateway`, `uploads`, `pedidos-webhook`, `finanzas-sync`, `encuestas-cron`. Bucket R2: `deli-gastro-productos`.
+- Para desplegar un Worker de `workers/`: `wrangler deploy --config <ruta absoluta>/wrangler.toml` y `secret put --name <worker>`, comprobando el nombre en `Uploaded <worker>`. Sin esto wrangler usa la config de la app y pisa `opsyn-dely`.
+- `dely-proxy` queda sin uso cuando el webhook de Meta apunte directo a `whatsapp-bot`.
 
 ---
 
