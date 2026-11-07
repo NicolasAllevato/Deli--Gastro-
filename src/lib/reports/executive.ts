@@ -1,11 +1,12 @@
 import { inBounds, localDateKey, type Bounds, type RangeKey } from "./range.ts";
 import type { ReportOrder } from "./analytics.ts";
+import { completedAt, durationStats, finishedStats, minutesBetween, preparedAt } from "./completion.ts";
 
 /** Columnas de un pedido que realmente lee el tablero ejecutivo. */
 export type ExecutiveOrder = Pick<
   ReportOrder,
   "id" | "status" | "total" | "channel" | "fudo_source" | "fudo_sale_type" | "created_at" | "ready_at" | "delivered_at"
->;
+> & { updated_at?: string | null };
 import {
   KPI_KEYS,
   isZoneVisible,
@@ -46,6 +47,10 @@ export interface Kpis {
   /** % de puntualidad sobre pedidos entregados más los atrasados (en curso fuera de plazo). */
   onTime: number | null;
   prepMinutes: number | null;
+  /** % de pedidos con preparación medida que quedaron dentro de la meta de preparación. */
+  prepOnTarget: number | null;
+  /** Minutos promedio del pedido a su cierre, en los que se pueden medir. */
+  totalMinutes: number | null;
   csat: number | null;
   /** % de reseñas bajas sobre pedidos entregados. */
   complaints: number | null;
@@ -115,7 +120,8 @@ function deadlineOf(order: ExecutiveOrder, settings: ExecutiveSettings, zoneOf: 
 
 /**
  * Puntualidad: el denominador son los pedidos entregados más los no entregados que ya superaron
- * su plazo (atrasados). Los pedidos en curso que todavía están en plazo no cuentan ni a favor ni en contra.
+ * su plazo (atrasados). Los pedidos en curso que todavía están en plazo no cuentan ni a favor ni en contra,
+ * y tampoco los finalizados sin hora de cierre confiable: terminaron, pero no se sabe cuándo.
  */
 function onTimePct(
   confirmed: readonly ExecutiveOrder[],
@@ -127,10 +133,11 @@ function onTimePct(
   let onTime = 0;
   for (const o of confirmed) {
     const deadline = deadlineOf(o, settings, zoneOf);
-    if (o.delivered_at) {
+    const closedAt = completedAt(o);
+    if (closedAt) {
       counted += 1;
-      if (ms(o.delivered_at) <= deadline) onTime += 1;
-    } else if (now > deadline) {
+      if (ms(closedAt) <= deadline) onTime += 1;
+    } else if (o.status !== "Finalizados" && now > deadline) {
       counted += 1;
     }
   }
@@ -144,12 +151,11 @@ const totalOf = (o: ExecutiveOrder): number => {
 };
 const sumTotals = (list: readonly ExecutiveOrder[]): number => list.reduce((sum, o) => sum + totalOf(o), 0);
 
-function prepAverage(confirmed: readonly ExecutiveOrder[]): number | null {
+function prepStats(confirmed: readonly ExecutiveOrder[], targetMinutes: number) {
   const minutes = confirmed
-    .filter((o) => o.ready_at)
-    .map((o) => (ms(o.ready_at as string) - ms(o.created_at)) / MINUTE_MS)
-    .filter((m) => m >= 0);
-  return minutes.length > 0 ? round(minutes.reduce((a, b) => a + b, 0) / minutes.length, 1) : null;
+    .map((o) => minutesBetween(o.created_at, preparedAt(o)))
+    .filter((m): m is number => m !== null);
+  return durationStats(minutes, targetMinutes);
 }
 
 export function computeKpis(
@@ -165,6 +171,7 @@ export function computeKpis(
   const ratings = reviews.filter((r) => inBounds(r.created_at, bounds) && isNum(r.rating));
   const priced = confirmed.filter((o) => Number.isFinite(Number(o.total)));
   const revenue = sumTotals(confirmed);
+  const prep = prepStats(confirmed, settings.kpis.prepMinutes.target);
   // Reclamos: solo cuentan reseñas bajas ligadas (order_id) a un pedido entregado del período.
   // Las reseñas sin order_id no cuentan para reclamos. Se cuenta cada pedido una sola vez.
   const deliveredIds = new Set(delivered.map((o) => o.id));
@@ -177,7 +184,10 @@ export function computeKpis(
     delivered: delivered.length,
     revenue,
     onTime: onTimePct(confirmed, settings, zoneOf, now),
-    prepMinutes: prepAverage(confirmed),
+    prepMinutes: prep.avgMinutes,
+    prepOnTarget: prep.onTargetPct,
+    // El objetivo no importa acá: solo se usa el promedio.
+    totalMinutes: finishedStats(confirmed, 0).avgMinutes,
     csat: ratings.length > 0 ? round(ratings.reduce((s, r) => s + r.rating, 0) / ratings.length, 2) : null,
     complaints: pct(complained.size, delivered.length),
     avgTicket: priced.length > 0 ? round(revenue / priced.length) : null,
@@ -220,7 +230,7 @@ export function dailySeries(
   for (let t = ms(bounds.from); t < end && points.length < MAX_DAYS; t += DAY_MS) {
     const date = localDateKey(new Date(t).toISOString());
     const day = byDay.get(date) ?? [];
-    points.push({ date, onTime: onTimePct(day, settings, zoneOf, now), prepMinutes: prepAverage(day), orders: day.length });
+    points.push({ date, onTime: onTimePct(day, settings, zoneOf, now), prepMinutes: prepStats(day, settings.kpis.prepMinutes.target).avgMinutes, orders: day.length });
   }
   return points;
 }

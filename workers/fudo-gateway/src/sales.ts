@@ -14,6 +14,8 @@ export type FudoSaleType = "DELIVERY" | "TAKEAWAY" | "EAT-IN";
 export interface FudoSale {
   id: number;
   createdAt: string;
+  /** Cierre informado por Fudo, si lo manda. */
+  closedAt: string | null;
   total: number;
   saleType: FudoSaleType;
   saleState: string;
@@ -93,6 +95,7 @@ export function parseFudoSales(raw: unknown): FudoSale[] {
     out.push({
       id,
       createdAt: str(a.createdAt) ?? new Date().toISOString(),
+      closedAt: str(a.closedAt),
       total: num(a.total),
       saleType,
       saleState: str(a.saleState) ?? "IN-COURSE",
@@ -233,6 +236,7 @@ export interface SaleOrderInsert {
   delivery_address: string | null;
   notes: string | null;
   created_at: string;
+  delivered_at: string | null;
   fudo_sale_type: FudoSaleType;
   fudo_sale_state: string;
   client_id: string | null;
@@ -246,6 +250,9 @@ export interface SaleOrderUpdate {
   id: string;
   status: BoardStatus;
   fudo_sale_state: string;
+  /** Solo al detectar el cambio: la marca queda con la hora en que se vio, no se pisa después. */
+  ready_at?: string;
+  delivered_at?: string;
 }
 
 export interface ExistingOrder {
@@ -281,6 +288,8 @@ export interface SalesPlanInput {
   clientsByPhone: ReadonlyMap<string, string>;
   /** Nombres de los medios de pago de cada venta (id de venta → nombres). */
   paymentNamesBySale?: ReadonlyMap<number, string[]>;
+  /** Hora de esta corrida (ISO), para fechar los cambios de estado detectados. */
+  now?: string;
 }
 
 export interface SalesPlan {
@@ -325,7 +334,18 @@ function linesFor(items: FudoItem[], products: SalesPlanInput["productsByFudoId"
     });
 }
 
+const READY_STATES: readonly string[] = ["READY-TO-DELIVER", "DELIVERY-SENT"];
+
+/** Marcas de tiempo del cambio de estado recién detectado. */
+function stageStamps(sale: FudoSale, existing: ExistingOrder, status: BoardStatus, now: string): Pick<SaleOrderUpdate, "ready_at" | "delivered_at"> {
+  const stamps: Pick<SaleOrderUpdate, "ready_at" | "delivered_at"> = {};
+  if (READY_STATES.includes(sale.saleState) && !READY_STATES.includes(existing.fudo_sale_state ?? "")) stamps.ready_at = now;
+  if (status === "Finalizados" && existing.status !== "Finalizados") stamps.delivered_at = sale.closedAt ?? now;
+  return stamps;
+}
+
 export function planSalesImport(input: SalesPlanInput): SalesPlan {
+  const now = input.now ?? new Date().toISOString();
   const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [] };
   const byFudoId = new Map(input.existing.map((o) => [o.fudo_order_id, o]));
   const relinks = new Map<string, string[]>();
@@ -340,7 +360,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       if (existing.channel !== "fudo") continue;
       const status = nextStatus(existing.status as BoardStatus, target);
       if (status !== existing.status || sale.saleState !== existing.fudo_sale_state) {
-        plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState });
+        plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState, ...stageStamps(sale, existing, status, now) });
       }
       // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
       const relinkTo = existing.client_id === null ? clientFor(sale, input) : null;
@@ -363,6 +383,8 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       delivery_address: sale.saleType === "DELIVERY" ? parseFudoAddress(sale.anon?.address) : null,
       notes: notes ? notes.slice(0, NOTES_MAX) : null,
       created_at: sale.createdAt,
+      // Una venta que ya llega cerrada solo tiene hora de cierre si Fudo la informa: no se inventa.
+      delivered_at: target === "Finalizados" ? sale.closedAt : null,
       fudo_sale_type: sale.saleType,
       fudo_sale_state: sale.saleState,
       client_id: clientId,

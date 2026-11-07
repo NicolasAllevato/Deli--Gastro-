@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { Settings } from "lucide-react";
-import { DEFAULTS, KPI_KEYS } from "@/lib/reports/executiveSettings";
+import { DEFAULTS, KPI_KEYS, type KpiKey } from "@/lib/reports/executiveSettings";
 import type { RangeKey } from "@/lib/reports/range";
-import type { ExecutiveSnapshot } from "@/lib/reports/executive";
+import type { ExecutiveSnapshot, Kpis } from "@/lib/reports/executive";
+import { formatKpi } from "./_components/format";
 import { ChannelDonut } from "./_components/ChannelDonut";
 import { CopilotCard } from "./_components/CopilotCard";
 import { DataStatus } from "./_components/DataStatus";
@@ -17,13 +18,20 @@ import { ChannelResultsTable } from "./_components/ChannelResultsTable";
 import { useExecTheme, type ExecTheme } from "./_components/useExecTheme";
 import { useExecutiveData } from "./useExecutiveData";
 
+/** Los KPI de tiempos siempre muestran minutos y porcentaje juntos. */
+function kpiDetail(key: KpiKey, kpis: Kpis): string | undefined {
+  if (key === "onTime") return `Tiempo total: ${formatKpi("prepMinutes", kpis.totalMinutes)}`;
+  if (key === "prepMinutes") return `Dentro de meta: ${formatKpi("onTime", kpis.prepOnTarget)}`;
+  return undefined;
+}
+
 function Dashboard({ data, settings, theme }: { data: ExecutiveSnapshot; settings: typeof DEFAULTS; theme: ExecTheme }) {
   const visible = KPI_KEYS.filter((k) => settings.kpis[k].visible);
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {visible.map((k) => (
-          <KpiCard key={k} kpi={k} value={data.kpis.current[k]} trend={data.trends[k]} setting={settings.kpis[k]} />
+          <KpiCard key={k} kpi={k} value={data.kpis.current[k]} trend={data.trends[k]} setting={settings.kpis[k]} detail={kpiDetail(k, data.kpis.current)} />
         ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-2 min-w-0">

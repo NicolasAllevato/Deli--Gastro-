@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { formatMoney, formatOrderId, isActiveStatus } from "@/lib/orders";
+import { finishedStats } from "@/lib/reports/completion";
 import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import type { EnrichedOrder } from "@/lib/orders-server";
@@ -16,6 +17,8 @@ import { COLUMNS, KanbanColumn, countLate } from "./KanbanColumn";
 
 interface Props {
   initialOrders: EnrichedOrder[];
+  /** Demora objetivo configurada (`tiempo_entrega_min`), contra la que se mide el porcentaje. */
+  targetMinutes: number;
 }
 
 const DEMO_POLL_MS = 5000;
@@ -30,7 +33,7 @@ function isToday(iso: string): boolean {
   return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
 }
 
-export default function TableroClient({ initialOrders }: Props) {
+export default function TableroClient({ initialOrders, targetMinutes }: Props) {
   const [orders, setOrders] = useState<EnrichedOrder[]>(initialOrders);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -92,20 +95,14 @@ export default function TableroClient({ initialOrders }: Props) {
 
   const stats = useMemo(() => {
     const todays = orders.filter((o) => isToday(o.created_at));
-    const finished = todays.filter((o) => o.status === "Finalizados");
-    const avg =
-      finished.length > 0
-        ? Math.round(
-            finished.reduce((s, o) => s + (new Date(o.delivered_at ?? o.updated_at).getTime() - new Date(o.created_at).getTime()) / 60000, 0) /
-              finished.length,
-          )
-        : null;
+    const times = finishedStats(todays.filter((o) => o.status === "Finalizados"), targetMinutes);
     return {
       ventasHoy: todays.reduce((sum, o) => sum + o.total, 0),
       activos: orders.filter((o) => isActiveStatus(o.status)).length,
-      avgMinutes: avg,
+      avgMinutes: times.avgMinutes === null ? null : Math.round(times.avgMinutes),
+      onTargetPct: times.onTargetPct === null ? null : Math.round(times.onTargetPct),
     };
-  }, [orders]);
+  }, [orders, targetMinutes]);
 
   const assignCourier = async (id: string, courierName: string | null) => {
     const previous = orders;
@@ -239,9 +236,12 @@ export default function TableroClient({ initialOrders }: Props) {
         </div>
         <div className="card-3d px-2.5 py-2 md:px-4 md:py-3 neumorphic rounded-2xl flex items-center justify-between gap-2 min-w-0 group fade-up-3">
           <div>
-            <p className="text-gray-500 text-[9px] md:text-[11px] font-bold uppercase tracking-wider md:tracking-widest mb-1 truncate">Promedio Entrega</p>
-            <h3 className="text-sm sm:text-base md:text-xl font-headline font-black text-gray-800 truncate">
-              {stats.avgMinutes === null ? "—" : `${stats.avgMinutes} min`}
+            <p className="text-gray-500 text-[9px] md:text-[11px] font-bold uppercase tracking-wider md:tracking-widest mb-1 truncate">Tiempo · a tiempo</p>
+            <h3
+              title={`Promedio de hoy y % de pedidos cerrados en ${targetMinutes} min o menos`}
+              className="text-sm sm:text-base md:text-xl font-headline font-black text-gray-800 truncate"
+            >
+              {stats.avgMinutes === null ? "—" : `${stats.avgMinutes} min`} · {stats.onTargetPct === null ? "—" : `${stats.onTargetPct}%`}
             </h3>
           </div>
           <div className="hidden sm:flex w-10 h-10 rounded-full neumorphic-inset items-center justify-center text-gray-600 shrink-0 group-hover:scale-110 transition-transform duration-300">

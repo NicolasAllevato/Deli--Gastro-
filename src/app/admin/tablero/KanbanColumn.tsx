@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { fudoOriginLabel } from "@/lib/fudo/origin";
 import { elapsedTone, formatMoney, formatOrderId } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
+import { completedAt } from "@/lib/reports/completion";
 import type { OrderStatus } from "@/types/database";
 import { OrderTimer } from "./OrderTimer";
 
@@ -143,6 +144,7 @@ export function KanbanColumn({ config, orders, busyId, now, onMove, couriers = [
 
         {orders.map((order) => {
           const busy = busyId === order.id;
+          const closedAt = done ? completedAt(order) : null;
           const meta = [
             order.payment_method && { icon: CreditCard, text: order.payment_method, tone: "text-gray-500" },
             order.courier_name && { icon: Bike, text: order.courier_name, tone: "text-blue-600" },
@@ -165,11 +167,11 @@ export function KanbanColumn({ config, orders, busyId, now, onMove, couriers = [
                 >
                   {formatOrderId(order.id)}
                 </Link>
-                <OrderTimer
-                  startedAt={order.created_at}
-                  endedAt={done ? (order.delivered_at ?? order.updated_at) : null}
-                  now={now}
-                />
+                {done && !closedAt ? (
+                  <span className="shrink-0 text-[11px] font-bold text-gray-500">Sin hora de cierre</span>
+                ) : (
+                  <OrderTimer startedAt={order.created_at} endedAt={closedAt} now={now} />
+                )}
               </div>
 
               <div className="flex justify-between items-baseline gap-2">

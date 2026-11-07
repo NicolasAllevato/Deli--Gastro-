@@ -129,11 +129,11 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
           await rest(env, "order_items", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(items) });
         }
       }
-      for (const u of plan.updates) {
-        await rest(env, `orders?id=eq.${u.id}&channel=eq.fudo`, {
+      for (const { id, ...patch } of plan.updates) {
+        await rest(env, `orders?id=eq.${id}&channel=eq.fudo`, {
           method: "PATCH",
           headers: { prefer: "return=minimal" },
-          body: JSON.stringify({ status: u.status, fudo_sale_state: u.fudo_sale_state }),
+          body: JSON.stringify(patch),
         });
       }
       // Un PATCH por cliente (no por pedido); client_id=is.null para no pisar uno asignado entre tanto.
