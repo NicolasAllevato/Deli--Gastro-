@@ -189,7 +189,7 @@ el Worker pagina de a 100 hasta una página corta y rechaza un listado que llegu
 - **Secretos del Worker** (`wrangler secret bulk`, nunca en el repo): `FUDO_API_KEY`, `FUDO_API_SECRET`, `FUDO_GATEWAY_SECRET`,
   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Los de integraciones (`FUDO_CLIENT_ID/SECRET`, `FUDO_INTEGRATOR_TOKEN`) se
   agregan cuando Fudo los asigne; solo sirven para enviar pedidos.
-- **Worker desplegado:** `https://fudo-gateway.opsyn-dely.workers.dev` (cuenta «Opsyn Dely»). `CATALOG_CRON = "1"` en
+- **Worker desplegado:** `https://fudo-gateway.opsyn-la-gambeta-dely.workers.dev` (cuenta «Opsyn-La gambeta Dely»). `CATALOG_CRON = "1"` en
   `wrangler.toml` prende el sync automático cada 15 min.
 - **Simulacro sin escribir:** `POST /catalog-sync?dry=1` con `x-gateway-signature` = HMAC-SHA256 hex del texto `/catalog-sync`
   con `FUDO_GATEWAY_SECRET`. Devuelve cuántos crearía, actualizaría y desactivaría.
