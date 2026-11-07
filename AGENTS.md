@@ -56,6 +56,19 @@ Todas las skills están en `./Skills/`. Leer el SKILL.md correspondiente antes d
 
 ---
 
+## Cloudflare: cuenta única del proyecto
+
+**Todo va en la cuenta Opsyn-La gambeta Dely**: ID `e7351dd776e005da826ba6f2a5aae4c1`, subdominio `opsyn-la-gambeta-dely.workers.dev`, zona `la-gambeta.com`.
+
+- NUNCA desplegar, crear recursos ni loguearse en otra cuenta (Opsyn wallet, Proyectos OPSYN, Opsyn Dely). Si algo vive en otra cuenta, se migra a esta.
+- Ninguna URL, secreto o webhook nuevo apunta a `opsyn-dely.workers.dev` ni a `frankie-400.workers.dev`.
+- Antes de desplegar, confirmar que el `account_id` del wrangler sea el de arriba. App: `bash scripts/cf-deploy.sh`.
+- Workers de esta cuenta: `opsyn-dely` (`opsyndely.la-gambeta.com`), `whatsapp-bot`, `fudo-gateway`, `uploads`, `pedidos-webhook`, `finanzas-sync`, `encuestas-cron`. Bucket R2: `deli-gastro-productos`.
+- Para desplegar un Worker de `workers/`: `wrangler deploy --config <ruta absoluta>/wrangler.toml` y `secret put --name <worker>`, comprobando el nombre en `Uploaded <worker>`. Sin esto wrangler usa la config de la app y pisa `opsyn-dely`.
+- `dely-proxy` queda sin uso cuando el webhook de Meta apunte directo a `whatsapp-bot`.
+
+---
+
 ## Contexto del Design System Deli-Gastro
 
 **Stack:** Next.js 16.2.4 App Router · TypeScript · Tailwind CSS v4 · Supabase SSR · React-Leaflet · n8n

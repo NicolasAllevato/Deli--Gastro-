@@ -1,4 +1,5 @@
 name = "uploads"
+account_id = "e7351dd776e005da826ba6f2a5aae4c1"
 main = "src/index.ts"
 compatibility_date = "2026-08-27"
 
@@ -7,7 +8,7 @@ binding = "BUCKET"
 bucket_name = "deli-gastro-productos"
 
 [vars]
-PUBLIC_BASE_URL = "https://pub-b8f8fba82c6049e5ae18faeec51abed0.r2.dev"
+PUBLIC_BASE_URL = "https://pub-1a87d533a23045f6aea2a654db3fa6b6.r2.dev"
 
 # Secret requerido (no va acá; cargar con wrangler secret bulk / Node):
 #   UPLOADS_TOKEN   bearer compartido con Next (env UPLOADS_WORKER_TOKEN)
