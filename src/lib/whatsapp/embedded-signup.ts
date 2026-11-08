@@ -21,6 +21,8 @@ export const signupBodySchema = z.discriminatedUnion(
         phoneNumberId: idField("El Phone Number ID no es válido."),
         wabaId: idField("El WABA ID no es válido."),
         pin: z.string({ error: "Falta el PIN de 6 dígitos." }).regex(/^\d{6}$/, "El PIN tiene que ser de 6 dígitos."),
+        /** Perfil de Facebook informado por el navegador. Se acepta sin validar y el servidor lo sanea aparte (`parseConnectedBy`): un perfil malformado nunca debe tumbar el alta. */
+        facebook: z.unknown().optional(),
       },
       { error: "Solicitud inválida: hay campos que no corresponden." },
     ),
@@ -30,6 +32,8 @@ export const signupBodySchema = z.discriminatedUnion(
         code: codeField,
         wabaId: idField("El WABA ID no es válido."),
         phoneNumberId: idField("El Phone Number ID no es válido.").optional(),
+        /** Perfil de Facebook informado por el navegador. Se acepta sin validar y el servidor lo sanea aparte (`parseConnectedBy`): un perfil malformado nunca debe tumbar el alta. */
+        facebook: z.unknown().optional(),
       },
       { error: "Solicitud inválida: hay campos que no corresponden." },
     ),

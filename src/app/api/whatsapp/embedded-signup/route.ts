@@ -11,8 +11,21 @@ import {
   saveWhatsAppSettings,
   type WhatsAppSettings,
 } from "@/lib/whatsapp/config";
+import { parseConnectedBy } from "@/lib/whatsapp/connected-by";
+import { saveConnectedBy } from "@/lib/whatsapp/connected-by-store";
 import { diagnose } from "@/lib/whatsapp/diagnose";
 import { completeSignup, isDemoSafe, parseSignupRequest, signupErrorResponse } from "@/lib/whatsapp/signup-flow";
+
+const CONNECTED_BY_TIMEOUT_MS = 2000;
+
+/** Corta la espera de algo secundario: si no responde a tiempo, falla y el alta sigue. */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`tiempo agotado (${ms} ms)`)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
 
 function hasWorkingConfig(s: WhatsAppSettings): boolean {
   return Boolean(s.accessToken && s.phoneNumberId && s.wabaId);
@@ -72,7 +85,19 @@ export async function POST(req: NextRequest) {
           }
         : undefined,
     });
-    return NextResponse.json({ ...(await diagnose(client, true)), warnings: overrideWarnings() });
+    const warnings = overrideWarnings();
+    // Registrar quién conectó es secundario: si falla o tarda, la conexión (ya guardada) no se deshace; solo se avisa.
+    // El perfil de Facebook lo declara el navegador: se sanea acá y, si no vale, se descarta sin tumbar nada.
+    try {
+      await withTimeout(
+        saveConnectedBy(db, { admin: { id: auth.user.id, email: auth.user.email }, facebook: parseConnectedBy(request.body.facebook) }),
+        CONNECTED_BY_TIMEOUT_MS,
+      );
+    } catch (error: unknown) {
+      console.error("[whatsapp.embedded-signup] no se registró quién conectó:", error instanceof Error ? error.message : "error desconocido");
+      warnings.push("La conexión quedó lista, pero no se pudo registrar quién la hizo.");
+    }
+    return NextResponse.json({ ...(await diagnose(client, true)), warnings });
   } catch (error: unknown) {
     const { status, body } = signupErrorResponse(error);
     return NextResponse.json(body, { status });

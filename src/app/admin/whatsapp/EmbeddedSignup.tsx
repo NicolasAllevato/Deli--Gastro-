@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { LogIn } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
+import { parseConnectedBy, type FacebookProfile } from "@/lib/whatsapp/connected-by";
 import { buildSignupExtras, parseSignupMessage } from "@/lib/whatsapp/embedded-signup";
 
 const GRAPH_VERSION = "v26.0";
@@ -15,6 +16,7 @@ interface FacebookSdk {
     callback: (response: { authResponse?: { code?: string } | null }) => void,
     options: Record<string, unknown>,
   ) => void;
+  api: (path: string, params: Record<string, unknown>, callback: (response: unknown) => void) => void;
 }
 
 declare global {
@@ -60,10 +62,37 @@ function loadSdk(appId: string): Promise<FacebookSdk> {
   });
 }
 
-function buildBody(code: string, ids: SignupIds, pin: string): Record<string, string> {
-  return ids.kind === "coexistence"
-    ? { mode: "coexistence", code, wabaId: ids.wabaId }
-    : { mode: "standard", code, phoneNumberId: ids.phoneNumberId, wabaId: ids.wabaId, pin };
+const PROFILE_TIMEOUT_MS = 1500;
+
+/**
+ * Nombre y email de la cuenta de Facebook que se logueó. Es opcional: con el flujo por código el SDK puede no
+ * tener un token de usuario y responder con error; en ese caso (o si tarda) se sigue sin perfil. Solo se
+ * toman id, name y email: el servidor igual lo valida y lo trata como dato informado por el navegador.
+ */
+function fetchFacebookProfile(fb: FacebookSdk): Promise<FacebookProfile | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), PROFILE_TIMEOUT_MS);
+    const done = (value: FacebookProfile | undefined) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    try {
+      fb.api("/me", { fields: "id,name,email" }, (response) => {
+        const raw = typeof response === "object" && response !== null ? (response as Record<string, unknown>) : {};
+        done(parseConnectedBy({ id: raw.id, name: raw.name, ...(raw.email ? { email: raw.email } : {}) }));
+      });
+    } catch {
+      done(undefined);
+    }
+  });
+}
+
+function buildBody(code: string, ids: SignupIds, pin: string, facebook?: FacebookProfile): Record<string, unknown> {
+  const body: Record<string, unknown> =
+    ids.kind === "coexistence"
+      ? { mode: "coexistence", code, wabaId: ids.wabaId }
+      : { mode: "standard", code, phoneNumberId: ids.phoneNumberId, wabaId: ids.wabaId, pin };
+  return facebook ? { ...body, facebook } : body;
 }
 
 /** Botón «Conectar con Facebook»: Embedded Signup de WhatsApp (el servidor guarda token e ids). */
@@ -73,6 +102,7 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
   const [pending, setPending] = useState<Pending | null>(null);
   const ids = useRef<SignupIds | null>(null);
   const cancelled = useRef(false);
+  const profile = useRef<FacebookProfile | undefined>(undefined);
 
   useEffect(() => {
     const listener = (event: MessageEvent) => {
@@ -95,7 +125,7 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
     const res = await fetch("/api/whatsapp/embedded-signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildBody(code, signupIds, pinValue)),
+      body: JSON.stringify(buildBody(code, signupIds, pinValue, profile.current)),
     });
     const json = (await res.json().catch(() => ({}))) as { error?: string; ready?: boolean; warnings?: string[] };
     if (!res.ok) throw new Error(json.error ?? "No se pudo completar la conexión.");
@@ -104,9 +134,10 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
     onConnected([base, ...(json.warnings ?? [])].join(" "));
   };
 
-  const finish = async (code: string) => {
+  const finish = async (code: string, profileRequest: Promise<FacebookProfile | undefined>) => {
     // El mensaje con los ids puede llegar un instante después del callback de FB.login.
     for (let i = 0; i < 20 && !ids.current; i++) await new Promise((r) => setTimeout(r, 150));
+    profile.current = await profileRequest;
     if (!ids.current) {
       throw new Error(
         "Meta cerró la ventana sin hacer el alta de WhatsApp (no pidió número ni QR). Suele pasar mientras la verificación del negocio está pendiente o si el número no cumple los requisitos de coexistencia. Reintentá cuando Meta apruebe la verificación.",
@@ -119,6 +150,7 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
     setBusy(true);
     setPending(null);
     ids.current = null;
+    profile.current = undefined;
     cancelled.current = false;
     try {
       const fb = await loadSdk(appId);
@@ -130,7 +162,8 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
             if (!cancelled.current) onError("No se completó el inicio de sesión con Facebook.");
             return;
           }
-          finish(code)
+          // El perfil se pide en paralelo y nunca frena el alta: si falla o tarda más de 1,5 s, se sigue sin él.
+          finish(code, fetchFacebookProfile(fb))
             .catch((e: unknown) => onError(e instanceof Error ? e.message : "No se pudo conectar."))
             .finally(() => setBusy(false));
         },
