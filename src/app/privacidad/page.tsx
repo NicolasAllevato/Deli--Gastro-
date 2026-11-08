@@ -33,6 +33,10 @@ export default function PrivacidadPage() {
               <li>Datos de entrega: direcciones y ubicación aproximada para calcular el envío.</li>
               <li>Pedidos: productos, importes, forma de pago, estados y reseñas.</li>
               <li>WhatsApp: los mensajes y audios que envíes al número del comercio (los audios se transcriben).</li>
+              <li>
+                Conexión de WhatsApp: cuando el comercio conecta su número con Facebook, guardamos el nombre y el email de
+                la cuenta de Facebook que hizo la conexión (si Meta los informa), el usuario del panel que la cerró y la fecha.
+              </li>
               <li>Puntos y canjes del programa de fidelización.</li>
             </ul>
           ),

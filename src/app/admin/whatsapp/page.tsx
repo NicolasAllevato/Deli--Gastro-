@@ -5,6 +5,7 @@ import { CheckCircle2, Copy, KeyRound, MessageCircle, XCircle } from "lucide-rea
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
+import type { ConnectedBySummary } from "@/lib/whatsapp/connected-by";
 import { EmbeddedSignup } from "./EmbeddedSignup";
 
 interface State {
@@ -19,6 +20,7 @@ interface State {
   appSecretHint: string;
   canSend: boolean;
   canReceive: boolean;
+  connectedBy: ConnectedBySummary | null;
 }
 
 interface Check {
@@ -54,6 +56,21 @@ const CHECK_TONE: Record<Check["status"], string> = {
   error: "text-red-600",
   pending: "text-yellow-700",
 };
+
+/**
+ * «usuario del panel dueno@… · Facebook (informado por el navegador): Ana Pérez (ana@…) · 8/11/2026».
+ * El usuario del panel sale de la sesión del servidor (verificado); el de Facebook lo declara el navegador,
+ * por eso va rotulado. Cada dato aparece solo si existe.
+ */
+function describeConnectedBy(by: ConnectedBySummary): string {
+  const facebook = [by.facebookName, by.facebookEmail && `(${by.facebookEmail})`].filter(Boolean).join(" ");
+  const parts = [
+    by.adminEmail && `usuario del panel ${by.adminEmail}`,
+    facebook && `Facebook (informado por el navegador): ${facebook}`,
+    by.connectedAt && new Date(by.connectedAt).toLocaleDateString("es-AR"),
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
 
 function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -191,6 +208,11 @@ export default function WhatsAppPage() {
       <section className="neumorphic rounded-2xl p-5 flex flex-wrap gap-x-8 gap-y-2" aria-label="Estado de la conexión">
         <StatusBadge ok={state?.canSend ?? false} label="Envío de mensajes" />
         <StatusBadge ok={state?.canReceive ?? false} label="Recepción de mensajes (webhook)" />
+        {state?.connectedBy && (
+          <p className="basis-full text-xs text-gray-600" data-testid="connected-by">
+            Conectado por {describeConnectedBy(state.connectedBy)}
+          </p>
+        )}
       </section>
 
       <EmbeddedSignup

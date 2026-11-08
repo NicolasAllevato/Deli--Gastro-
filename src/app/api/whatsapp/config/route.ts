@@ -4,6 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { canReceive, canSend, envOverrides, isCoexistenceEnabled, loadWhatsAppSettings, saveWhatsAppSettings } from "@/lib/whatsapp/config";
+import { loadConnectedBy } from "@/lib/whatsapp/connected-by-store";
 import { maskSecret } from "@/lib/whatsapp/mask";
 import { ID_PATTERN } from "@/lib/whatsapp/embedded-signup";
 
@@ -54,6 +55,8 @@ async function currentState() {
     appSecretHint: maskSecret(settings.appSecret),
     canSend: canSend(settings),
     canReceive: canReceive(settings),
+    /** Quién cerró la última conexión con Facebook (null si todavía no hay registro). */
+    connectedBy: await loadConnectedBy(createAdminClient()),
   };
 }
 
