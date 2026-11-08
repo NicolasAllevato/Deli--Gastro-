@@ -26,8 +26,8 @@ export default function EliminarDatosPage() {
           title: "Si escribiste por WhatsApp",
           body: (
             <p>
-              Escribí ELIMINAR MIS DATOS al mismo número de WhatsApp del comercio, o mandá un email a {mail} desde
-              tu correo indicando el teléfono con el que escribiste.
+              Mandá un email a {mail} con el asunto «Eliminar mis datos» indicando el teléfono con el que escribiste
+              al comercio.
             </p>
           ),
         },
