@@ -10,7 +10,8 @@ import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import type { CourierLocation } from "@/lib/courier-location";
-import { isSameLocalDay } from "@/lib/delivery-metrics";
+import { fudoOriginLabel } from "@/lib/fudo/origin";
+import { deliveredPoint, isSameLocalDay } from "@/lib/delivery-metrics";
 
 const MapComponent = dynamic(() => import("./MapComponent"), {
   ssr: false,
@@ -34,6 +35,12 @@ const estadoIcon: Record<string, React.ReactNode> = {
   "En Preparación": <Clock size={14} className="text-yellow-500" />,
   Recibidos:        <ClipboardCheck size={14} className="text-red-500" />,
 };
+
+/** Pedido con envío: excluye mostrador y take away. */
+function isDelivery(o: EnrichedOrder): boolean {
+  if (o.channel === "mostrador" || o.fudo_sale_type === "TAKEAWAY") return false;
+  return o.fudo_sale_type === "DELIVERY" || Boolean(o.delivery_address) || deliveredPoint(o) !== null;
+}
 
 export default function MapaPage() {
   const [orders, setOrders] = useState<EnrichedOrder[]>([]);
@@ -74,8 +81,8 @@ export default function MapaPage() {
       if (!res.ok) return;
       const all = (await res.json()) as EnrichedOrder[];
       setOrders(all.filter((o) => (MAP_STATUSES as readonly string[]).includes(o.status)));
-      // Entregas de hoy con punto de entrega: cierran el recorrido de cada repartidor en el mapa.
-      setDelivered(all.filter((o) => o.status === "Finalizados" && o.delivered_lat !== null && isSameLocalDay(o.delivered_at)));
+      // Entregas de hoy, tengan o no repartidor. Sin coordenadas van solo a la lista, porque no hay dónde marcarlas.
+      setDelivered(all.filter((o) => o.status === "Finalizados" && isSameLocalDay(o.delivered_at) && isDelivery(o)));
     } finally {
       setLoaded(true);
     }
@@ -104,7 +111,7 @@ export default function MapaPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-headline font-black text-xl text-gray-800 tracking-tight">Mapa Logístico</h1>
-          <p className="text-gray-500 text-xs mt-0.5 font-medium">Entregas activas en tiempo real</p>
+          <p className="text-gray-500 text-xs mt-0.5 font-medium">Entregas activas y entregados de hoy</p>
         </div>
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full badge-blue text-xs font-bold">
           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -157,6 +164,33 @@ export default function MapaPage() {
                 <div className="text-right shrink-0">
                   <p className="text-xs font-bold text-gray-600">{entrega.status}</p>
                   <p className="text-[11px] text-gray-500">hace {minutesSince(entrega.created_at)} min</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Entregados de hoy */}
+      <div>
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Entregados hoy ({delivered.length})</p>
+        {loaded && delivered.length === 0 ? (
+          <div className="neumorphic-inset rounded-xl p-6 text-center text-sm text-gray-500">Todavía no hay entregas hoy.</div>
+        ) : (
+          <div className="space-y-2">
+            {delivered.map((o) => (
+              <Link key={o.id} href={`/admin/pedidos/${o.id}`} className="neumorphic rounded-xl p-3.5 flex items-center gap-3 neumorphic-hover">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm text-gray-800 truncate">
+                    {o.client_name} <span className="text-gray-400 font-medium">· {formatOrderId(o.id)}</span>
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {o.delivery_address ?? "Sin dirección informada"}{fudoOriginLabel(o) ? ` · ${fudoOriginLabel(o)}` : ""}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-bold text-gray-600">{o.courier_name ?? "Sin repartidor"}</p>
+                  <p className="text-[11px] text-gray-500">{deliveredPoint(o) ? "En el mapa" : "Sin ubicación"}</p>
                 </div>
               </Link>
             ))}

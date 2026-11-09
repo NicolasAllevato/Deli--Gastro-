@@ -11,11 +11,11 @@ export type SaveResponse =
  * Lógica de la ruta PUT/POST de `/api/admin/fudo-map`, separada del handler para poder probarla.
  * `catalog` es el catálogo COMPLETO de Fudo (con inactivos); vacío = no disponible (se deja guardar).
  */
-export async function processSaveRequest(db: Db, rawBody: unknown, catalog: FudoCatalogItem[]): Promise<SaveResponse> {
+export async function processSaveRequest(db: Db, rawBody: unknown, catalog: FudoCatalogItem[], paymentCatalog: FudoCatalogItem[] = []): Promise<SaveResponse> {
   const parsed = saveSchema.safeParse(rawBody);
   if (!parsed.success) return { status: 400, body: { error: parsed.error.issues[0]?.message ?? "Datos inválidos." } };
 
-  const decision = decideSave(parsed.data.products, catalog);
+  const decision = decideSave(parsed.data.products, catalog, parsed.data.payments, paymentCatalog);
   if (!decision.ok) return { status: 400, body: { error: decision.error } };
 
   const requeued = await saveMapping(db, { ...parsed.data, products: decision.products });

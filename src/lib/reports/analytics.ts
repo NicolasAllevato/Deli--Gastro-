@@ -15,6 +15,10 @@ export interface ReportOrder {
   /** Tipo de venta en Fudo (DELIVERY, TAKEAWAY, EAT-IN); abre el canal local en delivery / take away / salón. */
   fudo_sale_type?: string | null;
   payment_method: string | null;
+  /** Medios tal como figuran en Fudo, juntos en un texto. */
+  fudo_payment?: string | null;
+  /** Detalle de pagos de Fudo por medio y monto. */
+  fudo_payments?: ReadonlyArray<{ name: string; amount: number }> | null;
   items_desc: string;
   created_at: string;
   accepted_at: string | null;
@@ -44,11 +48,22 @@ export interface SalesSummary {
   groups: SalesGroup[];
 }
 
-function groupKey(order: ReportOrder, groupBy: GroupBy): string {
+/** La app y Fudo escriben distinto el mismo medio: se agrupan bajo un solo nombre. */
+const paymentLabel = (name: string): string => name.replace(/^mercado\s*pago$/i, "Mercado Pago");
+
+/**
+ * Cuánto entró por cada medio. Con detalle de Fudo reparte los pagos mixtos por su monto real.
+ * Sin detalle, un pedido con varios medios queda con su nombre combinado: no se inventa el reparto.
+ */
+export function paymentShares(order: Pick<ReportOrder, "total" | "payment_method" | "fudo_payment" | "fudo_payments">): Array<{ name: string; amount: number }> {
+  if (order.fudo_payments?.length) return order.fudo_payments.map((p) => ({ name: paymentLabel(p.name), amount: Number(p.amount) }));
+  return [{ name: paymentLabel(order.payment_method ?? order.fudo_payment ?? "Sin dato"), amount: Number(order.total) }];
+}
+
+function groupKey(order: ReportOrder, groupBy: Exclude<GroupBy, "payment">): string {
   switch (groupBy) {
     case "day": return localDateKey(order.created_at);
     case "channel": return order.channel;
-    case "payment": return order.payment_method ?? "Sin dato";
     case "none": return "total";
   }
 }
@@ -63,11 +78,14 @@ export function salesSummary(orders: readonly ReportOrder[], bounds: Bounds, gro
   const buckets = new Map<string, SalesGroup>();
   if (groupBy !== "none") {
     for (const o of sold) {
-      const key = groupKey(o, groupBy);
-      const bucket = buckets.get(key) ?? { key, orders: 0, revenue: 0 };
-      bucket.orders += 1;
-      bucket.revenue += Number(o.total);
-      buckets.set(key, bucket);
+      // Un pago mixto cuenta como pedido en cada medio, así que la suma de pedidos por medio puede superar el total.
+      const shares = groupBy === "payment" ? paymentShares(o) : [{ name: groupKey(o, groupBy), amount: Number(o.total) }];
+      for (const { name: key, amount } of shares) {
+        const bucket = buckets.get(key) ?? { key, orders: 0, revenue: 0 };
+        bucket.orders += 1;
+        bucket.revenue += amount;
+        buckets.set(key, bucket);
+      }
     }
   }
 

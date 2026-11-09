@@ -122,6 +122,44 @@ export function paymentMethodIds(included: readonly unknown[]): Map<number, numb
   return out;
 }
 
+export interface FudoPaymentLine {
+  name: string;
+  amount: number;
+}
+
+export interface FudoPaymentRow {
+  methodId: number;
+  amount: number;
+  canceled: boolean;
+}
+
+/** `included` de Fudo: id de pago → medio, monto y si fue anulado. */
+export function parsePaymentRows(included: readonly unknown[]): Map<number, FudoPaymentRow> {
+  const out = new Map<number, FudoPaymentRow>();
+  for (const e of included) {
+    if (!isObject(e) || e.type !== "Payment" || !isObject(e.attributes)) continue;
+    const id = positiveInt(e.id);
+    const methodId = relId(e, "paymentMethod");
+    if (id !== null && methodId !== null) out.set(id, { methodId, amount: num(e.attributes.amount), canceled: e.attributes.canceled === true });
+  }
+  return out;
+}
+
+/** Pagos de una venta por nombre de medio: suma los repetidos y descarta los anulados y los de medio desconocido. */
+export function salePaymentLines(
+  paymentIds: readonly number[],
+  rows: ReadonlyMap<number, FudoPaymentRow>,
+  methodNames: ReadonlyMap<number, string>,
+): FudoPaymentLine[] {
+  const byName = new Map<string, number>();
+  for (const id of paymentIds) {
+    const row = rows.get(id);
+    const name = row && !row.canceled ? methodNames.get(row.methodId) : undefined;
+    if (row && name) byName.set(name, (byName.get(name) ?? 0) + row.amount);
+  }
+  return [...byName].map(([name, amount]) => ({ name, amount }));
+}
+
 /** `GET /payment-methods`: id → nombre. */
 export function parsePaymentMethods(list: readonly unknown[]): Map<number, string> {
   const out = new Map<number, string>();
@@ -243,6 +281,7 @@ export interface SaleOrderInsert {
   customer_name: string | null;
   fudo_source: FudoSource;
   fudo_payment: string | null;
+  fudo_payments: FudoPaymentLine[] | null;
   lines: OrderLineInsert[];
 }
 
@@ -263,6 +302,7 @@ export interface ExistingOrder {
   fudo_sale_state: string | null;
   client_id?: string | null;
   fudo_source?: string | null;
+  fudo_payments?: unknown;
 }
 
 /** Completa canal, nombre y medio de pago en pedidos importados antes de que existieran esas columnas. */
@@ -288,6 +328,10 @@ export interface SalesPlanInput {
   clientsByPhone: ReadonlyMap<string, string>;
   /** Nombres de los medios de pago de cada venta (id de venta → nombres). */
   paymentNamesBySale?: ReadonlyMap<number, string[]>;
+  /** Dirección guardada de cada cliente de la app: las ventas de clientes registrados no traen dirección propia. */
+  clientAddressById?: ReadonlyMap<string, string>;
+  /** Pagos de cada venta con su monto. */
+  paymentLinesBySale?: ReadonlyMap<number, FudoPaymentLine[]>;
   /** Hora de esta corrida (ISO), para fechar los cambios de estado detectados. */
   now?: string;
 }
@@ -297,6 +341,8 @@ export interface SalesPlan {
   updates: SaleOrderUpdate[];
   relinks: ClientRelink[];
   enrich: SaleOrderEnrich[];
+  /** Pedidos ya importados a los que les falta el detalle de pagos. */
+  paymentFills: Array<{ id: string; fudo_payments: FudoPaymentLine[] }>;
 }
 
 const NOTES_MAX = 300;
@@ -346,7 +392,7 @@ function stageStamps(sale: FudoSale, existing: ExistingOrder, status: BoardStatu
 
 export function planSalesImport(input: SalesPlanInput): SalesPlan {
   const now = input.now ?? new Date().toISOString();
-  const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [] };
+  const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [], paymentFills: [] };
   const byFudoId = new Map(input.existing.map((o) => [o.fudo_order_id, o]));
   const relinks = new Map<string, string[]>();
 
@@ -367,6 +413,8 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       if (relinkTo) relinks.set(relinkTo, [...(relinks.get(relinkTo) ?? []), existing.id]);
       // Pedidos importados antes de la migración 024: se completan canal, nombre y medio de pago una vez.
       if (existing.fudo_source === null && input.paymentNamesBySale) plan.enrich.push({ id: existing.id, ...saleMeta(sale, input) });
+      const paymentLines = input.paymentLinesBySale?.get(sale.id);
+      if (existing.fudo_payments === null && paymentLines) plan.paymentFills.push({ id: existing.id, fudo_payments: paymentLines });
       continue;
     }
 
@@ -380,7 +428,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       status: target,
       total: sale.total,
       items_desc: lines.length ? lines.map((l) => `${l.qty}x ${l.name}`).join(" · ") : `Venta Fudo #${sale.id}`,
-      delivery_address: sale.saleType === "DELIVERY" ? parseFudoAddress(sale.anon?.address) : null,
+      delivery_address: sale.saleType === "DELIVERY" ? parseFudoAddress(sale.anon?.address) ?? (clientId ? input.clientAddressById?.get(clientId) ?? null : null) : null,
       notes: notes ? notes.slice(0, NOTES_MAX) : null,
       created_at: sale.createdAt,
       // Una venta que ya llega cerrada solo tiene hora de cierre si Fudo la informa: no se inventa.
@@ -389,6 +437,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       fudo_sale_state: sale.saleState,
       client_id: clientId,
       ...saleMeta(sale, input),
+      fudo_payments: input.paymentLinesBySale?.get(sale.id) ?? null,
       lines,
     });
   }

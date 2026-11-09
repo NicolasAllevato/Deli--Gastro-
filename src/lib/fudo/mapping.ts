@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { PAYMENT_METHODS } from "@/lib/orders";
+import { paymentShares } from "@/lib/reports/analytics";
+import { fetchAllExact, type Page } from "@/lib/reports/paginate";
 import type { createAdminClient } from "@/utils/supabase/admin";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -158,7 +160,16 @@ export type SaveDecision =
   | { ok: false; error: string };
 
 /** Decide si se puede guardar: con catálogo no vacío rechaza ids desconocidos; sin catálogo deja pasar (fail-open). */
-export function decideSave(products: SaveInput["products"], catalog: FudoCatalogItem[]): SaveDecision {
+export function decideSave(
+  products: SaveInput["products"],
+  catalog: FudoCatalogItem[],
+  payments: SaveInput["payments"] = [],
+  paymentCatalog: FudoCatalogItem[] = [],
+): SaveDecision {
+  const unknownPayments = findUnknownPaymentIds(payments, paymentCatalog);
+  if (unknownPayments.length > 0) {
+    return { ok: false, error: `Ese id no figura en los medios de pago de Fudo: ${unknownPayments.join(", ")}. Revisalo para no registrar el cobro equivocado.` };
+  }
   const unknown = findUnknownFudoIds(products, catalog);
   if (unknown.length > 0) {
     return {
@@ -167,6 +178,32 @@ export function decideSave(products: SaveInput["products"], catalog: FudoCatalog
     };
   }
   return { ok: true, products: applyCatalogNames(products, catalog) };
+}
+
+/** Ids de medios de pago que no figuran en una lista no vacía (sin lista no se puede decidir). */
+export function findUnknownPaymentIds(payments: SaveInput["payments"], catalog: FudoCatalogItem[]): number[] {
+  if (catalog.length === 0) return [];
+  const known = new Set(catalog.map((c) => c.id));
+  return [...new Set(payments.filter((p) => !known.has(p.fudoPaymentMethodId)).map((p) => p.fudoPaymentMethodId))];
+}
+
+const normalizeName = (name: string): string => name.toLowerCase().replace(/\s+/g, "");
+
+/** Nombre en Fudo que corresponde a cada medio de la app. En este local, Tarjeta se cobra por Payway. */
+const FUDO_NAME_BY_METHOD: Readonly<Record<MappedPaymentMethod, string>> = {
+  Efectivo: "efectivo",
+  Tarjeta: "payway",
+  "Mercado Pago": "mercadopago",
+};
+
+/** Id de Fudo sugerido para cada medio de la app. Solo medios activos: Fudo tiene duplicados dados de baja. */
+export function suggestPaymentIds(catalog: FudoCatalogItem[]): Partial<Record<MappedPaymentMethod, number>> {
+  const out: Partial<Record<MappedPaymentMethod, number>> = {};
+  for (const method of PAYMENT_METHODS) {
+    const match = catalog.find((c) => c.active && normalizeName(c.name) === FUDO_NAME_BY_METHOD[method]);
+    if (match) out[method] = match.id;
+  }
+  return out;
 }
 
 /** Ids de `products` que no figuran en un catálogo no vacío (sin catálogo no se puede decidir). */
@@ -250,14 +287,70 @@ export async function safeCountSkippedOrders(db: Db, now: number = Date.now()): 
   }
 }
 
+export interface PaymentUsageRow {
+  id: string;
+  created_at: string;
+  status: string;
+  total: number;
+  fudo_payment: string | null;
+  fudo_payments: ReadonlyArray<{ name: string; amount: number }> | null;
+}
+
+export interface PaymentUsage {
+  /** Id en Fudo; null si el nombre ya no figura en su lista (por ejemplo, un pago mixto aún sin detalle). */
+  id: number | null;
+  name: string;
+  active: boolean;
+  orders: number;
+  amount: number;
+}
+
+export const PAYMENT_USAGE_DAYS = 30;
+
+/** Todos los medios de Fudo, se hayan usado o no, con sus pedidos y montos. Los cancelados no suman. */
+export function buildPaymentUsage(rows: readonly PaymentUsageRow[], catalog: FudoCatalogItem[]): PaymentUsage[] {
+  const entries: PaymentUsage[] = catalog.map((c) => ({ id: c.id, name: c.name, active: c.active, orders: 0, amount: 0 }));
+  // Fudo tiene el mismo medio dado de baja con otra escritura: lo cobrado va al activo.
+  const findEntry = (key: string): PaymentUsage | undefined => {
+    const matches = entries.filter((e) => normalizeName(e.name) === key);
+    return matches.find((e) => e.active) ?? matches[0];
+  };
+  for (const row of rows) {
+    if (row.status === "Cancelado") continue;
+    for (const share of paymentShares({ ...row, payment_method: null })) {
+      const key = normalizeName(share.name);
+      let entry = findEntry(key);
+      if (!entry) {
+        entry = { id: null, name: share.name, active: false, orders: 0, amount: 0 };
+        entries.push(entry);
+      }
+      entry.orders += 1;
+      entry.amount += share.amount;
+    }
+  }
+  return entries.sort((a, b) => b.amount - a.amount || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, "es"));
+}
+
+/** Pedidos de Fudo de los últimos días, para la distribución por medio. */
+export async function loadPaymentUsageRows(db: Db, now: number = Date.now()): Promise<PaymentUsageRow[]> {
+  const since = new Date(now - PAYMENT_USAGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return fetchAllExact<PaymentUsageRow>((upTo) => {
+    let query = db.from("orders").select("id, created_at, status, total, fudo_payment, fudo_payments").eq("channel", "fudo").gte("created_at", since);
+    if (upTo) query = query.lte("created_at", upTo);
+    return query.order("created_at", { ascending: false }).limit(1000) as unknown as Page<PaymentUsageRow>;
+  });
+}
+
 /** Cuerpo del GET de /api/admin/fudo-map: el mapeo de siempre más `skipped` (campo nuevo). */
 export function buildMapResponse(
   mapping: MappingState,
   catalog: FudoCatalogItem[],
   gatewayConfigured: boolean,
   skipped: SkippedSummary,
+  paymentCatalog: FudoCatalogItem[] = [],
+  paymentUsage: PaymentUsage[] = [],
 ) {
-  return { ...mapping, catalog: suggestionsFrom(catalog), gatewayConfigured, skipped };
+  return { ...mapping, catalog: suggestionsFrom(catalog), paymentCatalog, paymentUsage, gatewayConfigured, skipped };
 }
 
 export async function loadMapping(db: Db): Promise<MappingState> {

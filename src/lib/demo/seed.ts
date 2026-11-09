@@ -322,6 +322,62 @@ function buildExtraOrders(
   return { orders, slowIds };
 }
 
+/**
+ * Pedidos importados de Fudo, con los mismos huecos que los reales: PedidosYa y Rappi no informan dirección
+ * ni repartidor; los de delivery del local traen la dirección del cliente. Sin `rand` para no alterar el resto del seed.
+ */
+function buildFudoOrders(base: number, firstIndex: number): Row[] {
+  const ago = (minutes: number) => new Date(base - minutes * 60_000).toISOString();
+  const specs: ReadonlyArray<readonly [string, string, string, number, number, string]> = [
+    ["local", "DELIVERY", "Mercado pago", 55, 62, "Marta Gómez"],
+    ["local", "DELIVERY", "Efectivo", 95, 48, "Julián Ríos"],
+    ["local", "DELIVERY", "Payway", 140, 71, "Paula Herrera"],
+    ["pedidosya", "DELIVERY", "Online Pedidos Ya", 70, 66, "Cliente PedidosYa"],
+    ["pedidosya", "DELIVERY", "Efectivo Pedidos Ya", 120, 58, "Cliente PedidosYa"],
+    ["rappi", "DELIVERY", "Online Rappi", 85, 39, "Cliente Rappi"],
+    ["morfy", "TAKEAWAY", "Morfy", 60, 2, "Cliente Morfy"],
+    ["local", "TAKEAWAY", "Efectivo + Mercado pago", 110, 2, "Sofía Luna"],
+    ["local", "TAKEAWAY", "Cta. Cte.", 130, 3, "Empresa Demo SA"],
+    ["local", "TAKEAWAY", "ECHEQ", 150, 3, "Eventos Demo SRL"],
+  ];
+  return specs.map(([source, saleType, payment, createdAgo, closedAfter, customer], i) => {
+    const zone = DEMO_ZONES[i % DEMO_ZONES.length]!;
+    const [minLat, maxLat, minLng, maxLng] = zone.box;
+    const located = source === "local" && saleType === "DELIVERY";
+    const share = (i + 1) / (specs.length + 1);
+    const total = 18_500 + i * 1_200;
+    const names = payment.split(" + ");
+    return {
+      id: demoId(G.order, firstIndex + i),
+      client_id: null,
+      items_desc: "1x Hamburguesa Clásica · 1x Cerveza Artesanal IPA",
+      total,
+      delivery_fee: 0,
+      delivery_address: located ? `Calle Demo ${100 + i * 37}, ${zone.name}` : null,
+      delivery_lat: located ? round6(minLat + share * (maxLat - minLat)) : null,
+      delivery_lng: located ? round6(minLng + share * (maxLng - minLng)) : null,
+      payment_method: null,
+      notes: null,
+      courier_name: null,
+      channel: "fudo",
+      status: "Finalizados",
+      fudo_order_id: 90_000 + i,
+      fudo_sale_type: saleType,
+      fudo_sale_state: "CLOSED",
+      fudo_source: source,
+      fudo_payment: payment,
+      fudo_payments: names.map((name, n) => ({ name, amount: n === 0 ? total - Math.round(total * 0.4) * (names.length - 1) : Math.round(total * 0.4) })),
+      customer_name: customer,
+      created_at: ago(createdAgo),
+      accepted_at: null,
+      ready_at: null,
+      picked_up_at: null,
+      delivered_at: ago(Math.max(1, createdAgo - closedAfter)),
+      updated_at: ago(Math.max(1, createdAgo - closedAfter)),
+    };
+  });
+}
+
 function ratingFrom(x: number): number {
   if (x < 0.05) return 1;
   if (x < 0.1) return 2;
@@ -546,7 +602,7 @@ export function buildSeed(): Tables {
 
   return {
     clients,
-    orders: [...orders, ...extra.orders],
+    orders: [...orders, ...extra.orders, ...buildFudoOrders(Date.now(), ORDERS.length + EXTRA_ORDER_COUNT + 1)],
     points_ledger, global_config, categories, products,
     reviews: [...reviews, ...extraReviews],
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],

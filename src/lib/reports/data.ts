@@ -8,7 +8,7 @@ type Db = ReturnType<typeof createAdminClient>;
 const MAX_PAGES = 20;
 
 const ORDER_COLUMNS =
-  "id, client_id, status, total, delivery_fee, channel, payment_method, items_desc, created_at, accepted_at, ready_at, picked_up_at, delivered_at";
+  "id, client_id, status, total, delivery_fee, channel, payment_method, fudo_payment, fudo_payments, items_desc, created_at, accepted_at, ready_at, picked_up_at, delivered_at";
 
 /**
  * Trae todas las filas de a páginas de 1000 (el tope por consulta de Supabase), de la más

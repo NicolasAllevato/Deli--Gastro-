@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       (o.client_id && names.get(o.client_id)) || "Mostrador",
       o.status,
       o.channel,
-      o.payment_method ?? "",
+      o.payment_method ?? o.fudo_payment ?? "",
       o.total,
       o.delivery_fee,
     ]);

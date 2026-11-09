@@ -88,6 +88,17 @@ export const DEMO_LINKED_CATEGORY_NAMES: readonly string[] = ["Hamburguesas", "P
 /** Ids de medios de pago de Fudo (los del local real) para el mapeo del demo. */
 export const DEMO_FUDO_PAYMENT_IDS: Readonly<Record<string, number>> = { Efectivo: 1, Tarjeta: 6, "Mercado Pago": 14 };
 
+/** Medios de pago del local real, con la misma forma que `GET /payment-methods`. */
+const FUDO_PAYMENT_METHODS: ReadonlyArray<readonly [number, string, boolean]> = [
+  [1, "Efectivo", true], [2, "Cta. Cte.", true], [5, "Mercadopago", false], [6, "Payway", true], [7, "Rappi", false],
+  [8, "Pedidosya", false], [9, "Morfy", true], [10, "Online Pedidos Ya", true], [11, "Efectivo Pedidos Ya", false],
+  [12, "Online Rappi", true], [13, "Efectivo Rappi", false], [14, "Mercado pago", true], [15, "ECHEQ", true],
+];
+
+export function demoFudoPaymentMethodsPayload(): unknown {
+  return { data: FUDO_PAYMENT_METHODS.map(([id, name, active]) => ({ type: "PaymentMethod", id: String(id), attributes: { name, active } })) };
+}
+
 function initialState(): DemoFudoState {
   return {
     categories: FUDO_CATEGORIES.map((c) => ({ ...c })),

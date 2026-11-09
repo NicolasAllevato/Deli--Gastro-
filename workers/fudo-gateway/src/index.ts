@@ -2,7 +2,7 @@ import { syncCatalog } from "./catalog-sync";
 import { syncCustomers, syncSales } from "./sales-sync.ts";
 import { parseSalesRange } from "./sales.ts";
 import { claimOrder, listRetryable, loadMaps, markFailed, markSent, MAX_ATTEMPTS, type DbEnv } from "./db";
-import { createFudoOrder, FudoError, listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo";
+import { createFudoOrder, FudoError, listFudoCategories, listFudoPaymentMethods, listFudoProducts, type FudoEnv } from "./fudo";
 import { buildFudoOrder, parseFudoWebhook } from "./payload";
 import { hmacHex, verifyHmacHex } from "./signature";
 
@@ -100,13 +100,19 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   return json({ received: true, app: res.status });
 }
 
-/** Catálogo de Fudo para la pantalla de mapeo. La app firma el path (`/products` o `/product-categories`). */
-async function handleCatalog(request: Request, env: Env, path: "/products" | "/product-categories"): Promise<Response> {
+const CATALOG_LISTS = {
+  "/products": listFudoProducts,
+  "/product-categories": listFudoCategories,
+  "/payment-methods": listFudoPaymentMethods,
+} as const;
+
+/** Catálogos de Fudo para la pantalla de mapeo. La app firma el path. */
+async function handleCatalog(request: Request, env: Env, path: keyof typeof CATALOG_LISTS): Promise<Response> {
   if (!(await verifyHmacHex(path, request.headers.get(SIGNATURE_HEADER), env.FUDO_GATEWAY_SECRET))) {
     return json({ error: "Firma inválida." }, 401);
   }
   try {
-    return json(path === "/products" ? await listFudoProducts(env) : await listFudoCategories(env));
+    return json(await CATALOG_LISTS[path](env));
   } catch (e) {
     return json({ error: errorMessage(e) }, 502);
   }
@@ -151,7 +157,7 @@ export default {
     if (request.method === "POST" && pathname === "/customers-sync") return handleSignedSync(request, env, "/customers-sync", (dry) => syncCustomers(env, dry));
     if (request.method === "POST" && pathname === "/sync") return handleSync(request, env);
     if (request.method === "POST" && pathname === "/webhook") return handleWebhook(request, env);
-    if (request.method === "GET" && (pathname === "/products" || pathname === "/product-categories")) {
+    if (request.method === "GET" && (pathname === "/products" || pathname === "/product-categories" || pathname === "/payment-methods")) {
       return handleCatalog(request, env, pathname);
     }
     if (request.method === "GET" && pathname === "/health") return json({ ok: true });

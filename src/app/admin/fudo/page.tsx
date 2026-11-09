@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui";
-import type { FudoCatalogItem, MappingState, SaveInput, SkippedSummary } from "@/lib/fudo/mapping";
+import { suggestPaymentIds, type FudoCatalogItem, type MappingState, type PaymentUsage, type SaveInput, type SkippedSummary } from "@/lib/fudo/mapping";
 
 interface MapResponse extends MappingState {
   catalog: FudoCatalogItem[];
+  paymentCatalog: FudoCatalogItem[];
+  paymentUsage: PaymentUsage[];
   gatewayConfigured: boolean;
   skipped: SkippedSummary;
   /** Modo demo: hay un Fudo simulado y se puede provocar cambios en él. */
@@ -144,7 +146,7 @@ export default function FudoMapPage() {
     setRejectedIds(new Set());
     try {
       const res = await request<MapResponse & { requeued: number }>("PUT", diff.input);
-      load({ ...res, catalog: data?.catalog ?? [], gatewayConfigured: data?.gatewayConfigured ?? false, skipped: data?.skipped ?? NO_SKIPPED });
+      load({ ...res, catalog: data?.catalog ?? [], paymentCatalog: data?.paymentCatalog ?? [], paymentUsage: data?.paymentUsage ?? [], gatewayConfigured: data?.gatewayConfigured ?? false, skipped: data?.skipped ?? NO_SKIPPED });
       setRequeued(res.requeued ?? 0);
       setSaved(true);
       // El PUT no trae el aviso: se relee para que baje la cuenta de omitidos.
@@ -206,6 +208,13 @@ export default function FudoMapPage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const fillPaymentsFromFudo = () => {
+    if (!data) return;
+    setSaved(false);
+    const suggested = Object.entries(suggestPaymentIds(data.paymentCatalog)).map(([method, id]) => [`m:${method}`, String(id)]);
+    setDrafts((d) => ({ ...d, ...Object.fromEntries(suggested) }));
   };
 
   const onSaveClick = () => (removals > 0 ? setConfirming(true) : void runSave());
@@ -330,11 +339,31 @@ export default function FudoMapPage() {
           </datalist>
 
           <section className="neumorphic rounded-2xl p-4 space-y-3" aria-labelledby="pagos-title">
-            <h2 id="pagos-title" className="font-headline text-lg font-black text-gray-800">Medios de pago</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="pagos-title" className="font-headline text-lg font-black text-gray-800">Medios de pago</h2>
+              {data.paymentCatalog.length > 0 && (
+                <button type="button" onClick={fillPaymentsFromFudo} className="neumorphic neumorphic-hover rounded-xl px-3 py-2 text-xs font-bold text-gray-700">
+                  Completar desde Fudo
+                </button>
+              )}
+            </div>
             <ul className="grid gap-2">
               {data.payments.map((m) => (
                 <li key={m.method} className="flex flex-wrap items-center gap-3">
                   <span className="flex-1 min-w-32 font-bold text-gray-800">{m.method}</span>
+                  {data.paymentCatalog.length > 0 ? (
+                    <select
+                      value={drafts[`m:${m.method}`] ?? ""}
+                      onChange={(e) => setDraft(`m:${m.method}`, e.target.value)}
+                      aria-label={`Medio de Fudo para ${m.method}`}
+                      className="min-w-52 px-3 py-2 rounded-xl neumorphic-inset text-sm text-gray-700 outline-none focus:ring-2 focus:ring-brand-orange/40"
+                    >
+                      <option value="">Sin mapear</option>
+                      {data.paymentCatalog
+                        .filter((c) => c.active || String(c.id) === drafts[`m:${m.method}`])
+                        .map((c) => <option key={c.id} value={c.id}>{c.id} · {c.name}{c.active ? "" : " (inactivo)"}</option>)}
+                    </select>
+                  ) : (
                   <input
                     value={drafts[`m:${m.method}`] ?? ""}
                     onChange={(e) => setDraft(`m:${m.method}`, e.target.value)}
@@ -344,10 +373,44 @@ export default function FudoMapPage() {
                     aria-invalid={isInvalidDraft(drafts[`m:${m.method}`] ?? "") || undefined}
                     className={`${inputClass} ${isInvalidDraft(drafts[`m:${m.method}`] ?? "") ? invalidRing : ""}`}
                   />
+                  )}
                 </li>
               ))}
             </ul>
           </section>
+
+          {data.paymentUsage.length > 0 && (
+            <section className="neumorphic rounded-2xl p-4 space-y-3" aria-labelledby="distribucion-title">
+              <div>
+                <h2 id="distribucion-title" className="font-headline text-lg font-black text-gray-800">Todos los medios de Fudo</h2>
+                <p className="text-xs text-gray-500">Ventas importadas de los últimos 30 días. Un pago mixto suma su monto real en cada medio.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500">
+                      <th className="py-1 pr-3 font-bold">Id</th>
+                      <th className="py-1 pr-3 font-bold">Medio</th>
+                      <th className="py-1 pr-3 font-bold">Estado</th>
+                      <th className="py-1 pr-3 text-right font-bold">Pedidos</th>
+                      <th className="py-1 text-right font-bold">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.paymentUsage.map((u) => (
+                      <tr key={u.name} className="border-t border-gray-200 text-gray-700" data-testid="medio-fudo">
+                        <td className="py-1.5 pr-3 tabular-nums">{u.id ?? "—"}</td>
+                        <td className="py-1.5 pr-3 font-bold text-gray-800">{u.name}</td>
+                        <td className="py-1.5 pr-3 text-xs">{u.id === null ? "Sin detalle" : u.active ? "Activo" : "Inactivo"}</td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">{u.orders}</td>
+                        <td className="py-1.5 text-right tabular-nums">{u.amount.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <section className="neumorphic rounded-2xl p-4 space-y-3" aria-labelledby="productos-title">
             <h2 id="productos-title" className="font-headline text-lg font-black text-gray-800">Productos</h2>

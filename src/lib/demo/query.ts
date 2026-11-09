@@ -74,6 +74,7 @@ const DEFAULTS: Record<TableName, () => Row> = {
     channel: "web", accepted_at: null, ready_at: null, picked_up_at: null, delivered_at: null,
     survey_sent_at: null, fudo_order_id: null, fudo_sync_status: null, fudo_error: null,
     fudo_attempts: 0, fudo_synced_at: null, delivered_lat: null, delivered_lng: null, delivered_accuracy_m: null,
+    fudo_sale_type: null, fudo_sale_state: null, fudo_source: null, fudo_payment: null, fudo_payments: null, customer_name: null,
   }),
   points_ledger: () => ({ order_id: null }),
   global_config: () => ({}),
