@@ -10,8 +10,9 @@ import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import type { CourierLocation } from "@/lib/courier-location";
-import { fudoOriginLabel } from "@/lib/fudo/origin";
-import { deliveredPoint, isSameLocalDay } from "@/lib/delivery-metrics";
+import { ALL } from "@/lib/delivered-map";
+import { DeliveredFilters, DeliveredPanel } from "./DeliveredPanel";
+import { useDeliveredMap, type DeliveredFilterState } from "./useDeliveredMap";
 
 const MapComponent = dynamic(() => import("./MapComponent"), {
   ssr: false,
@@ -36,20 +37,17 @@ const estadoIcon: Record<string, React.ReactNode> = {
   Recibidos:        <ClipboardCheck size={14} className="text-red-500" />,
 };
 
-/** Pedido con envío: excluye mostrador y take away. */
-function isDelivery(o: EnrichedOrder): boolean {
-  if (o.channel === "mostrador" || o.fudo_sale_type === "TAKEAWAY") return false;
-  return o.fudo_sale_type === "DELIVERY" || Boolean(o.delivery_address) || deliveredPoint(o) !== null;
-}
-
 export default function MapaPage() {
   const [orders, setOrders] = useState<EnrichedOrder[]>([]);
-  const [delivered, setDelivered] = useState<EnrichedOrder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [local, setLocal] = useState<GeoPoint | undefined>(undefined);
   const [couriers, setCouriers] = useState<CourierLocation[]>([]);
+  const [filters, setFilters] = useState<DeliveredFilterState>({ preset: "hoy", customFrom: "", customTo: "", channel: ALL, courier: ALL });
+  const delivered = useDeliveredMap(filters);
+  const refreshDelivered = delivered.refresh;
+  const followsLive = filters.preset === "hoy";
 
   useEffect(() => {
     let cancelled = false;
@@ -81,8 +79,6 @@ export default function MapaPage() {
       if (!res.ok) return;
       const all = (await res.json()) as EnrichedOrder[];
       setOrders(all.filter((o) => (MAP_STATUSES as readonly string[]).includes(o.status)));
-      // Entregas de hoy, tengan o no repartidor. Sin coordenadas van solo a la lista, porque no hay dónde marcarlas.
-      setDelivered(all.filter((o) => o.status === "Finalizados" && isSameLocalDay(o.delivered_at) && isDelivery(o)));
     } finally {
       setLoaded(true);
     }
@@ -92,7 +88,12 @@ export default function MapaPage() {
     void refresh();
   }, [refresh]);
 
-  useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh, demoPollMs: DEMO_POLL_MS });
+  // Los entregados de días anteriores no cambian: solo la vista de hoy sigue las novedades.
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refresh(), followsLive ? refreshDelivered() : Promise.resolve()]);
+  }, [refresh, refreshDelivered, followsLive]);
+
+  useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh: refreshAll, demoPollMs: DEMO_POLL_MS });
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -111,7 +112,7 @@ export default function MapaPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-headline font-black text-xl text-gray-800 tracking-tight">Mapa Logístico</h1>
-          <p className="text-gray-500 text-xs mt-0.5 font-medium">Entregas activas y entregados de hoy</p>
+          <p className="text-gray-500 text-xs mt-0.5 font-medium">Entregas activas e historial de entregados</p>
         </div>
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full badge-blue text-xs font-bold">
           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -119,9 +120,15 @@ export default function MapaPage() {
         </span>
       </div>
 
+      <DeliveredFilters
+        filters={filters}
+        couriers={delivered.data?.couriers ?? []}
+        onChange={(patch) => setFilters((prev) => ({ ...prev, ...patch }))}
+      />
+
       {/* Mapa */}
       <div className="neumorphic rounded-2xl p-1 overflow-hidden">
-        <MapComponent orders={visible} zones={zones} local={local} couriers={couriers} delivered={delivered} />
+        <MapComponent orders={visible} zones={zones} local={local} couriers={couriers} delivered={delivered.data?.markers ?? []} />
       </div>
 
       {/* Búsqueda */}
@@ -171,32 +178,7 @@ export default function MapaPage() {
         )}
       </div>
 
-      {/* Entregados de hoy */}
-      <div>
-        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Entregados hoy ({delivered.length})</p>
-        {loaded && delivered.length === 0 ? (
-          <div className="neumorphic-inset rounded-xl p-6 text-center text-sm text-gray-500">Todavía no hay entregas hoy.</div>
-        ) : (
-          <div className="space-y-2">
-            {delivered.map((o) => (
-              <Link key={o.id} href={`/admin/pedidos/${o.id}`} className="neumorphic rounded-xl p-3.5 flex items-center gap-3 neumorphic-hover">
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm text-gray-800 truncate">
-                    {o.client_name} <span className="text-gray-400 font-medium">· {formatOrderId(o.id)}</span>
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {o.delivery_address ?? "Sin dirección informada"}{fudoOriginLabel(o) ? ` · ${fudoOriginLabel(o)}` : ""}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-xs font-bold text-gray-600">{o.courier_name ?? "Sin repartidor"}</p>
-                  <p className="text-[11px] text-gray-500">{deliveredPoint(o) ? "En el mapa" : "Sin ubicación"}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+      <DeliveredPanel state={delivered} />
     </div>
   );
 }
