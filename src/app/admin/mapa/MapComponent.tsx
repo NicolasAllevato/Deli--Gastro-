@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { RESTAURANT_LOCATION } from "@/lib/restaurant";
@@ -10,6 +10,7 @@ import { ZoneLayers } from "@/components/zones/ZoneLayers";
 import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { CourierLocation } from "@/lib/courier-location";
+import { clusterPoints, type DeliveredItem, type MarkerGroup } from "@/lib/delivered-map";
 import { deliveredPoint, deliveryTimes, distanceMeters } from "@/lib/delivery-metrics";
 
 // Marcadores como divIcon: no dependen de imágenes externas (la CSP del proyecto
@@ -53,8 +54,8 @@ interface Props {
   local?: GeoPoint;
   /** Última posición de cada repartidor con entregas en curso. */
   couriers?: readonly CourierLocation[];
-  /** Entregas de hoy con el punto donde el repartidor marcó entregado. */
-  delivered?: readonly EnrichedOrder[];
+  /** Entregas filtradas con punto en el mapa: el del repartidor o el de la dirección. */
+  delivered?: readonly DeliveredItem[];
 }
 
 export default function MapComponent({ orders, zones = [], local = RESTAURANT_LOCATION, couriers = [], delivered = [] }: Props) {
@@ -109,37 +110,7 @@ export default function MapComponent({ orders, zones = [], local = RESTAURANT_LO
           );
         })}
 
-        {delivered.map((order) => {
-          const where = deliveredPoint(order);
-          if (!where) return null;
-          const point: [number, number] = [where.lat, where.lng];
-          const times = deliveryTimes(order);
-          const offBy =
-            order.delivered_lat !== null && order.delivery_lat !== null && order.delivery_lng !== null
-              ? distanceMeters({ lat: point[0], lng: point[1] }, { lat: order.delivery_lat, lng: order.delivery_lng })
-              : null;
-          return (
-            <span key={`entregado-${order.id}`}>
-              {order.delivery_lat !== null && order.delivery_lng !== null && (
-                <Polyline
-                  positions={[[local.lat, local.lng], point]}
-                  pathOptions={{ color: "#64748b", weight: 2, opacity: 0.4 }}
-                />
-              )}
-              <Marker position={point} icon={DELIVERED_ICON}>
-                <Popup>
-                  <div className="text-sm space-y-0.5">
-                    <p className="font-bold text-gray-800">Entregado · {order.client_name} · {formatOrderId(order.id)}</p>
-                    {order.courier_name && <p className="text-gray-600">Repartidor: {order.courier_name}</p>}
-                    {times.totalMin !== null && <p className="text-gray-600">Tiempo total: {times.totalMin} min</p>}
-                    {times.rideMin !== null && <p className="text-gray-600">Viaje: {times.rideMin} min</p>}
-                    {offBy !== null && <p className="text-gray-500">A {offBy} m de la dirección cargada</p>}
-                  </div>
-                </Popup>
-              </Marker>
-            </span>
-          );
-        })}
+        <DeliveredLayer delivered={delivered} local={local} />
 
         {couriers.map((c) => (
           <Marker key={c.courierName} position={[c.lat, c.lng]} icon={dot(COURIER_COLOR, escapeHtml(initials(c.courierName)))} zIndexOffset={1000}>
@@ -160,6 +131,65 @@ export default function MapComponent({ orders, zones = [], local = RESTAURANT_LO
         ))}
       </MapContainer>
     </div>
+  );
+}
+
+/** Con pocas entregas se ve el recorrido desde el local; con muchas las líneas tapan el mapa. */
+const MAX_DELIVERED_LINES = 30;
+
+function DeliveredPopup({ order, point }: { order: DeliveredItem; point: { lat: number; lng: number } }) {
+  const times = deliveryTimes(order);
+  const offBy =
+    order.delivered_lat !== null && order.delivery_lat !== null && order.delivery_lng !== null
+      ? distanceMeters(point, { lat: order.delivery_lat, lng: order.delivery_lng })
+      : null;
+  return (
+    <div className="text-sm space-y-0.5">
+      <p className="font-bold text-gray-800">Entregado · {order.client_name} · {formatOrderId(order.id)}</p>
+      {order.courier_name && <p className="text-gray-600">Repartidor: {order.courier_name}</p>}
+      {times.totalMin !== null && <p className="text-gray-600">Tiempo total: {times.totalMin} min</p>}
+      {times.rideMin !== null && <p className="text-gray-600">Viaje: {times.rideMin} min</p>}
+      {offBy !== null && <p className="text-gray-500">A {offBy} m de la dirección cargada</p>}
+    </div>
+  );
+}
+
+function DeliveredCluster({ group }: { group: MarkerGroup<DeliveredItem> }) {
+  const map = useMap();
+  return (
+    <Marker
+      position={[group.lat, group.lng]}
+      icon={dot("#475569", String(group.items.length))}
+      title={`${group.items.length} entregas`}
+      eventHandlers={{ click: () => map.setView([group.lat, group.lng], map.getZoom() + 2) }}
+    />
+  );
+}
+
+function DeliveredLayer({ delivered, local }: { delivered: readonly DeliveredItem[]; local: GeoPoint }) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+  const groups = clusterPoints(delivered, deliveredPoint, zoom);
+  const withLines = delivered.length <= MAX_DELIVERED_LINES;
+  return (
+    <>
+      {groups.map((group) => {
+        const order = group.items[0];
+        if (group.items.length > 1 || !order) return <DeliveredCluster key={group.key} group={group} />;
+        const point = { lat: group.lat, lng: group.lng };
+        return (
+          <span key={order.id}>
+            {withLines && order.delivery_lat !== null && (
+              <Polyline positions={[[local.lat, local.lng], [point.lat, point.lng]]} pathOptions={{ color: "#64748b", weight: 2, opacity: 0.4 }} />
+            )}
+            <Marker position={[point.lat, point.lng]} icon={DELIVERED_ICON}>
+              <Popup><DeliveredPopup order={order} point={point} /></Popup>
+            </Marker>
+          </span>
+        );
+      })}
+    </>
   );
 }
 

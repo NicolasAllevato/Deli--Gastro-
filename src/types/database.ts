@@ -89,6 +89,7 @@ export interface Database {
           delivered_lat: number | null
           delivered_lng: number | null
           delivered_accuracy_m: number | null
+          geocode_attempts: number
           created_at: string
           updated_at: string
         }
@@ -138,6 +139,7 @@ export interface Database {
           delivered_lat?: number | null
           delivered_lng?: number | null
           delivered_accuracy_m?: number | null
+          geocode_attempts?: number
         }
         Relationships: []
       }

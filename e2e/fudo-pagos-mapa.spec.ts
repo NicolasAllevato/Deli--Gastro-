@@ -23,7 +23,7 @@ test.describe("medios de pago de Fudo y entregas en el mapa (demo)", () => {
     const { context, page } = await loginAs(browser, "admin");
     try {
       await page.goto("/admin/mapa");
-      await expect(page.getByText(/Entregados hoy \(\d+\)/)).toBeVisible();
+      await expect(page.getByText(/^Entregados( \(|$)/).last()).toBeVisible();
       await expect(page.getByRole("link", { name: /Marta Gómez/ })).toContainText("Sin repartidor");
       await expect(page.getByRole("link", { name: /Marta Gómez/ })).toContainText("En el mapa");
       await expect(page.getByRole("link", { name: /Cliente PedidosYa/ }).first()).toContainText("Sin ubicación");

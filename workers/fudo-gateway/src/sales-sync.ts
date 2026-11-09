@@ -1,5 +1,6 @@
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
+import { geocodeNewOrders } from "./geocode.ts";
 import { listPublicResource, type FudoEnv } from "./fudo";
 import { parseFudoItem, parseFudoSales, parsePaymentMethods, parsePaymentRows, paymentMethodIds, phoneKey, planSalesImport, salePaymentLines, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
 
@@ -178,6 +179,8 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       }
       const relinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
       if (plan.inserts.length || plan.updates.length || relinked) await logRun(env, "sales", plan.inserts.length, plan.updates.length + relinked, null);
+      const priorWrites = plan.updates.length + plan.relinks.length + groups.size + Math.min(plan.paymentFills.length, MAX_PAYMENT_FILLS_PER_RUN) + chunk(plan.inserts, ID_BATCH).length * 2;
+      await geocodeNewOrders(env, priorWrites);
     }
     const ordersRelinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
     return { salesSeen: sales.length, ordersCreated: plan.inserts.length, ordersUpdated: plan.updates.length, ordersRelinked, ordersEnriched: plan.enrich.length, dryRun };

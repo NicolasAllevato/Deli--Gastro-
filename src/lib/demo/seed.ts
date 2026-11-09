@@ -378,6 +378,61 @@ function buildFudoOrders(base: number, firstIndex: number): Row[] {
   });
 }
 
+/** Historial para los filtros del mapa: cada canal y rango con datos, y un repartidor propio para probar el filtro. */
+function buildDeliveredHistory(base: number, firstIndex: number): Row[] {
+  const DAY = 60 * 24;
+  const ago = (minutes: number) => new Date(base - minutes * 60_000).toISOString();
+  const specs: ReadonlyArray<{
+    source: string | null; days: number; customer: string; courier?: string; address?: string; located?: boolean; noClose?: boolean;
+  }> = [
+    { source: "morfy", days: 0, customer: "Cliente Morfy Envío", located: true, address: "Calle Morfy 120" },
+    { source: "morfy", days: 10, customer: "Cliente Morfy Viejo", located: true, address: "Calle Morfy 450" },
+    { source: "local", days: 3, customer: "Historial Local Ubicado", courier: "Nora Demo", located: true, address: "Calle Historial 300" },
+    { source: "local", days: 4, customer: "Historial Dirección Ambigua", address: "Belgrano" },
+    { source: "local", days: 5, customer: "Historial Sin Cierre", noClose: true },
+    { source: "pedidosya", days: 6, customer: "PedidosYa Semana" },
+    { source: "rappi", days: 20, customer: "Rappi Mes" },
+    { source: null, days: 2, customer: "Web Historial", courier: "Nora Demo", located: true, address: "Av. Web 900" },
+    { source: "local", days: 45, customer: "Historial Fuera De Rango", located: true, address: "Calle Vieja 77" },
+  ];
+  return specs.map((spec, i) => {
+    const zone = DEMO_ZONES[i % DEMO_ZONES.length]!;
+    const [minLat, maxLat, minLng, maxLng] = zone.box;
+    const share = (i + 1) / (specs.length + 1);
+    const createdAgo = spec.days * DAY + 90;
+    const closed = ago(createdAgo - 45);
+    const payment = spec.source ? ({ morfy: "Morfy", pedidosya: "Online Pedidos Ya", rappi: "Online Rappi" } as Record<string, string>)[spec.source] ?? "Efectivo" : null;
+    return {
+      id: demoId(G.order, firstIndex + i),
+      client_id: null,
+      items_desc: "1x Hamburguesa Clásica",
+      total: 15_000 + i * 700,
+      delivery_fee: 0,
+      delivery_address: spec.address ? `${spec.address}, ${zone.name}` : null,
+      delivery_lat: spec.located ? round6(minLat + share * (maxLat - minLat)) : null,
+      delivery_lng: spec.located ? round6(minLng + share * (maxLng - minLng)) : null,
+      payment_method: spec.source ? null : "Efectivo",
+      notes: null,
+      courier_name: spec.courier ?? null,
+      channel: spec.source ? "fudo" : "web",
+      status: "Finalizados",
+      fudo_order_id: spec.source ? 91_000 + i : null,
+      fudo_sale_type: spec.source ? "DELIVERY" : null,
+      fudo_sale_state: spec.source ? "CLOSED" : null,
+      fudo_source: spec.source,
+      fudo_payment: payment,
+      fudo_payments: payment ? [{ name: payment, amount: 15_000 + i * 700 }] : null,
+      customer_name: spec.customer,
+      created_at: ago(createdAgo),
+      accepted_at: null,
+      ready_at: null,
+      picked_up_at: null,
+      delivered_at: spec.noClose ? null : closed,
+      updated_at: closed,
+    };
+  });
+}
+
 function ratingFrom(x: number): number {
   if (x < 0.05) return 1;
   if (x < 0.1) return 2;
@@ -602,7 +657,7 @@ export function buildSeed(): Tables {
 
   return {
     clients,
-    orders: [...orders, ...extra.orders, ...buildFudoOrders(Date.now(), ORDERS.length + EXTRA_ORDER_COUNT + 1)],
+    orders: [...orders, ...extra.orders, ...buildFudoOrders(Date.now(), ORDERS.length + EXTRA_ORDER_COUNT + 1), ...buildDeliveredHistory(Date.now(), ORDERS.length + EXTRA_ORDER_COUNT + 11)],
     points_ledger, global_config, categories, products,
     reviews: [...reviews, ...extraReviews],
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
