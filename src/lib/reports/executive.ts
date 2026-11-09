@@ -129,6 +129,9 @@ export function previousBounds(bounds: Bounds): Bounds {
   return { from: new Date(from - length).toISOString(), to: bounds.from };
 }
 
+/** Fudo solo informa el cierre en caja; la entrega real se conoce en los pedidos gestionados desde la app. */
+const hasRealDelivery = (o: ExecutiveOrder): boolean => o.channel !== "fudo";
+
 /** Límite (ms epoch) para entregar un pedido: creación + SLA de su zona + tolerancia. */
 function deadlineOf(order: ExecutiveOrder, settings: ExecutiveSettings, zoneOf: ZoneOf): number {
   const allowed = slaForZone(settings, zoneOf(order)) + settings.sla.toleranceMinutes;
@@ -139,6 +142,7 @@ function deadlineOf(order: ExecutiveOrder, settings: ExecutiveSettings, zoneOf: 
  * Puntualidad: el denominador son los pedidos entregados más los no entregados que ya superaron
  * su plazo (atrasados). Los pedidos en curso que todavía están en plazo no cuentan ni a favor ni en contra,
  * y tampoco los finalizados sin hora de cierre confiable: terminaron, pero no se sabe cuándo.
+ * Los de Fudo quedan afuera: su hora es la del cierre en caja, no la de la entrega.
  */
 function onTimePct(
   confirmed: readonly ExecutiveOrder[],
@@ -148,7 +152,7 @@ function onTimePct(
 ): number | null {
   let counted = 0;
   let onTime = 0;
-  for (const o of confirmed) {
+  for (const o of confirmed.filter(hasRealDelivery)) {
     const deadline = deadlineOf(o, settings, zoneOf);
     const closedAt = completedAt(o);
     if (closedAt) {
@@ -204,7 +208,7 @@ export function computeKpis(
     prepMinutes: prep.avgMinutes,
     prepOnTarget: prep.onTargetPct,
     // El objetivo no importa acá: solo se usa el promedio.
-    totalMinutes: finishedStats(confirmed, 0).avgMinutes,
+    totalMinutes: finishedStats(confirmed.filter(hasRealDelivery), 0).avgMinutes,
     csat: ratings.length > 0 ? round(ratings.reduce((s, r) => s + r.rating, 0) / ratings.length, 2) : null,
     complaints: pct(complained.size, delivered.length),
     avgTicket: priced.length > 0 ? round(revenue / priced.length) : null,

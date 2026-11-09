@@ -196,8 +196,17 @@ describe("computeKpis", () => {
     );
     assert.equal(k.prepMinutes, 20); // solo take away: en delivery el cierre incluye el viaje
     assert.equal(k.prepOnTarget, 50); // meta de 18 min
+    // El cierre de Fudo no es la entrega: no entra en puntualidad ni en el tiempo total.
+    assert.equal(k.totalMinutes, null);
+    assert.equal(k.onTime, null);
+  });
+
+  it("puntualidad y tiempo total salen solo de los pedidos con entrega real", () => {
+    const web = order("w", { channel: "web", deliverMin: 30 });
+    const cierre = { ...order("f", { channel: "fudo", deliverMin: 200 }), fudo_sale_type: "DELIVERY" };
+    const k = computeKpis([web, cierre], [], RANGE, S, zoneOf, LATER);
     assert.equal(k.totalMinutes, 30);
-    assert.equal(k.onTime, 66.7); // el histórico sin hora confiable no cuenta como atrasado
+    assert.equal(k.onTime, 100);
   });
 
   it("sin entregas no calcula reclamos", () => {
