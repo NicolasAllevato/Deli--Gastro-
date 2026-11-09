@@ -7,6 +7,20 @@ export function isFudoOrigin(order: { channel: string | null | undefined }): boo
   return order.channel === "fudo";
 }
 
+/** Delivery cargado en Fudo: el único tipo de venta de Fudo que puede llevar un repartidor. */
+export function isFudoDelivery(order: { channel: string | null | undefined; fudo_sale_type?: string | null }): boolean {
+  return isFudoOrigin(order) && order.fudo_sale_type === "DELIVERY";
+}
+
+/**
+ * Si se le puede asignar repartidor. Un delivery de Fudo suele seguir en «Recibidos» hasta que el local toca
+ * «Enviado», y hay que poder derivarlo antes para medir la salida y la entrega.
+ */
+export function canAssignCourier(order: { status: string; channel: string | null | undefined; fudo_sale_type?: string | null }): boolean {
+  if (order.status === "En Preparación" || order.status === "En Camino") return true;
+  return order.status === "Recibidos" && isFudoDelivery(order);
+}
+
 const SALE_TYPE_LABEL: Readonly<Record<string, string>> = { DELIVERY: "Delivery", TAKEAWAY: "Take away", "EAT-IN": "Salón" };
 
 /** Canal de venta deducido por el gateway del medio de pago de Fudo (migración 024). */

@@ -293,6 +293,7 @@ export interface SaleOrderUpdate {
   total?: number;
   /** Solo al detectar el cambio: la marca queda con la hora en que se vio, no se pisa después. */
   ready_at?: string;
+  picked_up_at?: string;
   delivered_at?: string;
 }
 
@@ -306,6 +307,7 @@ export interface ExistingOrder {
   fudo_source?: string | null;
   fudo_payments?: unknown;
   total?: number | string | null;
+  picked_up_at?: string | null;
 }
 
 /** Completa canal, nombre y medio de pago en pedidos importados antes de que existieran esas columnas. */
@@ -386,9 +388,11 @@ function linesFor(items: FudoItem[], products: SalesPlanInput["productsByFudoId"
 const READY_STATES: readonly string[] = ["READY-TO-DELIVER", "DELIVERY-SENT"];
 
 /** Marcas de tiempo del cambio de estado recién detectado. */
-function stageStamps(sale: FudoSale, existing: ExistingOrder, status: BoardStatus, now: string): Pick<SaleOrderUpdate, "ready_at" | "delivered_at"> {
-  const stamps: Pick<SaleOrderUpdate, "ready_at" | "delivered_at"> = {};
+function stageStamps(sale: FudoSale, existing: ExistingOrder, status: BoardStatus, now: string): Pick<SaleOrderUpdate, "ready_at" | "picked_up_at" | "delivered_at"> {
+  const stamps: Pick<SaleOrderUpdate, "ready_at" | "picked_up_at" | "delivered_at"> = {};
   if (READY_STATES.includes(sale.saleState) && !READY_STATES.includes(existing.fudo_sale_state ?? "")) stamps.ready_at = now;
+  // «Enviado» en Fudo es la salida. Si el repartidor ya la marcó en la app, esa es la buena.
+  if (sale.saleState === "DELIVERY-SENT" && existing.fudo_sale_state !== "DELIVERY-SENT" && !existing.picked_up_at) stamps.picked_up_at = now;
   if (status === "Finalizados" && existing.status !== "Finalizados") stamps.delivered_at = sale.closedAt ?? now;
   return stamps;
 }

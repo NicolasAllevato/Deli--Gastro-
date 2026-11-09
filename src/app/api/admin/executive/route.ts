@@ -27,7 +27,7 @@ const rangeSchema = z.enum(RANGE_KEYS as [RangeKey, ...RangeKey[]]);
 const zoneSchema = z.string().trim().regex(ZONE_ID_PATTERN);
 
 const ORDER_COLUMNS =
-  "id, status, total, channel, fudo_source, fudo_sale_type, created_at, updated_at, ready_at, delivered_at, delivery_lat, delivery_lng";
+  "id, status, total, channel, fudo_source, fudo_sale_type, created_at, updated_at, ready_at, delivered_at, delivered_in_app, delivery_lat, delivery_lng";
 
 type OrderRow = ExecutiveOrder & OrderCoords;
 

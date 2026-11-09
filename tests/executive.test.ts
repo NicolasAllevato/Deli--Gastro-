@@ -461,6 +461,14 @@ describe("mock JSON", () => {
   });
 });
 
+describe("entrega confirmada desde la app", () => {
+  it("un pedido de Fudo cuenta solo si la entrega se confirmó en la app", () => {
+    const base = { ...order("f", { channel: "fudo", deliverMin: 30 }), fudo_sale_type: "DELIVERY" };
+    assert.equal(computeKpis([base], [], RANGE, S, zoneOf, LATER).totalMinutes, null);
+    assert.equal(computeKpis([{ ...base, delivered_in_app: true }], [], RANGE, S, zoneOf, LATER).totalMinutes, 30);
+  });
+});
+
 describe("preparación separada de take away e integraciones", () => {
   const conListo = (id: string, minutes: number, over: Partial<ReportOrder>) => {
     const base = { ...order(id, { deliverMin: null, prepMin: null }), ...over };

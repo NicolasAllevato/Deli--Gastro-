@@ -6,7 +6,7 @@ import { completedAt, durationStats, finishedStats, MAX_PLAUSIBLE_MINUTES, minut
 export type ExecutiveOrder = Pick<
   ReportOrder,
   "id" | "status" | "total" | "channel" | "fudo_source" | "fudo_sale_type" | "created_at" | "ready_at" | "delivered_at"
-> & { updated_at?: string | null };
+> & { updated_at?: string | null; delivered_in_app?: boolean | null };
 import {
   KPI_KEYS,
   isZoneVisible,
@@ -131,8 +131,8 @@ export function previousBounds(bounds: Bounds): Bounds {
   return { from: new Date(from - length).toISOString(), to: bounds.from };
 }
 
-/** Fudo solo informa el cierre en caja; la entrega real se conoce en los pedidos gestionados desde la app. */
-const hasRealDelivery = (o: ExecutiveOrder): boolean => o.channel !== "fudo";
+/** Fudo solo informa el cierre en caja; la entrega real es la que se confirma desde la app. */
+const hasRealDelivery = (o: ExecutiveOrder): boolean => o.channel !== "fudo" || o.delivered_in_app === true;
 
 /** Límite (ms epoch) para entregar un pedido: creación + SLA de su zona + tolerancia. */
 function deadlineOf(order: ExecutiveOrder, settings: ExecutiveSettings, zoneOf: ZoneOf): number {
