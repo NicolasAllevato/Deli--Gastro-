@@ -108,3 +108,29 @@ describe("clusterPoints", () => {
     assert.equal(clusterPoints([1, 2], (n: number) => (n === 1 ? { lat: 0, lng: 0 } : null), 10).length, 1);
   });
 });
+
+describe("marca de canal en el mapa", async () => {
+  const { selectDelivered, channelLabel, CHANNEL_MARKER, DELIVERED_CHANNELS } = await import("../src/lib/delivered-map.ts");
+  const base = { id: "a", client_id: null, customer_name: null, status: "Finalizados", channel: "fudo", fudo_sale_type: "DELIVERY", fudo_source: "pedidosya", delivery_address: null, delivery_lat: null, delivery_lng: null, delivered_lat: null, delivered_lng: null, courier_name: null, created_at: "2026-11-05T12:00:00.000Z", ready_at: null, picked_up_at: null, delivered_at: "2026-11-05T13:00:00.000Z" };
+  const filters = { from: "2026-11-01T00:00:00.000Z", to: "2026-11-10T00:00:00.000Z", channel: "todos" as const, courier: "todos" };
+
+  it("cuenta por canal cuántos hay y cuántos entran en el mapa", () => {
+    const { channels } = selectDelivered([
+      base,
+      { ...base, id: "b", fudo_source: "rappi" },
+      { ...base, id: "c", fudo_source: "local", delivery_address: "X 1", delivery_lat: -34.6, delivery_lng: -58.4 },
+    ], filters);
+    assert.deepEqual(channels, [
+      { channel: "delivery_local", total: 1, located: 1 },
+      { channel: "pedidosya", total: 1, located: 0 },
+      { channel: "rappi", total: 1, located: 0 },
+    ]);
+  });
+
+  it("cada canal tiene letra y color propios", () => {
+    const marks = DELIVERED_CHANNELS.map((c) => CHANNEL_MARKER[c.value]);
+    assert.equal(new Set(marks.map((m) => m.letter)).size, marks.length);
+    assert.equal(new Set(marks.map((m) => m.color)).size, marks.length);
+    assert.equal(channelLabel("pedidosya"), "PedidosYa");
+  });
+});

@@ -95,5 +95,5 @@ export async function loadDeliveredMap(db: Db, filters: DeliveredFilters): Promi
     ...rest,
     client_name: (client_id ? names.get(client_id) : undefined) ?? customer_name?.trim() ?? "Mostrador",
   });
-  return { summary: selection.summary, couriers: selection.couriers, markers: markerRows.map(toItem), list: listRows.map(toItem), truncated };
+  return { summary: selection.summary, couriers: selection.couriers, channels: selection.channels, markers: markerRows.map(toItem), list: listRows.map(toItem), truncated };
 }

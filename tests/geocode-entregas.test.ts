@@ -152,3 +152,19 @@ describe("runGeocodeBackfill", () => {
     assert.equal(limited.patches.length, 1);
   });
 });
+
+describe("Georef", async () => {
+  const { parseGeoref } = await import("../workers/fudo-gateway/src/geocode.ts");
+  const { chooseGeocodeMatch } = await import("../src/lib/geocode-match.ts");
+  const near = { lat: -34.585394, lng: -58.423404 };
+  const raw = { direcciones: [{ altura: { valor: 2254 }, calle: { nombre: "GURRUCHAGA" }, ubicacion: { lat: -34.585, lon: -58.424 } }] };
+
+  it("su respuesta pasa el control de altura exacta", () => {
+    assert.ok(chooseGeocodeMatch("Gurruchaga 2254, CABA", parseGeoref(raw), near));
+    assert.equal(chooseGeocodeMatch("Gurruchaga 2255", parseGeoref(raw), near), null);
+  });
+  it("descarta resultados sin coordenadas y respuestas inválidas", () => {
+    assert.deepEqual(parseGeoref({ direcciones: [{ altura: { valor: 1 }, ubicacion: { lat: null, lon: null } }] }), []);
+    assert.deepEqual(parseGeoref(null), []);
+  });
+});

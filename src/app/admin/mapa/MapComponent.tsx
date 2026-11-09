@@ -10,7 +10,7 @@ import { ZoneLayers } from "@/components/zones/ZoneLayers";
 import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { CourierLocation } from "@/lib/courier-location";
-import { clusterPoints, type DeliveredItem, type MarkerGroup } from "@/lib/delivered-map";
+import { CHANNEL_MARKER, channelLabel, clusterPoints, deliveredChannel, type DeliveredChannel, type DeliveredItem, type MarkerGroup } from "@/lib/delivered-map";
 import { deliveredPoint, deliveryTimes, distanceMeters } from "@/lib/delivery-metrics";
 
 // Marcadores como divIcon: no dependen de imágenes externas (la CSP del proyecto
@@ -33,7 +33,9 @@ const STATE_COLOR: Record<string, string> = {
 
 const HOME_ICON = dot("#7c3aed", "L");
 const COURIER_COLOR = "#16a34a";
-const DELIVERED_ICON = dot("#64748b", "✓");
+const CHANNEL_ICON = Object.fromEntries(
+  Object.entries(CHANNEL_MARKER).map(([channel, { color, letter }]) => [channel, dot(color, letter)]),
+) as Record<DeliveredChannel, L.DivIcon>;
 
 function initials(name: string): string {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "R";
@@ -146,6 +148,8 @@ function DeliveredPopup({ order, point }: { order: DeliveredItem; point: { lat: 
   return (
     <div className="text-sm space-y-0.5">
       <p className="font-bold text-gray-800">Entregado · {order.client_name} · {formatOrderId(order.id)}</p>
+      <p className="text-gray-600">Canal: {channelLabel(deliveredChannel(order))}</p>
+      {order.delivery_address && <p className="text-gray-500">{order.delivery_address}</p>}
       {order.courier_name && <p className="text-gray-600">Repartidor: {order.courier_name}</p>}
       {times.totalMin !== null && <p className="text-gray-600">Tiempo total: {times.totalMin} min</p>}
       {times.rideMin !== null && <p className="text-gray-600">Viaje: {times.rideMin} min</p>}
@@ -183,7 +187,7 @@ function DeliveredLayer({ delivered, local }: { delivered: readonly DeliveredIte
             {withLines && order.delivery_lat !== null && (
               <Polyline positions={[[local.lat, local.lng], [point.lat, point.lng]]} pathOptions={{ color: "#64748b", weight: 2, opacity: 0.4 }} />
             )}
-            <Marker position={[point.lat, point.lng]} icon={DELIVERED_ICON}>
+            <Marker position={[point.lat, point.lng]} icon={CHANNEL_ICON[deliveredChannel(order)]}>
               <Popup><DeliveredPopup order={order} point={point} /></Popup>
             </Marker>
           </span>
