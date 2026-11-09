@@ -7,6 +7,7 @@ import {
   buildInsights,
   byChannel,
   byZone,
+  closingTimesByChannel,
   computeKpis,
   dailySeries,
   previousBounds,
@@ -195,8 +196,17 @@ describe("computeKpis", () => {
     );
     assert.equal(k.prepMinutes, 20); // solo take away: en delivery el cierre incluye el viaje
     assert.equal(k.prepOnTarget, 50); // meta de 18 min
+    // El cierre de Fudo no es la entrega: no entra en puntualidad ni en el tiempo total.
+    assert.equal(k.totalMinutes, null);
+    assert.equal(k.onTime, null);
+  });
+
+  it("puntualidad y tiempo total salen solo de los pedidos con entrega real", () => {
+    const web = order("w", { channel: "web", deliverMin: 30 });
+    const cierre = { ...order("f", { channel: "fudo", deliverMin: 200 }), fudo_sale_type: "DELIVERY" };
+    const k = computeKpis([web, cierre], [], RANGE, S, zoneOf, LATER);
     assert.equal(k.totalMinutes, 30);
-    assert.equal(k.onTime, 66.7); // el histórico sin hora confiable no cuenta como atrasado
+    assert.equal(k.onTime, 100);
   });
 
   it("sin entregas no calcula reclamos", () => {
@@ -446,5 +456,36 @@ describe("mock JSON", () => {
     assert.deepEqual(Object.keys(mock.insights[0]).sort(), ["action", "severity", "text"]);
     assert.equal(mock.series.length, 7);
     assert.deepEqual(mock.zones.map((z) => z.zoneId), ["Z1", "Z2", "Z3", "Z4", "Z5", "Z6"]);
+  });
+});
+
+describe("closingTimesByChannel", () => {
+  const closed = (id: string, minutes: number | null, over: Partial<ReportOrder> = {}) => {
+    const base = { ...order(id), ...over };
+    return { ...base, status: "Finalizados", delivered_at: minutes === null ? null : new Date(Date.parse(base.created_at) + minutes * 60_000).toISOString() };
+  };
+  const fudo = (source: string, type: string) => ({ channel: "fudo", fudo_source: source, fudo_sale_type: type });
+
+  it("usa la mediana, excluye cierres de más de 4 h y cuenta los que no tienen hora", () => {
+    const rows = closingTimesByChannel([
+      closed("a", 30, fudo("rappi", "DELIVERY")), closed("b", 40, fudo("rappi", "DELIVERY")),
+      closed("c", 100, fudo("rappi", "DELIVERY")), closed("d", 1300, fudo("rappi", "DELIVERY")),
+      closed("e", null, fudo("rappi", "DELIVERY")),
+    ], RANGE);
+    assert.deepEqual(rows, [{ channel: "rappi", source: "cierre", medianMinutes: 40, measured: 3, excluded: 1, withoutTime: 1, notMeasurable: 0 }]);
+  });
+
+  it("take away y mostrador no se miden, y los medibles van primero", () => {
+    const rows = closingTimesByChannel([
+      closed("a", 2, fudo("morfy", "TAKEAWAY")), closed("b", 2, { channel: "mostrador" }), closed("c", 35, { channel: "web" }),
+    ], RANGE);
+    assert.equal(rows[0].channel, "web");
+    assert.equal(rows[0].source, "entrega");
+    assert.equal(rows[0].medianMinutes, 35);
+    assert.deepEqual(rows.slice(1).map((r) => [r.medianMinutes, r.measured, r.notMeasurable]), [[null, 0, 1], [null, 0, 1]]);
+  });
+
+  it("ignora cancelados y pedidos en curso", () => {
+    assert.deepEqual(closingTimesByChannel([{ ...closed("a", 30), status: "Cancelado" }, { ...closed("b", 30), status: "En Camino" }], RANGE), []);
   });
 });

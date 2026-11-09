@@ -65,6 +65,10 @@
     { "channel": "whatsapp", "orders": 131, "delivered": 126, "cancelled": 5, "revenue": 1150000, "avgTicket": 8779, "share": 36.3 },
     { "channel": "mostrador", "orders": 58, "delivered": 58, "cancelled": 0, "revenue": 384350, "avgTicket": 6627, "share": 16.1 }
   ],
+  "closingTimes": [
+    { "channel": "web", "source": "entrega", "medianMinutes": 38.5, "measured": 165, "excluded": 0, "withoutTime": 0, "notMeasurable": 0 },
+    { "channel": "mostrador", "source": "entrega", "medianMinutes": null, "measured": 0, "excluded": 0, "withoutTime": 0, "notMeasurable": 58 }
+  ],
   "complaints": [
     { "orderId": "demo-ord-0341", "rating": 2, "comment": "Llegó frío y tardó mucho.", "createdAt": "2026-10-03T23:40:00.000Z" },
     { "orderId": "demo-ord-0329", "rating": 3, "comment": "Faltó una bebida del pedido.", "createdAt": "2026-10-03T00:15:00.000Z" },
