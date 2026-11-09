@@ -29,7 +29,7 @@ export const DEFAULT_SALES_WINDOW_HOURS = 48;
 /** Tope de actualizaciones de clientes por corrida: cada una es un PATCH (límite de subrequests del Worker). */
 const MAX_CLIENT_UPDATES_PER_RUN = 300;
 /** Tope de pedidos viejos a los que se les completa el detalle de pagos por corrida: cada uno es un PATCH. */
-const MAX_PAYMENT_FILLS_PER_RUN = 100;
+const MAX_PAYMENT_FILLS_PER_RUN = 10;
 const ID_BATCH = 100;
 const IMPORTED_SALE_TYPES = ["DELIVERY", "TAKEAWAY"] as const;
 
