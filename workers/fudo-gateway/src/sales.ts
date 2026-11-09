@@ -289,6 +289,8 @@ export interface SaleOrderUpdate {
   id: string;
   status: BoardStatus;
   fudo_sale_state: string;
+  /** Solo si cambió: una venta abierta puede sumar ítems después de importarse. */
+  total?: number;
   /** Solo al detectar el cambio: la marca queda con la hora en que se vio, no se pisa después. */
   ready_at?: string;
   delivered_at?: string;
@@ -303,6 +305,7 @@ export interface ExistingOrder {
   client_id?: string | null;
   fudo_source?: string | null;
   fudo_payments?: unknown;
+  total?: number | string | null;
 }
 
 /** Completa canal, nombre y medio de pago en pedidos importados antes de que existieran esas columnas. */
@@ -405,8 +408,10 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       // Un pedido que la app envió a Fudo vuelve en el listado: su estado lo maneja la app, no se toca.
       if (existing.channel !== "fudo") continue;
       const status = nextStatus(existing.status as BoardStatus, target);
-      if (status !== existing.status || sale.saleState !== existing.fudo_sale_state) {
-        plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState, ...stageStamps(sale, existing, status, now) });
+      // Una venta anulada conserva el último total conocido. Sin dato previo no se compara.
+      const totalChanged = sale.saleState !== "CANCELED" && existing.total != null && Math.abs(Number(existing.total) - sale.total) >= 0.01;
+      if (status !== existing.status || sale.saleState !== existing.fudo_sale_state || totalChanged) {
+        plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState, ...stageStamps(sale, existing, status, now), ...(totalChanged ? { total: sale.total } : {}) });
       }
       // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
       const relinkTo = existing.client_id === null ? clientFor(sale, input) : null;

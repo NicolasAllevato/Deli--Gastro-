@@ -77,7 +77,7 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
 
     const existing: ExistingOrder[] = [];
     for (const ids of chunk(sales.map((s) => s.id), ID_BATCH)) {
-      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source,fudo_payments`)));
+      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source,fudo_payments,total`)));
     }
     const known = new Set(existing.map((o) => o.fudo_order_id));
 
