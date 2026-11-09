@@ -49,6 +49,8 @@ export interface Kpis {
   prepMinutes: number | null;
   /** % de pedidos con preparación medida que quedaron dentro de la meta de preparación. */
   prepOnTarget: number | null;
+  /** Take away aparte: se mide de la carga al cierre, que no es una preparación de cocina. */
+  takeawayMinutes: number | null;
   /** Minutos promedio del pedido a su cierre, en los que se pueden medir. */
   totalMinutes: number | null;
   csat: number | null;
@@ -172,8 +174,21 @@ const totalOf = (o: ExecutiveOrder): number => {
 };
 const sumTotals = (list: readonly ExecutiveOrder[]): number => list.reduce((sum, o) => sum + totalOf(o), 0);
 
+const isTakeaway = (o: ExecutiveOrder): boolean => o.fudo_sale_type === "TAKEAWAY";
+/** PedidosYa y Rappi pasan por su integración: Fudo no informa cuándo estuvo listo el pedido. */
+const isExternalIntegration = (o: ExecutiveOrder): boolean => o.fudo_source === "pedidosya" || o.fudo_source === "rappi";
+
+function takeawayAverage(confirmed: readonly ExecutiveOrder[]): number | null {
+  const minutes = confirmed
+    .filter(isTakeaway)
+    .map((o) => minutesBetween(o.created_at, preparedAt(o)))
+    .filter((m): m is number => m !== null);
+  return durationStats(minutes, 0).avgMinutes;
+}
+
 function prepStats(confirmed: readonly ExecutiveOrder[], targetMinutes: number) {
   const minutes = confirmed
+    .filter((o) => !isTakeaway(o) && !isExternalIntegration(o))
     .map((o) => minutesBetween(o.created_at, preparedAt(o)))
     .filter((m): m is number => m !== null);
   return durationStats(minutes, targetMinutes);
@@ -207,6 +222,7 @@ export function computeKpis(
     onTime: onTimePct(confirmed, settings, zoneOf, now),
     prepMinutes: prep.avgMinutes,
     prepOnTarget: prep.onTargetPct,
+    takeawayMinutes: takeawayAverage(confirmed),
     // El objetivo no importa acá: solo se usa el promedio.
     totalMinutes: finishedStats(confirmed.filter(hasRealDelivery), 0).avgMinutes,
     csat: ratings.length > 0 ? round(ratings.reduce((s, r) => s + r.rating, 0) / ratings.length, 2) : null,
