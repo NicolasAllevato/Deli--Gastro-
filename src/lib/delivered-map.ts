@@ -11,6 +11,25 @@ export const DELIVERED_CHANNELS = [
 ] as const;
 
 export type DeliveredChannel = (typeof DELIVERED_CHANNELS)[number]["value"];
+
+/** Color y letra del punto de cada canal; la leyenda usa los mismos para que se lea el mapa. */
+export const CHANNEL_MARKER: Readonly<Record<DeliveredChannel, { color: string; letter: string }>> = {
+  delivery_local: { color: "#475569", letter: "L" },
+  web: { color: "#2563eb", letter: "W" },
+  pedidosya: { color: "#dc2626", letter: "P" },
+  rappi: { color: "#ea580c", letter: "R" },
+  morfy: { color: "#a16207", letter: "M" },
+};
+
+export function channelLabel(channel: DeliveredChannel): string {
+  return DELIVERED_CHANNELS.find((c) => c.value === channel)?.label ?? channel;
+}
+
+export interface DeliveredChannelCount {
+  channel: DeliveredChannel;
+  total: number;
+  located: number;
+}
 export type DeliveredPreset = "hoy" | "7d" | "30d" | "custom";
 
 /** Valor del filtro para los pedidos sin repartidor asignado. */
@@ -68,6 +87,8 @@ export interface DeliveredSummary {
 export interface DeliveredMapResponse {
   summary: DeliveredSummary;
   couriers: string[];
+  /** Solo los canales con pedidos en el resultado. */
+  channels: DeliveredChannelCount[];
   markers: DeliveredItem[];
   list: DeliveredItem[];
   /** La cantidad de pedidos del rango superó lo que se puede leer: los números son un piso. */
@@ -121,6 +142,7 @@ function matchesCourier(o: DeliveredRow, courier: string): boolean {
 }
 
 export interface DeliveredSelection {
+  channels: DeliveredChannelCount[];
   summary: DeliveredSummary;
   couriers: string[];
   /** Filtrados, más recientes primero. */
@@ -146,6 +168,10 @@ export function selectDelivered(all: readonly DeliveredRow[], filters: Delivered
       withoutLocation: rows.length - located,
       withoutAddress: rows.filter((o) => deliveredPoint(o) === null && !o.delivery_address?.trim()).length,
     },
+    channels: DELIVERED_CHANNELS.map(({ value }) => {
+      const ofChannel = rows.filter((o) => deliveredChannel(o) === value);
+      return { channel: value, total: ofChannel.length, located: ofChannel.filter((o) => deliveredPoint(o) !== null).length };
+    }).filter((c) => c.total > 0),
     couriers: [...new Set(inScope.map((o) => o.courier_name).filter((n): n is string => Boolean(n)))].sort((a, b) => a.localeCompare(b, "es")),
     rows,
   };

@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { formatOrderId } from "@/lib/orders";
-import { fudoOriginLabel } from "@/lib/fudo/origin";
 import { deliveredPoint } from "@/lib/delivery-metrics";
-import { ALL, DELIVERED_CHANNELS, LIST_LIMIT, MAX_MARKERS, MAX_RANGE_DAYS, NO_COURIER, type DeliveredMapResponse, type DeliveredPreset } from "@/lib/delivered-map";
+import { ALL, CHANNEL_MARKER, channelLabel, deliveredChannel, DELIVERED_CHANNELS, LIST_LIMIT, MAX_MARKERS, MAX_RANGE_DAYS, NO_COURIER, type DeliveredChannel, type DeliveredMapResponse, type DeliveredPreset } from "@/lib/delivered-map";
 import type { DeliveredFilterState, DeliveredMapState } from "./useDeliveredMap";
 
 const PRESETS: ReadonlyArray<{ value: DeliveredPreset; label: string }> = [
@@ -70,6 +69,30 @@ function Stat({ label, value, testId }: { label: string; value: number; testId: 
   );
 }
 
+function ChannelDot({ channel }: { channel: DeliveredChannel }) {
+  const { color, letter } = CHANNEL_MARKER[channel];
+  return (
+    <span aria-hidden className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-black text-white shrink-0" style={{ background: color }}>
+      {letter}
+    </span>
+  );
+}
+
+function ChannelLegend({ data }: { data: DeliveredMapResponse }) {
+  if (data.channels.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 px-1" aria-label="Resumen de entregas">
+      {data.channels.map((c) => (
+        <li key={c.channel} data-testid={`canal-${c.channel}`} className="flex items-center gap-1.5 text-xs text-gray-600">
+          <ChannelDot channel={c.channel} />
+          <span className="font-bold">{channelLabel(c.channel)}</span>
+          <span>{c.total}{c.located < c.total ? ` (${c.located} en el mapa)` : ""}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function notices(data: DeliveredMapResponse): string[] {
   const out: string[] = [];
   if (data.summary.withoutLocation > 0) {
@@ -95,6 +118,7 @@ export function DeliveredPanel({ state }: { state: DeliveredMapState }) {
             <Stat label="En el mapa" value={data.summary.located} testId="entregados-en-mapa" />
             <Stat label="Sin ubicación" value={data.summary.withoutLocation} testId="entregados-sin-ubicacion" />
           </div>
+          <ChannelLegend data={data} />
           {notices(data).map((n) => <p key={n} className="text-xs text-gray-500 px-1">{n}</p>)}
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest px-1">
             Entregados{data.summary.total > LIST_LIMIT ? ` (últimos ${LIST_LIMIT} de ${data.summary.total})` : ` (${data.summary.total})`}
@@ -109,8 +133,10 @@ export function DeliveredPanel({ state }: { state: DeliveredMapState }) {
                     <p className="font-bold text-sm text-gray-800 truncate">
                       {o.client_name} <span className="text-gray-400 font-medium">· {formatOrderId(o.id)}</span>
                     </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {o.delivery_address ?? "Sin dirección informada"}{fudoOriginLabel(o) ? ` · ${fudoOriginLabel(o)}` : ""}
+                    <p className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
+                      <ChannelDot channel={deliveredChannel(o)} />
+                      <span className="font-bold text-gray-600 shrink-0">{channelLabel(deliveredChannel(o))}</span>
+                      <span className="truncate">· {o.delivery_address ?? "Sin dirección informada"}</span>
                     </p>
                   </div>
                   <div className="text-right shrink-0">

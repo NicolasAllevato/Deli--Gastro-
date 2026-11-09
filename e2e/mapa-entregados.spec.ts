@@ -16,6 +16,7 @@ test.describe("mapa: entregados con filtros (demo)", () => {
       await page.getByRole("button", { name: "7 días" }).click();
       await page.getByLabel("Canal").selectOption({ label: "PedidosYa" });
       await expect(pedido(page, "PedidosYa Semana")).toContainText("Sin ubicación");
+      await expect(pedido(page, "PedidosYa Semana")).toContainText("PedidosYa");
       await expect(count(page, "entregados-en-mapa")).toHaveText("0");
       await expect(page.getByText(/no tienen dirección/)).toBeVisible();
 

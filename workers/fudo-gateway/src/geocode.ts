@@ -1,6 +1,7 @@
-import { geocodeAddress } from "../../../src/lib/geocode.ts";
+import type { GeocodeResult } from "../../../src/lib/geocode.ts";
 import { GEOCODE_MAX_ATTEMPTS, geocodeOutcome, type GeocodeTarget } from "../../../src/lib/geocode-match.ts";
 import { RESTAURANT_LOCATION } from "../../../src/lib/restaurant.ts";
+import type { GeoPoint } from "../../../src/lib/zones.ts";
 import { rest, type DbEnv } from "./db.ts";
 
 /**
@@ -8,12 +9,16 @@ import { rest, type DbEnv } from "./db.ts";
  * escrituras y nunca lanza, así que no puede tumbar las ventas. Lo histórico lo hace `scripts/geocodificar-historico.mjs`.
  */
 
-/** Tope por corrida. Cada pedido gasta 2 subrequests (Nominatim + PATCH) y el Worker tiene un límite bajo. */
+/** Tope por corrida. Cada pedido gasta 2 subrequests (Georef + PATCH) y el Worker tiene un límite bajo. */
 export const MAX_GEOCODES_PER_RUN = 3;
 /** Con más escrituras que esto la corrida ya gastó sus subrequests: se deja la geocodificación para la próxima. */
 export const MAX_PRIOR_WRITES = 10;
-/** Política de Nominatim: 1 pedido por segundo. */
-const NOMINATIM_GAP_MS = 1100;
+/** Pausa entre consultas al geocodificador, para no saturar un servicio público. */
+const GEOCODER_GAP_MS = 1100;
+const GEOREF_URL = "https://apis.datos.gob.ar/georef/api/direcciones";
+const GEOREF_TIMEOUT_MS = 6000;
+/** Código de la Ciudad de Buenos Aires en Georef. */
+const GEOREF_PROVINCE_CABA = "02";
 const NEW_ORDERS_WINDOW_HOURS = 72;
 
 interface PendingOrder extends GeocodeTarget {
@@ -27,9 +32,33 @@ export interface GeocodeRunSummary {
 }
 
 export interface GeocodeDeps {
-  search?: typeof geocodeAddress;
+  search?: (query: string, near: GeoPoint) => Promise<GeocodeResult[]>;
   sleep?: (ms: number) => Promise<void>;
   now?: Date;
+}
+
+/**
+ * Respuesta de Georef como resultados de geocodificación. La etiqueta lleva la altura como primer segmento,
+ * el formato que exige `chooseGeocodeMatch`. Sin coordenadas (altura fuera de rango) se descarta.
+ */
+export function parseGeoref(raw: unknown): GeocodeResult[] {
+  const list = (raw as { direcciones?: unknown } | null)?.direcciones;
+  if (!Array.isArray(list)) return [];
+  const out: GeocodeResult[] = [];
+  for (const item of list as Array<{ altura?: { valor?: unknown }; calle?: { nombre?: unknown }; ubicacion?: { lat?: unknown; lon?: unknown } }>) {
+    const { lat, lon } = item.ubicacion ?? {};
+    if (typeof lat !== "number" || typeof lon !== "number") continue;
+    out.push({ label: `${String(item.altura?.valor ?? "")}, ${String(item.calle?.nombre ?? "")}`, lat, lng: lon });
+  }
+  return out;
+}
+
+/** Georef calcula la posición por cuadra: ubica muchas alturas que OpenStreetMap no tiene. Solo recibe calle y altura. */
+export async function georefSearch(query: string): Promise<GeocodeResult[]> {
+  const params = new URLSearchParams({ direccion: query.split(",")[0] ?? query, provincia: GEOREF_PROVINCE_CABA, max: "3" });
+  const res = await fetch(`${GEOREF_URL}?${params}`, { signal: AbortSignal.timeout(GEOREF_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`Georef ${res.status}`);
+  return parseGeoref(await res.json());
 }
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,13 +76,13 @@ function configNumber(rows: ReadonlyArray<{ key: string; value: unknown }>, key:
 
 /**
  * Sin la migración 027 la consulta falla y el paso queda inactivo sin afectar nada.
- * Si Nominatim falla se corta la tanda: insistir solo gasta subrequests y la cuota del servicio.
+ * Si el geocodificador falla se corta la tanda: insistir solo gasta subrequests y la cuota del servicio.
  */
 export async function geocodeNewOrders(env: DbEnv, priorWrites: number, deps: GeocodeDeps = {}): Promise<GeocodeRunSummary> {
   const summary: GeocodeRunSummary = { located: 0, rejected: 0, errors: 0 };
   const quota = geocodeQuota(priorWrites);
   if (quota === 0) return summary;
-  const search = deps.search ?? geocodeAddress;
+  const search = deps.search ?? georefSearch;
   const sleep = deps.sleep ?? wait;
   const since = new Date((deps.now ?? new Date()).getTime() - NEW_ORDERS_WINDOW_HOURS * 3_600_000).toISOString();
 
@@ -67,7 +96,7 @@ export async function geocodeNewOrders(env: DbEnv, priorWrites: number, deps: Ge
     const near = { lat: configNumber(config, "local_lat", RESTAURANT_LOCATION.lat), lng: configNumber(config, "local_lng", RESTAURANT_LOCATION.lng) };
 
     for (const [index, order] of pending.entries()) {
-      if (index > 0) await sleep(NOMINATIM_GAP_MS);
+      if (index > 0) await sleep(GEOCODER_GAP_MS);
       const outcome = await geocodeOutcome(order, near, search);
       await rest(env, `orders?id=eq.${order.id}&delivery_lat=is.null`, {
         method: "PATCH",
