@@ -9,9 +9,9 @@ import { rest, type DbEnv } from "./db.ts";
  */
 
 /** Tope por corrida. Cada pedido gasta 2 subrequests (Nominatim + PATCH) y el Worker tiene un límite bajo. */
-export const MAX_GEOCODES_PER_RUN = 5;
+export const MAX_GEOCODES_PER_RUN = 3;
 /** Con más escrituras que esto la corrida ya gastó sus subrequests: se deja la geocodificación para la próxima. */
-export const MAX_PRIOR_WRITES = 20;
+export const MAX_PRIOR_WRITES = 10;
 /** Política de Nominatim: 1 pedido por segundo. */
 const NOMINATIM_GAP_MS = 1100;
 const NEW_ORDERS_WINDOW_HOURS = 72;
@@ -81,8 +81,9 @@ export async function geocodeNewOrders(env: DbEnv, priorWrites: number, deps: Ge
         break;
       }
     }
-  } catch {
+  } catch (error: unknown) {
     // Ubicar pedidos es accesorio: la sincronización de ventas ya terminó y no debe verse afectada.
+    console.error("[geocode] paso omitido", error instanceof Error ? error.message : "error");
     summary.errors += 1;
   }
   return summary;

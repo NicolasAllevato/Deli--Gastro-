@@ -15,6 +15,7 @@ const EXTRA_SEGMENT = /\b(piso|pb|depto|dpto|departamento|timbre|torre|lote|manz
 const ONLY_UNIT = /^(\d{1,2}\s*[a-z]?|[a-z])$/i;
 const INLINE_EXTRA = /\s+(piso|pb|depto|dpto|departamento|timbre|torre)\b.*$/i;
 const HOUSE_NUMBER = /\b(\d{1,5})\b/;
+const HOUSE_NUMBERS = /\b\d{1,5}\b/g;
 
 /** Calle y número (más la localidad si viene), sin piso ni depto, que hacen fallar la búsqueda. `null` si no hay altura. */
 export function prepareGeocodeQuery(address: string | null | undefined): string | null {
@@ -33,8 +34,11 @@ export function chooseGeocodeMatch(query: string, results: readonly GeocodeResul
   if (!first) return null;
   if (close.some((r) => haversineKm(r, first) > GEOCODE_MAX_SPREAD_KM)) return null;
   // Sin la altura en el resultado, Nominatim devolvió la calle entera: el punto sería el medio de la calle.
-  const number = HOUSE_NUMBER.exec(query)?.[1];
-  return number && new RegExp(`\\b${number}\\b`).test(first.label) ? first : null;
+  // La altura es el último número de la calle: en «25 de Mayo 1234» es 1234, no 25.
+  const number = (query.split(",")[0] ?? "").match(HOUSE_NUMBERS)?.at(-1);
+  // Nominatim la devuelve como segmento propio al principio («1841, Piedras, …»); un número dentro del nombre no cuenta.
+  const segments = first.label.split(",").slice(0, 2).map((s) => s.trim());
+  return number && segments.includes(number) ? first : null;
 }
 
 export type GeocodeOutcome =

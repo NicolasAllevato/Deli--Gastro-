@@ -31,6 +31,10 @@ describe("chooseGeocodeMatch", () => {
   });
   it("descarta la calle sin altura", () => {
     assert.equal(chooseGeocodeMatch("Thames 856", [hit("Thames, Palermo")], near), null);
+    // El número del nombre de la calle no es la altura.
+    assert.equal(chooseGeocodeMatch("25 de Mayo 1234", [hit("25 de Mayo, San Nicolás")], near), null);
+    assert.equal(chooseGeocodeMatch("Calle 12 345", [hit("Calle 12, La Plata 12")], near), null);
+    assert.ok(chooseGeocodeMatch("25 de Mayo 1234, CABA", [hit("1234, 25 de Mayo, San Nicolás")], near));
   });
 });
 
@@ -73,9 +77,9 @@ describe("Worker: geocodeNewOrders", () => {
     let searches = 0;
     let sleeps = 0;
     const out = await geocodeNewOrders(env, 0, { search: async () => { searches += 1; return [hit("856, Thames")]; }, sleep: async () => { sleeps += 1; } });
-    assert.equal(out.located, 5);
-    assert.equal(searches, 5);
-    assert.equal(sleeps, 4);
+    assert.equal(out.located, MAX_GEOCODES_PER_RUN);
+    assert.equal(searches, MAX_GEOCODES_PER_RUN);
+    assert.equal(sleeps, MAX_GEOCODES_PER_RUN - 1);
     assert.ok(calls[0]!.includes(`limit=${MAX_GEOCODES_PER_RUN}`));
     assert.ok(calls.length <= 2 + MAX_GEOCODES_PER_RUN);
   });
@@ -98,7 +102,7 @@ describe("Worker: geocodeNewOrders", () => {
     const calls = mockDb(5);
     await geocodeNewOrders(env, 21, { search: async () => [], sleep: noSleep });
     assert.equal(calls.length, 0);
-    assert.equal(geocodeQuota(20), MAX_GEOCODES_PER_RUN);
+    assert.equal(geocodeQuota(10), MAX_GEOCODES_PER_RUN);
   });
 });
 

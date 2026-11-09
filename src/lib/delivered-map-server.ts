@@ -43,15 +43,23 @@ function normalizeRow(r: Partial<DeliveredRow> & Pick<DeliveredRow, "id" | "stat
   };
 }
 
-/** Filas candidatas por fecha de creación: un día antes del rango, porque la entrega puede caer después de la medianoche. */
+/**
+ * Filas candidatas por fecha de creación: un día antes del rango, porque la entrega puede caer después de la medianoche.
+ * Se pide por separado delivery de Fudo y pedidos sin tipo (web, WhatsApp): el take away es la mayoría de las ventas
+ * y filtrarlo en la base evita traer miles de filas que el Worker después descarta.
+ */
 async function readRows(db: Db, filters: DeliveredFilters): Promise<{ rows: DeliveredRow[]; truncated: boolean }> {
+  const [delivery, untyped] = await Promise.all([readScope(db, filters, "delivery"), readScope(db, filters, "untyped")]);
+  return { rows: [...delivery.rows, ...untyped.rows], truncated: delivery.truncated || untyped.truncated };
+}
+
+async function readScope(db: Db, filters: DeliveredFilters, scope: "delivery" | "untyped"): Promise<{ rows: DeliveredRow[]; truncated: boolean }> {
   const since = new Date(new Date(filters.from).getTime() - DAY_MS).toISOString();
   const rows: DeliveredRow[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const { data, error } = await db
-      .from("orders")
-      .select(COLUMNS)
-      .eq("status", "Finalizados")
+    const base = db.from("orders").select(COLUMNS).eq("status", "Finalizados");
+    const typed = scope === "delivery" ? base.eq("fudo_sale_type", "DELIVERY") : base.is("fudo_sale_type", null);
+    const { data, error } = await typed
       .gte("created_at", since)
       .lt("created_at", filters.to)
       .order("created_at", { ascending: false })
