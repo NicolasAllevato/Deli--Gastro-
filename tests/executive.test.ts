@@ -180,7 +180,7 @@ describe("computeKpis", () => {
   it("un período vacío no divide por cero", () => {
     const k = computeKpis([], [], RANGE, S, zoneOf);
     assert.deepEqual(k, {
-      orders: 0, delivered: 0, revenue: 0, onTime: null, prepMinutes: null, prepOnTarget: null, totalMinutes: null,
+      orders: 0, delivered: 0, revenue: 0, onTime: null, prepMinutes: null, prepOnTarget: null, takeawayMinutes: null, totalMinutes: null,
       csat: null, complaints: null, avgTicket: null,
     });
   });
@@ -194,8 +194,10 @@ describe("computeKpis", () => {
       [fudo("t1", "TAKEAWAY", 10), fudo("t2", "TAKEAWAY", 30), fudo("d1", "DELIVERY", 50), fudo("viejo", "TAKEAWAY", 26_000)],
       [], RANGE, S, zoneOf, LATER,
     );
-    assert.equal(k.prepMinutes, 20); // solo take away: en delivery el cierre incluye el viaje
-    assert.equal(k.prepOnTarget, 50); // meta de 18 min
+    // El take away va aparte y en delivery el cierre incluye el viaje: no entran en preparación.
+    assert.equal(k.prepMinutes, null);
+    assert.equal(k.prepOnTarget, null);
+    assert.equal(k.takeawayMinutes, 20);
     // El cierre de Fudo no es la entrega: no entra en puntualidad ni en el tiempo total.
     assert.equal(k.totalMinutes, null);
     assert.equal(k.onTime, null);
@@ -456,6 +458,32 @@ describe("mock JSON", () => {
     assert.deepEqual(Object.keys(mock.insights[0]).sort(), ["action", "severity", "text"]);
     assert.equal(mock.series.length, 7);
     assert.deepEqual(mock.zones.map((z) => z.zoneId), ["Z1", "Z2", "Z3", "Z4", "Z5", "Z6"]);
+  });
+});
+
+describe("preparación separada de take away e integraciones", () => {
+  const conListo = (id: string, minutes: number, over: Partial<ReportOrder>) => {
+    const base = { ...order(id, { deliverMin: null, prepMin: null }), ...over };
+    return { ...base, ready_at: new Date(Date.parse(base.created_at) + minutes * 60_000).toISOString() };
+  };
+
+  it("PedidosYa y Rappi no cuentan aunque tengan hora de listo", () => {
+    const k = computeKpis(
+      [
+        conListo("local", 20, { channel: "fudo", fudo_source: "local", fudo_sale_type: "DELIVERY" }),
+        conListo("peya", 90, { channel: "fudo", fudo_source: "pedidosya", fudo_sale_type: "DELIVERY" }),
+        conListo("rappi", 90, { channel: "fudo", fudo_source: "rappi", fudo_sale_type: "DELIVERY" }),
+      ],
+      [], RANGE, S, zoneOf, LATER,
+    );
+    assert.equal(k.prepMinutes, 20);
+    assert.equal(k.takeawayMinutes, null);
+  });
+
+  it("un take away con hora de listo suma solo a su propia medición", () => {
+    const k = computeKpis([conListo("t", 12, { channel: "fudo", fudo_source: "local", fudo_sale_type: "TAKEAWAY" })], [], RANGE, S, zoneOf, LATER);
+    assert.equal(k.prepMinutes, null);
+    assert.equal(k.takeawayMinutes, 12);
   });
 });
 

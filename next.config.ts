@@ -97,10 +97,9 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        // Raíz del dominio (la-gambeta.com): es el sitio web que figura en Meta. Mientras no haya una
-        // página propia, manda al dominio de la app. Temporal: la raíz puede tener su propio sitio después.
+        // La app tiene una sola dirección canónica. La raíz y www.la-gambeta.com son del sitio web, otro proyecto.
         source: "/:path((?!api(?:/|$)).*)",
-        has: [{ type: "host", value: "la-gambeta.com" }],
+        has: [{ type: "host", value: "www.opsyndely.la-gambeta.com" }],
         destination: `${NEW_APP_ORIGIN}/:path`,
         permanent: false,
       },

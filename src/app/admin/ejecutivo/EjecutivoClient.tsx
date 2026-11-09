@@ -22,7 +22,9 @@ import { useExecutiveData } from "./useExecutiveData";
 /** Los KPI de tiempos siempre muestran minutos y porcentaje juntos. */
 function kpiDetail(key: KpiKey, kpis: Kpis): string | undefined {
   if (key === "onTime") return `Tiempo total: ${formatKpi("prepMinutes", kpis.totalMinutes)}`;
-  if (key === "prepMinutes") return `Dentro de meta: ${formatKpi("onTime", kpis.prepOnTarget)}`;
+  if (key === "prepMinutes") {
+    return `Dentro de meta: ${formatKpi("onTime", kpis.prepOnTarget)} · Take away (aparte): ${formatKpi("prepMinutes", kpis.takeawayMinutes)}`;
+  }
   return undefined;
 }
 

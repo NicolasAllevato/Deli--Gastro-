@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 // Usa el path-to-regexp que Next trae compilado, el mismo que evalúa los redirects.
@@ -60,26 +61,30 @@ describe("redirect de dely.opsyn.app (corte a Cloudflare)", () => {
   });
 });
 
-describe("redirect de la raíz la-gambeta.com", () => {
-  const rulesHost = byHost("la-gambeta.com");
+describe("dominios de la app", () => {
+  const rulesHost = byHost("www.opsyndely.la-gambeta.com");
   const [pages] = rulesHost;
   const matches = matcher(pages?.source ?? "");
+  const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const hosts = [...wrangler.matchAll(/"pattern":\s*"([^"]+)"/g)].map((m) => m[1]);
 
-  it("una sola regla, temporal, hacia el dominio de la app", () => {
+  it("el Worker solo atiende los dos dominios de la app", () => {
+    assert.deepEqual(hosts.sort(), ["opsyndely.la-gambeta.com", "www.opsyndely.la-gambeta.com"]);
+  });
+
+  it("www.opsyndely manda las páginas al dominio canónico", () => {
     assert.equal(rulesHost.length, 1);
     assert.equal(pages.destination, `${NEW}/:path`);
     assert.equal(pages.permanent, false);
-  });
-
-  it("redirige la portada y las páginas", () => {
-    for (const p of ["/", "/terminos", "/privacidad"]) assert.ok(matches(p), p);
+    for (const p of ["/", "/login", "/admin/tablero"]) assert.ok(matches(p), p);
   });
 
   it("no toca /api", () => {
     for (const p of ["/api", "/api/cron/surveys"]) assert.ok(!matches(p), p);
   });
 
-  it("el dominio de la app no se redirige a sí mismo", () => {
-    assert.equal(byHost("opsyndely.la-gambeta.com").length, 0);
+  it("no hay reglas sobre el sitio web ni sobre el dominio canónico", () => {
+    for (const host of ["la-gambeta.com", "www.la-gambeta.com", "opsyndely.la-gambeta.com"])
+      assert.equal(byHost(host).length, 0, host);
   });
 });
