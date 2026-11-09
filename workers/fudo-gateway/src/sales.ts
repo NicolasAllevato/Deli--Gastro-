@@ -414,7 +414,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       // Pedidos importados antes de la migración 024: se completan canal, nombre y medio de pago una vez.
       if (existing.fudo_source === null && input.paymentNamesBySale) plan.enrich.push({ id: existing.id, ...saleMeta(sale, input) });
       const paymentLines = input.paymentLinesBySale?.get(sale.id);
-      if (existing.fudo_payments === null && paymentLines) plan.paymentFills.push({ id: existing.id, fudo_payments: paymentLines });
+      if (existing.fudo_payments === null && paymentLines?.length) plan.paymentFills.push({ id: existing.id, fudo_payments: paymentLines });
       continue;
     }
 
@@ -437,7 +437,8 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       fudo_sale_state: sale.saleState,
       client_id: clientId,
       ...saleMeta(sale, input),
-      fudo_payments: input.paymentLinesBySale?.get(sale.id) ?? null,
+      // Sin pagos todavía (venta abierta) queda null, para completarlo cuando se cobre.
+      fudo_payments: input.paymentLinesBySale?.get(sale.id)?.length ? input.paymentLinesBySale.get(sale.id) ?? null : null,
       lines,
     });
   }

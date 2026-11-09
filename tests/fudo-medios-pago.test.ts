@@ -105,3 +105,17 @@ describe("detalle de pagos por medio", async () => {
     assert.equal(usage.find((u) => u.name === "Mercadopago")?.orders, 0);
   });
 });
+
+describe("detalle de pagos de una venta abierta", async () => {
+  const { planSalesImport, parseFudoSales } = await import("../workers/fudo-gateway/src/sales.ts");
+  const sales = parseFudoSales({ data: [{ type: "Sale", id: "500", attributes: { createdAt: "2026-11-04T00:13:30Z", closedAt: null, total: 100, saleType: "TAKEAWAY", saleState: "IN-COURSE" }, relationships: { items: { data: [] }, payments: { data: [] } } }] });
+  const base = { sales, itemsBySale: new Map(), productsByFudoId: new Map(), clientsByFudoId: new Map(), clientsByPhone: new Map() };
+  it("se inserta sin detalle y se completa cuando llega el cobro", () => {
+    const inserted = planSalesImport({ ...base, existing: [], paymentLinesBySale: new Map([[500, []]]) });
+    assert.equal(inserted.inserts[0].fudo_payments, null);
+    const existing = [{ id: "o1", fudo_order_id: 500, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE", client_id: "c", fudo_source: "local", fudo_payments: null }];
+    assert.equal(planSalesImport({ ...base, existing, paymentLinesBySale: new Map([[500, []]]) }).paymentFills.length, 0);
+    const lines = [{ name: "Efectivo", amount: 100 }];
+    assert.deepEqual(planSalesImport({ ...base, existing, paymentLinesBySale: new Map([[500, lines]]) }).paymentFills, [{ id: "o1", fudo_payments: lines }]);
+  });
+});
