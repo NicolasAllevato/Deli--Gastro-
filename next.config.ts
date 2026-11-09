@@ -4,6 +4,7 @@ const isDev = process.env.NODE_ENV === "development";
 
 /** Dominio de la app desde el corte a Cloudflare. */
 const NEW_APP_ORIGIN = "https://opsyndely.la-gambeta.com";
+const WEBSITE_ORIGIN = "https://www.la-gambeta.com";
 
 // Host público del bucket R2 (imágenes de productos). Se habilita en
 // next/image y en la CSP sólo si la variable está definida.
@@ -97,11 +98,11 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        // Raíz del dominio (la-gambeta.com): es el sitio web que figura en Meta. Mientras no haya una
-        // página propia, manda al dominio de la app. Temporal: la raíz puede tener su propio sitio después.
+        // La raíz del dominio es del sitio web de la pizzería (otro proyecto), publicado en www. La app solo
+        // conserva este vínculo mientras el dominio siga asociado a su Worker: nunca debe mandar la raíz a la app.
         source: "/:path((?!api(?:/|$)).*)",
         has: [{ type: "host", value: "la-gambeta.com" }],
-        destination: `${NEW_APP_ORIGIN}/:path`,
+        destination: `${WEBSITE_ORIGIN}/:path`,
         permanent: false,
       },
     ];

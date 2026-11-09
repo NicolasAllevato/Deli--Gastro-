@@ -65,14 +65,15 @@ describe("redirect de la raíz la-gambeta.com", () => {
   const [pages] = rulesHost;
   const matches = matcher(pages?.source ?? "");
 
-  it("una sola regla, temporal, hacia el dominio de la app", () => {
+  it("una sola regla, temporal, hacia el sitio web y nunca hacia la app", () => {
     assert.equal(rulesHost.length, 1);
-    assert.equal(pages.destination, `${NEW}/:path`);
+    assert.equal(pages.destination, "https://www.la-gambeta.com/:path");
+    assert.ok(!pages.destination.startsWith(NEW));
     assert.equal(pages.permanent, false);
   });
 
-  it("redirige la portada y las páginas", () => {
-    for (const p of ["/", "/terminos", "/privacidad"]) assert.ok(matches(p), p);
+  it("redirige la portada y las páginas al sitio", () => {
+    for (const p of ["/", "/menu"]) assert.ok(matches(p), p);
   });
 
   it("no toca /api", () => {
