@@ -1,6 +1,6 @@
 import { inBounds, localDateKey, type Bounds, type RangeKey } from "./range.ts";
 import type { ReportOrder } from "./analytics.ts";
-import { completedAt, durationStats, finishedStats, minutesBetween, preparedAt } from "./completion.ts";
+import { completedAt, durationStats, finishedStats, MAX_PLAUSIBLE_MINUTES, minutesBetween, preparedAt } from "./completion.ts";
 
 /** Columnas de un pedido que realmente lee el tablero ejecutivo. */
 export type ExecutiveOrder = Pick<
@@ -89,6 +89,23 @@ export interface ChannelRow {
   revenue: number;
   avgTicket: number | null;
   share: number;
+}
+
+/**
+ * Tiempo de creación a cierre de un canal. En los pedidos de Fudo el cierre es el de caja, no la entrega real:
+ * `source` lo distingue para que el tablero no lo presente como otra cosa.
+ */
+export interface ClosingTimeRow {
+  channel: string;
+  source: "cierre" | "entrega";
+  /** Mediana en minutos; null si no hay pedidos medibles. */
+  medianMinutes: number | null;
+  measured: number;
+  /** Cerrados después de MAX_PLAUSIBLE_MINUTES: suelen ser cierres de caja tardíos. */
+  excluded: number;
+  withoutTime: number;
+  /** Take away y mostrador: se cargan al cobrar, así que su tiempo no dice nada. */
+  notMeasurable: number;
 }
 
 export type Severity = "critical" | "warning" | "info";
@@ -271,6 +288,40 @@ export function byZone(
     .sort((a, b) => b.orders - a.orders || a.zoneId.localeCompare(b.zoneId));
 }
 
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return round(sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2, 1);
+}
+
+const isPickup = (o: ExecutiveOrder): boolean => o.fudo_sale_type === "TAKEAWAY" || o.channel === "mostrador";
+
+/** Mediana de creación a cierre por canal. Primero los canales medibles, los de más pedidos arriba. */
+export function closingTimesByChannel(orders: readonly ExecutiveOrder[], bounds: Bounds): ClosingTimeRow[] {
+  const groups = new Map<string, { row: ClosingTimeRow; minutes: number[] }>();
+  for (const o of orders) {
+    if (o.status !== "Finalizados" || !inBounds(o.created_at, bounds)) continue;
+    const key = channelOf(o);
+    const group = groups.get(key) ?? {
+      row: { channel: key, source: o.channel === "fudo" ? "cierre" : "entrega", medianMinutes: null, measured: 0, excluded: 0, withoutTime: 0, notMeasurable: 0 },
+      minutes: [],
+    };
+    groups.set(key, group);
+    if (isPickup(o)) {
+      group.row.notMeasurable += 1;
+      continue;
+    }
+    const minutes = minutesBetween(o.created_at, o.delivered_at);
+    if (minutes === null) group.row.withoutTime += 1;
+    else if (minutes > MAX_PLAUSIBLE_MINUTES) group.row.excluded += 1;
+    else group.minutes.push(minutes);
+  }
+  return [...groups.values()]
+    .map(({ row, minutes }) => ({ ...row, medianMinutes: median(minutes), measured: minutes.length }))
+    .sort((a, b) => b.measured - a.measured || a.notMeasurable - b.notMeasurable || a.channel.localeCompare(b.channel));
+}
+
 /** Canal de un pedido: los de Fudo se abren por su origen (PedidosYa, Rappi, Morfy o local). */
 const SALE_TYPE_KEY: Readonly<Record<string, string>> = { DELIVERY: "delivery", TAKEAWAY: "takeaway", "EAT-IN": "salon" };
 
@@ -414,6 +465,7 @@ export interface ExecutiveSnapshot {
   zones: ZoneRow[];
   zoneOptions: Array<{ id: string; label: string }>;
   channels: ChannelRow[];
+  closingTimes: ClosingTimeRow[];
   complaints: ComplaintRow[];
   insights: Insight[];
   /** true si los datos se cortaron al llegar al tope de lectura (el tablero puede estar incompleto). */
@@ -470,6 +522,7 @@ export function buildExecutiveSnapshot(input: SnapshotInput): ExecutiveSnapshot 
     zones,
     zoneOptions: zoneOptions(input, zones),
     channels: byChannel(scoped.orders, bounds),
+    closingTimes: closingTimesByChannel(scoped.orders, bounds),
     complaints: complaintRows(scoped.reviews, bounds),
     insights: buildInsights({ kpis: { current, previous }, zones }, settings),
     truncated: input.truncated === true,
