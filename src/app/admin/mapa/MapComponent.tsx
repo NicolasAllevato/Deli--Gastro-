@@ -10,7 +10,7 @@ import { ZoneLayers } from "@/components/zones/ZoneLayers";
 import type { DeliveryZone, GeoPoint } from "@/lib/zones";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { CourierLocation } from "@/lib/courier-location";
-import { deliveryTimes, distanceMeters } from "@/lib/delivery-metrics";
+import { deliveredPoint, deliveryTimes, distanceMeters } from "@/lib/delivery-metrics";
 
 // Marcadores como divIcon: no dependen de imágenes externas (la CSP del proyecto
 // sólo permite imágenes propias y tiles de OpenStreetMap).
@@ -110,10 +110,12 @@ export default function MapComponent({ orders, zones = [], local = RESTAURANT_LO
         })}
 
         {delivered.map((order) => {
-          const point: [number, number] = [order.delivered_lat!, order.delivered_lng!];
+          const where = deliveredPoint(order);
+          if (!where) return null;
+          const point: [number, number] = [where.lat, where.lng];
           const times = deliveryTimes(order);
           const offBy =
-            order.delivery_lat !== null && order.delivery_lng !== null
+            order.delivered_lat !== null && order.delivery_lat !== null && order.delivery_lng !== null
               ? distanceMeters({ lat: point[0], lng: point[1] }, { lat: order.delivery_lat, lng: order.delivery_lng })
               : null;
           return (

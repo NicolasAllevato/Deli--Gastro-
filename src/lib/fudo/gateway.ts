@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { demoFudoProductsPayload } from "@/lib/demo/fudo-fixture";
+import { demoFudoPaymentMethodsPayload, demoFudoProductsPayload } from "@/lib/demo/fudo-fixture";
 import { isDemoMode } from "@/lib/demo/mode";
 import { runDemoCatalogSync } from "@/lib/fudo/demo-sync";
 import { parseFudoCatalog, type FudoCatalogItem } from "@/lib/fudo/mapping";
@@ -56,20 +56,19 @@ export async function requestFudoSync(orderId: string, config = fudoGatewayConfi
 const CATALOG_MAX_BYTES = 1_000_000;
 
 /**
- * Catálogo de productos de Fudo vía el Worker (la app firma el path). Sirve para sugerir ids en la
- * pantalla de mapeo; nunca tira: devuelve [] si la integración está apagada o el Worker no responde.
+ * Lista de Fudo vía el Worker (la app firma el path) para la pantalla de mapeo.
+ * Nunca tira: devuelve [] si la integración está apagada o el Worker no responde.
  */
-export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<FudoCatalogItem[]> {
-  if (isDemoMode()) return parseFudoCatalog(demoFudoProductsPayload());
+async function fetchGatewayList(path: "/products" | "/payment-methods", config: FudoGatewayConfig | null): Promise<FudoCatalogItem[]> {
   if (!config) return [];
   try {
-    const res = await fetch(`${config.url}/products`, {
-      headers: { [GATEWAY_SIGNATURE_HEADER]: signGatewayBody("/products", config.secret) },
+    const res = await fetch(`${config.url}${path}`, {
+      headers: { [GATEWAY_SIGNATURE_HEADER]: signGatewayBody(path, config.secret) },
       cache: "no-store",
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) {
-      console.warn(`[fudo] el Worker respondió ${res.status} al pedir el catálogo`);
+      console.warn(`[fudo] el Worker respondió ${res.status} al pedir ${path}`);
       return [];
     }
     const declared = Number(res.headers.get("content-length") ?? 0);
@@ -83,6 +82,18 @@ export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<Fu
     console.warn("[fudo] no se pudo leer el catálogo del Worker");
     return [];
   }
+}
+
+/** Catálogo de productos de Fudo. */
+export async function fetchFudoCatalog(config = fudoGatewayConfig()): Promise<FudoCatalogItem[]> {
+  if (isDemoMode()) return parseFudoCatalog(demoFudoProductsPayload());
+  return fetchGatewayList("/products", config);
+}
+
+/** Medios de pago de Fudo (id, nombre y si están activos). */
+export async function fetchFudoPaymentMethods(config = fudoGatewayConfig()): Promise<FudoCatalogItem[]> {
+  if (isDemoMode()) return parseFudoCatalog(demoFudoPaymentMethodsPayload());
+  return fetchGatewayList("/payment-methods", config);
 }
 
 export interface CatalogSyncSummary {

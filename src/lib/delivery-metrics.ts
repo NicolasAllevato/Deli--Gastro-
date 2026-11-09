@@ -43,3 +43,15 @@ export function isSameLocalDay(iso: string | null, now: Date = new Date()): bool
   if (!iso) return false;
   return new Date(iso).toDateString() === now.toDateString();
 }
+
+/** Dónde marcar una entrega: el punto real del repartidor o, sin él, la dirección del pedido. No depende de tener repartidor. */
+export function deliveredPoint(order: {
+  delivered_lat: number | null;
+  delivered_lng: number | null;
+  delivery_lat: number | null;
+  delivery_lng: number | null;
+}): { lat: number; lng: number } | null {
+  if (order.delivered_lat !== null && order.delivered_lng !== null) return { lat: order.delivered_lat, lng: order.delivered_lng };
+  if (order.delivery_lat !== null && order.delivery_lng !== null) return { lat: order.delivery_lat, lng: order.delivery_lng };
+  return null;
+}

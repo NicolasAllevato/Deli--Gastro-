@@ -1,7 +1,7 @@
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
 import { listPublicResource, type FudoEnv } from "./fudo";
-import { parseFudoItem, parseFudoSales, parsePaymentMethods, paymentMethodIds, phoneKey, planSalesImport, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
+import { parseFudoItem, parseFudoSales, parsePaymentMethods, parsePaymentRows, paymentMethodIds, phoneKey, planSalesImport, salePaymentLines, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
 
 /**
  * Importa ventas (delivery y take away) y clientes de Fudo a la app. Usa los planes puros de `sales.ts` y
@@ -28,6 +28,8 @@ export interface CustomersSyncSummary {
 export const DEFAULT_SALES_WINDOW_HOURS = 48;
 /** Tope de actualizaciones de clientes por corrida: cada una es un PATCH (límite de subrequests del Worker). */
 const MAX_CLIENT_UPDATES_PER_RUN = 300;
+/** Tope de pedidos viejos a los que se les completa el detalle de pagos por corrida: cada uno es un PATCH. */
+const MAX_PAYMENT_FILLS_PER_RUN = 10;
 const ID_BATCH = 100;
 const IMPORTED_SALE_TYPES = ["DELIVERY", "TAKEAWAY"] as const;
 
@@ -59,6 +61,7 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
     const sales = [];
     const itemsById = new Map<number, FudoItem>();
     const methodByPayment = new Map<number, number>();
+    const paymentRows = new Map<number, ReturnType<typeof parsePaymentRows> extends Map<number, infer R> ? R : never>();
     for (const type of IMPORTED_SALE_TYPES) {
       const page = await listPublicResource(env, "sales", `${range}&filter[saleType]=eq.${type}&include=items,payments`);
       sales.push(...parseFudoSales(page));
@@ -68,12 +71,13 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
         if (item) itemsById.set(item.id, item);
       }
       for (const [payment, method] of paymentMethodIds(page.included)) methodByPayment.set(payment, method);
+      for (const [payment, row] of parsePaymentRows(page.included)) paymentRows.set(payment, row);
     }
     if (sales.length === 0) return { salesSeen: 0, ordersCreated: 0, ordersUpdated: 0, dryRun };
 
     const existing: ExistingOrder[] = [];
     for (const ids of chunk(sales.map((s) => s.id), ID_BATCH)) {
-      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source`)));
+      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source,fudo_payments`)));
     }
     const known = new Set(existing.map((o) => o.fudo_order_id));
 
@@ -87,12 +91,14 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       sales.map((s) => [s.id, s.paymentIds.map((p) => methodNames.get(methodByPayment.get(p) ?? -1)).filter((n): n is string => Boolean(n))]),
     );
 
+    const paymentLinesBySale = new Map(sales.map((s) => [s.id, salePaymentLines(s.paymentIds, paymentRows, methodNames)]));
+
     const [productMap, clients] = await Promise.all([
       rest<Array<{ fudo_product_id: number; product_id: string; products: { name: string } | null }>>(
         env,
         "fudo_product_map?select=fudo_product_id,product_id,products(name)",
       ),
-      rest<Array<{ id: string; phone: string | null; fudo_customer_id: number | null }>>(env, "clients?select=id,phone,fudo_customer_id"),
+      rest<Array<{ id: string; phone: string | null; address: string | null; fudo_customer_id: number | null }>>(env, "clients?select=id,phone,address,fudo_customer_id"),
     ]);
     const clientsByPhone = new Map<string, string>();
     for (const c of clients) {
@@ -108,6 +114,8 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       clientsByFudoId: new Map(clients.filter((c) => c.fudo_customer_id !== null).map((c) => [c.fudo_customer_id as number, c.id])),
       clientsByPhone,
       paymentNamesBySale,
+      paymentLinesBySale,
+      clientAddressById: new Map(clients.filter((c) => c.address).map((c) => [c.id, c.address as string])),
     });
 
     if (!dryRun) {
@@ -160,6 +168,13 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
             body: JSON.stringify(body),
           });
         }
+      }
+      for (const { id, fudo_payments } of plan.paymentFills.slice(0, MAX_PAYMENT_FILLS_PER_RUN)) {
+        await rest(env, `orders?id=eq.${id}&channel=eq.fudo&fudo_payments=is.null`, {
+          method: "PATCH",
+          headers: { prefer: "return=minimal" },
+          body: JSON.stringify({ fudo_payments }),
+        });
       }
       const relinked = plan.relinks.reduce((n, r) => n + r.orderIds.length, 0);
       if (plan.inserts.length || plan.updates.length || relinked) await logRun(env, "sales", plan.inserts.length, plan.updates.length + relinked, null);
