@@ -19,10 +19,12 @@ export interface CourierGateInput {
  * Nombre del repartidor que tiene que estar habilitado hoy para que el cambio proceda, o `null`
  * si no hace falta comprobar a nadie.
  * - Repartidor: tomar un pedido nuevo lo exige de sí mismo; entregar lo que ya lleva, no.
- * - Admin: asignar a otro lo exige del nombre pedido; desasignar no.
+ * - Admin: asignar a otro lo exige del nombre pedido; desasignar, o dejar el que ya tiene, no.
  */
 export function courierToVerify(input: CourierGateInput): string | null {
   if (input.requested === undefined) return null;
   if (input.role === "repartidor") return input.ownName;
+  // Desasignar, o reenviar el mismo nombre que ya tiene el pedido, no entrega nada nuevo.
+  if (input.requested === null || input.requested === input.current) return null;
   return input.requested;
 }
