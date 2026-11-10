@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Bike, Check, Loader2, X } from "lucide-react";
 import type { CourierShift } from "@/lib/courier-shifts";
+import { freshPendingNotice } from "@/lib/courier-shift-notice";
 import { TOPIC_COURIER_SHIFTS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
@@ -21,11 +22,19 @@ function useCourierShifts() {
   const [shifts, setShifts] = useState<CourierShift[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Texto para el lector de pantalla: cambia solo cuando aparece una solicitud que no se había anunciado.
+  const [announcement, setAnnouncement] = useState("");
+  const announcedIds = useRef<ReadonlySet<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/courier-shifts", { cache: "no-store" });
-      if (res.ok) setShifts((await res.json()) as CourierShift[]);
+      if (!res.ok) return;
+      const next = (await res.json()) as CourierShift[];
+      setShifts(next);
+      const { notice, seen } = freshPendingNotice(next, announcedIds.current);
+      announcedIds.current = seen;
+      if (notice) setAnnouncement(notice);
     } catch {
       /* sin red: se reintenta con el próximo aviso */
     }
@@ -54,7 +63,7 @@ function useCourierShifts() {
     }
   };
 
-  return { shifts, busyId, error, decide };
+  return { shifts, busyId, error, announcement, decide };
 }
 
 interface ActionsProps {
@@ -64,7 +73,14 @@ interface ActionsProps {
 }
 
 function ShiftActions({ shift, busy, onDecide }: ActionsProps) {
-  if (busy) return <Loader2 size={16} className="animate-spin text-gray-400" aria-label="Guardando" />;
+  if (busy) {
+    return (
+      <>
+        <Loader2 size={16} className="animate-spin text-gray-400" aria-hidden />
+        <span className="sr-only">Guardando</span>
+      </>
+    );
+  }
   return (
     <div className="flex gap-2 shrink-0">
       {shift.status !== "approved" && (
@@ -91,25 +107,30 @@ function ShiftActions({ shift, busy, onDecide }: ActionsProps) {
 
 /** Aviso del panel: los repartidores que abrieron su sesión y esperan que el local los habilite hoy. */
 export function CourierShiftAlerts() {
-  const { shifts, busyId, error, decide } = useCourierShifts();
+  const { shifts, busyId, error, announcement, decide } = useCourierShifts();
   const pending = shifts.filter((s) => s.status === "pending");
-  if (pending.length === 0) return null;
 
   return (
-    <section role="alert" aria-label="Repartidores esperando habilitación" className="mx-3 mb-2 space-y-2">
-      {pending.map((shift) => (
-        <div key={shift.id} className="neumorphic rounded-2xl px-4 py-3 flex items-center justify-between gap-3 border border-brand-orange/40">
-          <p className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
-            <Bike size={16} className="text-brand-orange shrink-0" aria-hidden />
-            <span className="truncate">
-              <strong>{shift.courierName}</strong> abrió su sesión a las {time(shift.requestedAt)}. ¿Lo habilitás hoy?
-            </span>
-          </p>
-          <ShiftActions shift={shift} busy={busyId === shift.id} onDecide={decide} />
-        </div>
-      ))}
-      {error && <p className="text-xs font-bold text-red-600 px-2">{error}</p>}
-    </section>
+    <>
+      {/* Siempre montada: el lector de pantalla anuncia solo cuando cambia su texto, es decir, ante una solicitud nueva. */}
+      <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
+      {pending.length > 0 && (
+        <section aria-label="Repartidores esperando habilitación" className="mx-3 mb-2 space-y-2">
+          {pending.map((shift) => (
+            <div key={shift.id} className="neumorphic rounded-2xl px-4 py-3 flex items-center justify-between gap-3 border border-brand-orange/40">
+              <p className="flex items-center gap-2 text-sm text-gray-700 min-w-0">
+                <Bike size={16} className="text-brand-orange shrink-0" aria-hidden />
+                <span className="truncate">
+                  <strong>{shift.courierName}</strong> abrió su sesión a las {time(shift.requestedAt)}. ¿Lo habilitás hoy?
+                </span>
+              </p>
+              <ShiftActions shift={shift} busy={busyId === shift.id} onDecide={decide} />
+            </div>
+          ))}
+          {error && <p role="alert" className="text-xs font-bold text-red-600 px-2">{error}</p>}
+        </section>
+      )}
+    </>
   );
 }
 
