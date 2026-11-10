@@ -11,6 +11,7 @@ import { SectionTabs } from "@/components/ui/SectionTabs";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Copyright } from "@/components/Copyright";
 import { NAV_SECTIONS, findSection, isTabActive } from "./_nav";
+import { CourierShiftAlerts } from "./_components/CourierShifts";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -147,6 +148,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <SignOutButton />
           </div>
         </header>
+
+        <CourierShiftAlerts />
 
         {/* Content */}
         <div className="flex-1 min-h-0 px-3 pb-8">

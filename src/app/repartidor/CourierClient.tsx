@@ -1,18 +1,44 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Bike, CheckCircle2, CreditCard, Download, MapPin, MapPinOff, Navigation, Phone, PackageCheck, Smartphone } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Ban, Bike, CheckCircle2, Clock, CreditCard, Download, MapPin, MapPinOff, Navigation, Phone, PackageCheck, Smartphone } from "lucide-react";
+import type { ShiftStatus } from "@/lib/courier-shift-day";
 import { COURIER_APK_URL, COURIER_APK_VERSION } from "@/lib/courier-app";
 import { openNativeSettings } from "@/lib/native-location";
 import { useCourierTracking, type TrackingState } from "@/lib/useCourierTracking";
 import { formatMoney, formatOrderId, minutesSince, parseItems } from "@/lib/orders";
 import type { EnrichedOrder } from "@/lib/orders-server";
-import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
+import { TOPIC_ALL_ORDERS, TOPIC_COURIER_SHIFTS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
 interface Props {
   initialOrders: EnrichedOrder[];
   courierName: string;
+  /** Habilitación del día (migración 029). Sin "approved" no puede tomar pedidos. */
+  shift: ShiftStatus;
+}
+
+/** Mientras el local no lo habilita, el repartidor ve el estado y la pantalla se actualiza sola al responder. */
+function ShiftCard({ shift }: { shift: Exclude<ShiftStatus, "approved"> }) {
+  const pending = shift === "pending";
+  return (
+    <section
+      role="status"
+      aria-labelledby="shift-title"
+      className={`neumorphic rounded-2xl p-5 space-y-2 border ${pending ? "border-brand-orange/40" : "border-red-200"}`}
+    >
+      <h3 id="shift-title" className="flex items-center gap-2 font-black text-gray-800">
+        {pending ? <Clock size={18} className="text-brand-orange" aria-hidden /> : <Ban size={18} className="text-red-500" aria-hidden />}
+        {pending ? "Esperando que el local te habilite" : "El local no te habilitó hoy"}
+      </h3>
+      <p className="text-sm text-gray-600">
+        {pending
+          ? "Le llegó un aviso al local. Cuando te acepte vas a poder tomar pedidos; esta pantalla se actualiza sola."
+          : "Si es un error, pedile al local que te habilite desde su panel."}
+      </p>
+    </section>
+  );
 }
 
 const DEMO_POLL_MS = 5000;
@@ -92,7 +118,9 @@ function TrackingBadge({ state }: { state: Exclude<TrackingState, "off"> }) {
   );
 }
 
-export default function CourierClient({ initialOrders, courierName }: Props) {
+export default function CourierClient({ initialOrders, courierName, shift }: Props) {
+  const router = useRouter();
+  const approved = shift === "approved";
   const [orders, setOrders] = useState<EnrichedOrder[]>(initialOrders);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +135,9 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
   }, []);
 
   useLiveRefresh({ topic: TOPIC_ALL_ORDERS, refresh, demoPollMs: DEMO_POLL_MS });
+  // Cuando el local responde, la página del servidor vuelve a leer la habilitación.
+  const refreshShift = useCallback(() => router.refresh(), [router]);
+  useLiveRefresh({ topic: TOPIC_COURIER_SHIFTS, refresh: refreshShift, demoPollMs: DEMO_POLL_MS, enabled: !approved });
 
   const mine = orders.filter((o) => o.courier_name === courierName);
   const { state: tracking, native, deliveredPoint: lastPoint } = useCourierTracking(mine.length > 0);
@@ -188,7 +219,7 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
         )}
         {order.notes && <p className="text-xs text-gray-500 italic">&ldquo;{order.notes}&rdquo;</p>}
 
-        {isFree && (
+        {isFree && approved && (
           <button
             type="button"
             disabled={busy}
@@ -236,6 +267,7 @@ export default function CourierClient({ initialOrders, courierName }: Props) {
         {tracking !== "off" && <TrackingBadge state={tracking} />}
       </div>
 
+      {!approved && <ShiftCard shift={shift} />}
       {native === false && <DownloadAppCard />}
       {native === true && tracking === "denied" && <LocationDeniedCard />}
 

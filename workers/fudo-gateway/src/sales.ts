@@ -282,6 +282,8 @@ export interface SaleOrderInsert {
   fudo_source: FudoSource;
   fudo_payment: string | null;
   fudo_payments: FudoPaymentLine[] | null;
+  /** Solo si Fudo ya la marca "Enviado" y hay un único repartidor habilitado hoy. */
+  courier_name?: string;
   lines: OrderLineInsert[];
 }
 
@@ -308,6 +310,7 @@ export interface ExistingOrder {
   fudo_payments?: unknown;
   total?: number | string | null;
   picked_up_at?: string | null;
+  courier_name?: string | null;
 }
 
 /** Completa canal, nombre y medio de pago en pedidos importados antes de que existieran esas columnas. */
@@ -339,6 +342,8 @@ export interface SalesPlanInput {
   paymentLinesBySale?: ReadonlyMap<number, FudoPaymentLine[]>;
   /** Hora de esta corrida (ISO), para fechar los cambios de estado detectados. */
   now?: string;
+  /** Único repartidor habilitado hoy (migración 029): recibe solo los deliveries que Fudo marca "Enviado". */
+  soleCourier?: string | null;
 }
 
 export interface SalesPlan {
@@ -348,6 +353,8 @@ export interface SalesPlan {
   enrich: SaleOrderEnrich[];
   /** Pedidos ya importados a los que les falta el detalle de pagos. */
   paymentFills: Array<{ id: string; fudo_payments: FudoPaymentLine[] }>;
+  /** Deliveries recién "Enviado" sin repartidor: se asignan solo si siguen sin uno (PATCH condicional). */
+  autoAssign: Array<{ id: string; courier_name: string }>;
 }
 
 const NOTES_MAX = 300;
@@ -399,7 +406,7 @@ function stageStamps(sale: FudoSale, existing: ExistingOrder, status: BoardStatu
 
 export function planSalesImport(input: SalesPlanInput): SalesPlan {
   const now = input.now ?? new Date().toISOString();
-  const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [], paymentFills: [] };
+  const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [], paymentFills: [], autoAssign: [] };
   const byFudoId = new Map(input.existing.map((o) => [o.fudo_order_id, o]));
   const relinks = new Map<string, string[]>();
 
@@ -417,6 +424,8 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       if (status !== existing.status || sale.saleState !== existing.fudo_sale_state || totalChanged) {
         plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState, ...stageStamps(sale, existing, status, now), ...(totalChanged ? { total: sale.total } : {}) });
       }
+      const justSent = sale.saleType === "DELIVERY" && sale.saleState === "DELIVERY-SENT" && existing.fudo_sale_state !== "DELIVERY-SENT";
+      if (justSent && input.soleCourier && !existing.courier_name && status === "En Camino") plan.autoAssign.push({ id: existing.id, courier_name: input.soleCourier });
       // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
       const relinkTo = existing.client_id === null ? clientFor(sale, input) : null;
       if (relinkTo) relinks.set(relinkTo, [...(relinks.get(relinkTo) ?? []), existing.id]);
@@ -448,6 +457,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       ...saleMeta(sale, input),
       // Sin pagos todavía (venta abierta) queda null, para completarlo cuando se cobre.
       fudo_payments: input.paymentLinesBySale?.get(sale.id)?.length ? input.paymentLinesBySale.get(sale.id) ?? null : null,
+      ...(sale.saleType === "DELIVERY" && sale.saleState === "DELIVERY-SENT" && input.soleCourier ? { courier_name: input.soleCourier } : {}),
       lines,
     });
   }

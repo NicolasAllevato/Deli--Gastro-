@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bike, KeyRound, Loader2, Plus, Power, Shuffle } from "lucide-react";
 import type { Courier } from "@/lib/courier-pins";
+import { CourierShiftsToday } from "../_components/CourierShifts";
 
 interface PinNotice {
   name: string;
@@ -146,6 +147,8 @@ export default function CouriersAdminPage() {
       </header>
 
       {notice && <PinBanner notice={notice} onClose={() => setNotice(null)} />}
+
+      <CourierShiftsToday />
 
       <NewCourierForm
         onCreated={(c, pin) => {
