@@ -7,6 +7,9 @@ const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Capturas y axe tienen su propia config (playwright.visual.config.ts): las capturas dependen del SO
+  // y los baselines commiteados son de Windows, así que no pueden correr en la CI (Linux).
+  testIgnore: ["**/visual.spec.ts", "**/a11y.spec.ts"],
   // El almacén demo es un único estado compartido en memoria: los tests van en serie.
   fullyParallel: false,
   workers: 1,
