@@ -13,6 +13,7 @@ import { settleCancellation } from "@/lib/orders-create";
 import type { OrderStatus } from "@/types/database";
 import { locationSchema } from "@/lib/courier-location";
 import { isCourierApproved } from "@/lib/courier-shifts";
+import { courierToVerify } from "@/lib/courier-gate";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
@@ -132,13 +133,20 @@ export async function PATCH(req: NextRequest) {
   if (!current) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 });
 
   const courierName = courierDisplayName(auth.user);
+  // A quién hay que comprobar contra la habilitación del día (null: a nadie).
+  const toVerify = courierToVerify({
+    role: auth.role,
+    ownName: courierName,
+    requested: body.courier_name,
+    current: current.courier_name,
+  });
 
   if (auth.role === "repartidor") {
     if (!courierMayPatch(current, courierName, body)) {
       return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
     }
     // Tomar un pedido nuevo requiere que el local lo haya habilitado hoy; entregar lo que ya lleva, no.
-    if (body.courier_name !== undefined && !(await isCourierApproved(supabase, courierName))) {
+    if (toVerify !== null && !(await isCourierApproved(supabase, toVerify))) {
       return NextResponse.json({ error: "El local todavía no te habilitó hoy." }, { status: 403 });
     }
   } else {
@@ -154,8 +162,8 @@ export async function PATCH(req: NextRequest) {
         { status: 409 },
       );
     }
-    if (body.courier_name && !(await isCourierApproved(supabase, body.courier_name))) {
-      return NextResponse.json({ error: `${body.courier_name} no está habilitado hoy.` }, { status: 409 });
+    if (toVerify !== null && !(await isCourierApproved(supabase, toVerify))) {
+      return NextResponse.json({ error: `${toVerify} no está habilitado hoy.` }, { status: 409 });
     }
   }
   if (body.picked_up && current.status !== "En Camino") {
