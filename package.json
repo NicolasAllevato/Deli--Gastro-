@@ -13,6 +13,9 @@
     "seed:admin": "node --env-file=.env.local scripts/create-admin-user.mjs",
     "coverage": "node scripts/coverage.mjs",
     "e2e": "playwright test",
+    "e2e:visual": "playwright test -c playwright.visual.config.ts --project=visual",
+    "e2e:visual:update": "playwright test -c playwright.visual.config.ts --project=visual --update-snapshots",
+    "e2e:a11y": "playwright test -c playwright.visual.config.ts --project=a11y",
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
@@ -40,6 +43,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@opennextjs/cloudflare": "^1.20.16",
     "@playwright/test": "1.59.1",
     "@tailwindcss/postcss": "^4",
