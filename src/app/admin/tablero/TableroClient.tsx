@@ -82,15 +82,17 @@ export default function TableroClient({ initialOrders, targetMinutes }: Props) {
   }, []);
 
   // Solo los repartidores habilitados hoy: la lista cambia cuando el admin habilita o deshabilita a alguno.
-  const refreshCouriers = useCallback(async () => {
-    try {
-      const res = await fetch("/api/couriers", { cache: "no-store" });
-      if (res.ok) setCouriers((await res.json()) as string[]);
-    } catch {
-      /* sin lista, el selector no se muestra */
-    }
-  }, []);
-  useEffect(() => { void refreshCouriers(); }, [refreshCouriers]);
+  const refreshCouriers = useCallback(
+    () =>
+      fetch("/api/couriers", { cache: "no-store" })
+        .then((res) => (res.ok ? (res.json() as Promise<string[]>) : null))
+        .then((names) => { if (names) setCouriers(names); })
+        .catch(() => { /* sin lista, el selector no se muestra */ }),
+    [],
+  );
+  useEffect(() => {
+    void refreshCouriers();
+  }, [refreshCouriers]);
   useLiveRefresh({ topic: TOPIC_COURIER_SHIFTS, refresh: refreshCouriers, demoPollMs: COURIERS_DEMO_POLL_MS });
 
   // Los pedidos del cliente llegan solos: un aviso en tiempo real dispara la consulta
