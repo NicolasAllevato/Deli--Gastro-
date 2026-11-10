@@ -8,7 +8,7 @@ import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { formatMoney, formatOrderId, isActiveStatus } from "@/lib/orders";
 import { finishedStats } from "@/lib/reports/completion";
-import { TOPIC_ALL_ORDERS } from "@/lib/live-refresh";
+import { TOPIC_ALL_ORDERS, TOPIC_COURIER_SHIFTS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import type { EnrichedOrder } from "@/lib/orders-server";
 import type { OrderStatus } from "@/types/database";
@@ -22,6 +22,8 @@ interface Props {
 }
 
 const DEMO_POLL_MS = 5000;
+/** En demo todos los repartidores están habilitados: la lista no cambia y no hace falta consultarla seguido. */
+const COURIERS_DEMO_POLL_MS = 60_000;
 const MAX_FINISHED_SHOWN = 10;
 /** Margen inferior (padding del contenedor) que deja el tablero al ocupar el alto. */
 const BOARD_BOTTOM_GAP = 16;
@@ -79,15 +81,17 @@ export default function TableroClient({ initialOrders, targetMinutes }: Props) {
     return () => window.clearInterval(timer);
   }, []);
 
-  // La lista de repartidores casi no cambia: se pide una sola vez.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/couriers", { cache: "no-store" })
-      .then((res) => (res.ok ? (res.json() as Promise<string[]>) : []))
-      .then((names) => { if (!cancelled) setCouriers(names); })
-      .catch(() => { /* sin lista, el selector no se muestra */ });
-    return () => { cancelled = true; };
+  // Solo los repartidores habilitados hoy: la lista cambia cuando el admin habilita o deshabilita a alguno.
+  const refreshCouriers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/couriers", { cache: "no-store" });
+      if (res.ok) setCouriers((await res.json()) as string[]);
+    } catch {
+      /* sin lista, el selector no se muestra */
+    }
   }, []);
+  useEffect(() => { void refreshCouriers(); }, [refreshCouriers]);
+  useLiveRefresh({ topic: TOPIC_COURIER_SHIFTS, refresh: refreshCouriers, demoPollMs: COURIERS_DEMO_POLL_MS });
 
   // Los pedidos del cliente llegan solos: un aviso en tiempo real dispara la consulta
   // (en modo demo, sin tiempo real, se consulta cada pocos segundos).

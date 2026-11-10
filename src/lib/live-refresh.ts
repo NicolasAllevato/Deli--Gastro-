@@ -14,6 +14,9 @@ export const PING_DEBOUNCE_MS = 250;
 
 export const TOPIC_ALL_ORDERS = "orders";
 
+/** Habilitación diaria de repartidores (migración 029): solicitudes y respuestas del admin. */
+export const TOPIC_COURIER_SHIFTS = "courier_shifts";
+
 export function orderTopic(orderId: string): string {
   return `order:${orderId}`;
 }

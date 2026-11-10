@@ -191,6 +191,32 @@ export interface Database {
         }
         Relationships: []
       }
+      courier_shifts: {
+        Row: {
+          id: string
+          user_id: string
+          courier_name: string
+          shift_day: string
+          status: string
+          requested_at: string
+          decided_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          courier_name: string
+          shift_day: string
+          status?: string
+          requested_at?: string
+          decided_at?: string | null
+        }
+        Update: {
+          courier_name?: string
+          status?: string
+          decided_at?: string | null
+        }
+        Relationships: []
+      }
       courier_locations: {
         Row: {
           user_id: string

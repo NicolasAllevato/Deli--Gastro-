@@ -12,6 +12,7 @@ import { awardPointsForOrder, listOrders } from "@/lib/orders-server";
 import { settleCancellation } from "@/lib/orders-create";
 import type { OrderStatus } from "@/types/database";
 import { locationSchema } from "@/lib/courier-location";
+import { isCourierApproved } from "@/lib/courier-shifts";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
@@ -136,6 +137,10 @@ export async function PATCH(req: NextRequest) {
     if (!courierMayPatch(current, courierName, body)) {
       return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
     }
+    // Tomar un pedido nuevo requiere que el local lo haya habilitado hoy; entregar lo que ya lleva, no.
+    if (body.courier_name !== undefined && !(await isCourierApproved(supabase, courierName))) {
+      return NextResponse.json({ error: "El local todavía no te habilitó hoy." }, { status: 403 });
+    }
   } else {
     if (body.status !== undefined && !canTransition(current.status, body.status)) {
       return NextResponse.json(
@@ -148,6 +153,9 @@ export async function PATCH(req: NextRequest) {
         { error: "Solo se asigna repartidor a pedidos en preparación o en camino." },
         { status: 409 },
       );
+    }
+    if (body.courier_name && !(await isCourierApproved(supabase, body.courier_name))) {
+      return NextResponse.json({ error: `${body.courier_name} no está habilitado hoy.` }, { status: 409 });
     }
   }
   if (body.picked_up && current.status !== "En Camino") {

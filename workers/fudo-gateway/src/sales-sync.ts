@@ -1,6 +1,7 @@
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
 import { geocodeNewOrders } from "./geocode.ts";
+import { shiftDay, soleCourier } from "../../../src/lib/courier-shift-day.ts";
 import { listPublicResource, type FudoEnv } from "./fudo";
 import { parseFudoItem, parseFudoSales, parsePaymentMethods, parsePaymentRows, paymentMethodIds, phoneKey, planSalesImport, salePaymentLines, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
 
@@ -78,7 +79,7 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
 
     const existing: ExistingOrder[] = [];
     for (const ids of chunk(sales.map((s) => s.id), ID_BATCH)) {
-      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source,fudo_payments,total,picked_up_at`)));
+      existing.push(...(await rest<ExistingOrder[]>(env, `orders?fudo_order_id=in.(${ids.join(",")})&select=id,fudo_order_id,channel,status,fudo_sale_state,client_id,fudo_source,fudo_payments,total,picked_up_at,courier_name`)));
     }
     const known = new Set(existing.map((o) => o.fudo_order_id));
 
@@ -107,7 +108,15 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       if (key && !clientsByPhone.has(key)) clientsByPhone.set(key, c.id);
     }
 
+    // Un solo repartidor habilitado hoy recibe los deliveries que Fudo marca "Enviado". Se consulta solo si hay alguno.
+    let soleCourierName: string | null = null;
+    if (sales.some((s) => s.saleType === "DELIVERY" && s.saleState === "DELIVERY-SENT")) {
+      const approved = await rest<Array<{ courier_name: string }>>(env, `courier_shifts?shift_day=eq.${shiftDay()}&status=eq.approved&select=courier_name`);
+      soleCourierName = soleCourier(approved.map((r) => r.courier_name));
+    }
+
     const plan = planSalesImport({
+      soleCourier: soleCourierName,
       sales,
       itemsBySale,
       productsByFudoId: new Map(productMap.map((m) => [m.fudo_product_id, { id: m.product_id, name: m.products?.name ?? `Producto Fudo #${m.fudo_product_id}` }])),
@@ -137,6 +146,13 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
         if (items.length) {
           await rest(env, "order_items", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(items) });
         }
+      }
+      for (const { id, courier_name } of plan.autoAssign) {
+        await rest(env, `orders?id=eq.${id}&channel=eq.fudo&courier_name=is.null`, {
+          method: "PATCH",
+          headers: { prefer: "return=minimal" },
+          body: JSON.stringify({ courier_name }),
+        });
       }
       for (const { id, ...patch } of plan.updates) {
         await rest(env, `orders?id=eq.${id}&channel=eq.fudo`, {
