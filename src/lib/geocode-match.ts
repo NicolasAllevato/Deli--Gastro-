@@ -35,7 +35,7 @@ export function chooseGeocodeMatch(query: string, results: readonly GeocodeResul
   if (close.some((r) => haversineKm(r, first) > GEOCODE_MAX_SPREAD_KM)) return null;
   // Sin la altura en el resultado, Nominatim devolvió la calle entera: el punto sería el medio de la calle.
   // La altura es el último número de la calle: en «25 de Mayo 1234» es 1234, no 25.
-  const number = (query.split(",")[0] ?? "").match(HOUSE_NUMBERS)?.at(-1);
+  const number = (query.split(",")[0] ?? "").match(HOUSE_NUMBERS)?.slice(-1)[0];
   // Nominatim la devuelve como segmento propio al principio («1841, Piedras, …»); un número dentro del nombre no cuenta.
   const segments = first.label.split(",").slice(0, 2).map((s) => s.trim());
   return number && segments.includes(number) ? first : null;

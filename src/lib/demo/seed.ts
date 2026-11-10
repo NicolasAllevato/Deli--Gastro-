@@ -390,7 +390,7 @@ function buildDeliveredHistory(base: number, firstIndex: number): Row[] {
     { source: "local", days: 3, customer: "Historial Local Ubicado", courier: "Nora Demo", located: true, address: "Calle Historial 300" },
     { source: "local", days: 4, customer: "Historial Dirección Ambigua", address: "Belgrano" },
     { source: "local", days: 5, customer: "Historial Sin Cierre", noClose: true },
-    { source: "pedidosya", days: 6, customer: "PedidosYa Semana" },
+    { source: "pedidosya", days: 5, customer: "PedidosYa Semana" },
     { source: "rappi", days: 20, customer: "Rappi Mes" },
     { source: null, days: 2, customer: "Web Historial", courier: "Nora Demo", located: true, address: "Av. Web 900" },
     { source: "local", days: 45, customer: "Historial Fuera De Rango", located: true, address: "Calle Vieja 77" },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { isFudoOrigin } from "@/lib/fudo/origin";
+import { canAssignCourier, isFudoDelivery, isFudoOrigin } from "@/lib/fudo/origin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, requireAnyRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { courierDisplayName } from "@/lib/auth/courier";
@@ -143,8 +143,7 @@ export async function PATCH(req: NextRequest) {
         { status: 409 },
       );
     }
-    const assignable = current.status === "En Preparación" || current.status === "En Camino";
-    if ((body.courier_name !== undefined || body.picked_up) && !assignable) {
+    if ((body.courier_name !== undefined || body.picked_up) && !canAssignCourier(current)) {
       return NextResponse.json(
         { error: "Solo se asigna repartidor a pedidos en preparación o en camino." },
         { status: 409 },
@@ -162,6 +161,7 @@ export async function PATCH(req: NextRequest) {
     delivered_lat?: number;
     delivered_lng?: number;
     delivered_accuracy_m?: number | null;
+    delivered_in_app?: boolean;
   } & StagePatch = {};
   if (body.picked_up && !current.picked_up_at) patch.picked_up_at = new Date().toISOString();
   if (body.status !== undefined) {
@@ -169,6 +169,12 @@ export async function PATCH(req: NextRequest) {
     Object.assign(patch, stagePatch(body.status));
   }
   if (body.courier_name !== undefined) patch.courier_name = body.courier_name;
+  // Un delivery de Fudo con repartidor entra a su circuito: desde «En Camino» lo ve en la app y marca la entrega.
+  if (body.courier_name && body.status === undefined && isFudoDelivery(current) && current.status !== "En Camino") {
+    patch.status = "En Camino";
+    Object.assign(patch, stagePatch("En Camino"));
+  }
+  if (body.status === "Finalizados" && isFudoOrigin(current)) patch.delivered_in_app = true;
   // Solo el repartidor que entrega deja el punto: es su teléfono el que estaba en la puerta.
   if (auth.role === "repartidor" && body.status === "Finalizados" && body.delivered_point) {
     patch.delivered_lat = body.delivered_point.lat;

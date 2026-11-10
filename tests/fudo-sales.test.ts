@@ -129,7 +129,7 @@ describe("planSalesImport", () => {
     input.existing = [{ id: "o1", fudo_order_id: 500, channel: "fudo", status: "Recibidos", fudo_sale_state: "IN-COURSE" }];
     const plan = planSalesImport({ ...input, now: "2026-11-06T20:00:00Z" });
     assert.equal(plan.inserts.length, 0);
-    assert.deepEqual(plan.updates, [{ id: "o1", status: "En Camino", fudo_sale_state: "DELIVERY-SENT", ready_at: "2026-11-06T20:00:00Z" }]);
+    assert.deepEqual(plan.updates, [{ id: "o1", status: "En Camino", fudo_sale_state: "DELIVERY-SENT", ready_at: "2026-11-06T20:00:00Z", picked_up_at: "2026-11-06T20:00:00Z" }]);
   });
 
   it("fecha el cierre al detectarlo y prefiere el que informa Fudo", () => {

@@ -1,3 +1,4 @@
+import { canAssignCourier } from "@/lib/fudo/origin";
 import Link from "next/link";
 import { Bike, CreditCard, Flame, History, MapPin, XCircle, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -105,8 +106,6 @@ interface Props {
   className?: string;
 }
 
-const ASSIGNABLE: readonly OrderStatus[] = ["En Preparación", "En Camino"];
-
 export function KanbanColumn({ config, orders, busyId, now, onMove, couriers = [], onAssign, className }: Props) {
   const lateCount = countLate(config.status, orders, now);
   const done = config.status === "Finalizados";
@@ -209,7 +208,7 @@ export function KanbanColumn({ config, orders, busyId, now, onMove, couriers = [
                 </p>
               )}
 
-              {onAssign && couriers.length > 0 && ASSIGNABLE.includes(config.status) && (
+              {onAssign && couriers.length > 0 && canAssignCourier(order) && (
                 <label className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
                   <Bike size={12} aria-hidden />
                   <span className="sr-only">Repartidor del pedido {formatOrderId(order.id)}</span>
