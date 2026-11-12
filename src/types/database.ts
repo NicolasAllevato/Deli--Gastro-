@@ -171,6 +171,7 @@ export interface Database {
           user_id: string
           name: string
           pin_hash: string
+          pin_encrypted: string | null
           active: boolean
           created_at: string
           updated_at: string
@@ -179,6 +180,7 @@ export interface Database {
           user_id: string
           name: string
           pin_hash: string
+          pin_encrypted?: string | null
           active?: boolean
           created_at?: string
           updated_at?: string
@@ -186,6 +188,7 @@ export interface Database {
         Update: {
           name?: string
           pin_hash?: string
+          pin_encrypted?: string | null
           active?: boolean
           updated_at?: string
         }

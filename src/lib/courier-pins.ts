@@ -2,6 +2,7 @@ import { createHmac, randomInt } from "node:crypto";
 import { z } from "zod";
 import { cleanEnv } from "@/lib/clean-env";
 import type { createAdminClient } from "@/utils/supabase/admin";
+import { decryptPin, encryptPin, pinKeyB64 } from "@/lib/courier-pin-crypto";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -89,6 +90,12 @@ async function choosePin(db: Db, requested: string | undefined, exceptUserId?: s
   return null;
 }
 
+/** Copia cifrada del PIN, o null si no hay COURIER_PIN_KEY (el PIN sigue funcionando, pero no se puede volver a ver). */
+async function sealPin(pin: string, userId: string): Promise<string | null> {
+  const key = pinKeyB64();
+  return key ? encryptPin(pin, userId, key) : null;
+}
+
 const isUniqueViolation = (error: { code?: string } | null): boolean => error?.code === "23505";
 
 export async function createCourier(
@@ -104,7 +111,12 @@ export async function createCourier(
 
   const { data, error } = await db
     .from("couriers")
-    .insert({ user_id: created.id, name: input.name, pin_hash: hashPin(pin) })
+    .insert({
+      user_id: created.id,
+      name: input.name,
+      pin_hash: hashPin(pin),
+      pin_encrypted: await sealPin(pin, created.id),
+    })
     .select(COLUMNS)
     .single();
   if (error || !data) {
@@ -121,7 +133,11 @@ export async function changeCourierPin(db: Db, userId: string, requested?: strin
 
   const { data, error } = await db
     .from("couriers")
-    .update({ pin_hash: hashPin(pin), updated_at: new Date().toISOString() })
+    .update({
+      pin_hash: hashPin(pin),
+      pin_encrypted: await sealPin(pin, userId),
+      updated_at: new Date().toISOString(),
+    })
     .eq("user_id", userId)
     .select(COLUMNS)
     .maybeSingle();
@@ -161,4 +177,36 @@ export async function findCourierByPin(db: Db, pin: string): Promise<Courier | n
     .maybeSingle();
   if (error) throw new Error(`No se pudo verificar el PIN: ${error.message}`);
   return data ? toCourier(data as CourierRow) : null;
+}
+
+export async function renameCourier(
+  db: Db,
+  userId: string,
+  name: string,
+): Promise<{ ok: true; courier: Courier } | { ok: false; status: number; error: string }> {
+  const { data, error } = await db
+    .from("couriers")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .select(COLUMNS)
+    .maybeSingle();
+  if (error) return { ok: false, status: 500, error: "No se pudo actualizar el repartidor." };
+  if (!data) return { ok: false, status: 404, error: "Repartidor no encontrado." };
+  return { ok: true, courier: toCourier(data as CourierRow) };
+}
+
+export const PIN_UNAVAILABLE = "No disponible — reseteá la clave para verla.";
+
+/** PIN actual descifrado, solo para el admin. pin: null si no hay copia cifrada o no se puede descifrar. */
+export async function revealCourierPin(
+  db: Db,
+  userId: string,
+): Promise<{ ok: true; pin: string | null } | { ok: false; status: number; error: string }> {
+  const { data, error } = await db.from("couriers").select("user_id, pin_encrypted").eq("user_id", userId).maybeSingle();
+  if (error) return { ok: false, status: 500, error: "No se pudo leer el PIN." };
+  if (!data) return { ok: false, status: 404, error: "Repartidor no encontrado." };
+  const blob = (data as { pin_encrypted: string | null }).pin_encrypted;
+  const key = pinKeyB64();
+  if (!blob || !key) return { ok: true, pin: null };
+  return { ok: true, pin: await decryptPin(blob, userId, key) };
 }

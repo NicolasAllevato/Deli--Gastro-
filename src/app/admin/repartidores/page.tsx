@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bike, KeyRound, Loader2, Plus, Power, Shuffle } from "lucide-react";
+import { Bike, KeyRound, Loader2, Pencil, Plus, Power, Shuffle } from "lucide-react";
 import type { Courier } from "@/lib/courier-pins";
 import { CourierShiftsToday } from "../_components/CourierShifts";
+import { EditCourierModal, PinReveal } from "./CourierRowTools";
 
 interface PinNotice {
   name: string;
@@ -28,7 +29,7 @@ function PinBanner({ notice, onClose }: { notice: PinNotice; onClose: () => void
   return (
     <section role="status" className="neumorphic rounded-2xl p-5 border border-brand-orange/40 space-y-2">
       <p className="text-sm text-gray-600">
-        PIN de <strong className="text-gray-800">{notice.name}</strong>. Pasáselo ahora: por seguridad no se vuelve a mostrar.
+        PIN de <strong className="text-gray-800">{notice.name}</strong>. Pasáselo ahora; después lo podés volver a ver con &quot;Mostrar clave&quot;.
       </p>
       <p className="font-headline text-4xl font-black tracking-[0.4em] text-brand-orange">{notice.pin}</p>
       <button type="button" onClick={onClose} className="text-xs font-bold text-gray-500 hover:text-gray-700">
@@ -109,6 +110,7 @@ export default function CouriersAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<PinNotice | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Courier | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/couriers", { cache: "no-store" })
@@ -179,15 +181,25 @@ export default function CouriersAdminPage() {
                     : <span className="badge-red px-2 py-0.5 rounded-full font-bold">Desactivado</span>}
                   <span className="ml-2">Actualizado el {fmt(c.updatedAt)}</span>
                 </p>
+                <PinReveal courier={c} revision={c.updatedAt} />
               </div>
               <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busyId === c.userId}
+                  onClick={() => setEditing(c)}
+                  aria-label={`Editar a ${c.name}`}
+                  className="w-9 h-9 rounded-xl neumorphic-inset flex items-center justify-center text-gray-600 disabled:opacity-50"
+                >
+                  <Pencil size={14} aria-hidden />
+                </button>
                 <button
                   type="button"
                   disabled={busyId === c.userId}
                   onClick={() => act(c, { action: "pin" })}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl neumorphic-inset text-xs font-black text-brand-orange disabled:opacity-50"
                 >
-                  <Shuffle size={14} aria-hidden /> Nuevo PIN
+                  <Shuffle size={14} aria-hidden /> Resetear clave
                 </button>
                 <button
                   type="button"
@@ -202,6 +214,17 @@ export default function CouriersAdminPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {editing && (
+        <EditCourierModal
+          courier={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(c) => {
+            replace(c);
+            setEditing(null);
+          }}
+        />
       )}
     </div>
   );
