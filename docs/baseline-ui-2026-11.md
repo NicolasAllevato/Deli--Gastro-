@@ -1,4 +1,4 @@
-# Línea base de UI (2026-11-10): estado parcial
+# Línea base de UI (2026-11-10, completada 2026-11-12)
 
 Fase 0 de `docs/plan-frontera-ui.md`. **Este informe está incompleto:** la generación de capturas se cortó porque el equipo se quedó sin memoria (6,3 GB de RAM en total) y las mediciones pesadas no se llegaron a correr. Lo que no tiene número abajo no se midió.
 
@@ -6,10 +6,10 @@ Fase 0 de `docs/plan-frontera-ui.md`. **Este informe está incompleto:** la gene
 
 | Entregable | Estado |
 |---|---|
-| Capturas (`e2e/visual.spec.ts`) | Spec escrito. 33 de 48 baselines generados y **sin commitear**: falta completar y comprobar estabilidad con dos corridas |
-| Axe (`e2e/a11y.spec.ts`) | Spec escrito, **no ejecutado**. Sin números de violaciones |
-| `next analyze` | **No medido** |
-| Lighthouse móvil | **No medido** |
+| Capturas (`e2e/visual.spec.ts`) | 48 de 48 commiteadas; 3 inestables (ver abajo) |
+| Axe (`e2e/a11y.spec.ts`) | Ejecutado: 0 critical, 14 serious, 13 moderate (ver abajo) |
+| `next analyze` | **No medido**: con ~0,5 GB libres no entra una build de producción |
+| Lighthouse móvil | **No medido**: mismo motivo |
 | Test de contraste | Hecho (ver abajo) |
 | Guardia ESLint | **No aplicada**: un hook del entorno bloquea editar `eslint.config.mjs` (ver abajo) |
 | Detector impeccable | Corrido una vez; **resultado perdido** salvo el primer hallazgo (ver abajo) |
@@ -51,13 +51,33 @@ Lighthouse necesita una build de producción (`npm run demo:rapido`), porque `ne
 
 ## Detector impeccable
 
-`impeccable detect --json src/app src/components` salió con código 2 y 2.240 bytes de JSON. El archivo se borró por un error en el comando que debía guardarlo, antes de resumirlo. Solo se conserva el primer hallazgo:
+`impeccable detect --json src/app src/components` (v4.8.2, 2026-11-12): código 2, 4 hallazgos, todos `warning` de categoría `slop`:
 
-| Regla | Severidad | Categoría | Ubicación |
+| Regla | Ubicación |
+|---|---|
+| `side-tab` | `src/app/admin/tablero/KanbanColumn.tsx:156` (`border-l-4`) |
+| `border-accent-on-rounded` | `src/app/admin/tablero/KanbanColumn.tsx:117` (`border-t-4`) |
+| `border-accent-on-rounded` | `src/app/admin/tablero/TableroClient.tsx:288` (`border-t-4`) |
+| `gradient-text` | `src/app/globals.css:446` (`background-clip: text` + gradiente) |
+
+## Axe (2026-11-12)
+
+16 páginas (8 rutas × 2 temas). Reglas violadas, contadas por página: critical 0, serious 14, moderate 13, minor 0. Solo WCAG: serious 14.
+
+| Regla | Impacto | Páginas | Nodos |
 |---|---|---|---|
-| `side-tab` (Side-tab accent border) | warning | slop | `src/app/admin/tablero/KanbanColumn.tsx:156` (`border-l-4`) |
+| `color-contrast` | serious | 10 | 20 |
+| `aria-command-name` | serious | 2 | 10 |
+| `target-size` | serious | 2 | 2 |
+| `heading-order` | moderate | 3 | 3 |
+| `region` | moderate | 8 | 24 |
+| `landmark-one-main` | moderate | 2 | 2 |
 
-Hay más hallazgos que no se pueden citar. El resumen por regla y cantidad requiere una segunda corrida.
+`/repartidor` oscuro es la única página sin violaciones. Detalle por página en `test-results/a11y/axe-report.md` (no se commitea).
+
+## Estabilidad de las capturas
+
+48 de 48 baselines commiteados. En la corrida que completó las 15 faltantes, 3 de las 33 previas no coincidieron: `admin-ejecutivo-dark-1280` (1 %), `admin-ejecutivo-light-375` (4 %) y `cliente-pedidos-light-375` (1 %). Hay algo variable en esas pantallas; antes de usarlas como red de regresión hay que enmascararlo o fijarlo.
 
 ## Dependencia nueva: `@axe-core/playwright` 4.14.0
 
