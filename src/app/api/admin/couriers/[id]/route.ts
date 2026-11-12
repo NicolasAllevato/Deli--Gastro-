@@ -3,13 +3,14 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
 import { courierAuth } from "@/lib/courier-auth";
-import { changeCourierPin, pinSchema, setCourierActive } from "@/lib/courier-pins";
+import { changeCourierPin, courierNameSchema, pinSchema, renameCourier, setCourierActive } from "@/lib/courier-pins";
 
-// Cambiar el PIN (elegido o generado) o activar/desactivar a un repartidor.
+// Cambiar el PIN (elegido o generado), editar el nombre o activar/desactivar a un repartidor.
 
 const patchSchema = z.union([
   z.object({ action: z.literal("pin"), pin: pinSchema.optional() }),
   z.object({ action: z.literal("active"), active: z.boolean() }),
+  z.object({ action: z.literal("name"), name: courierNameSchema }),
 ]);
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -30,6 +31,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const result = await changeCourierPin(db, id, body.pin);
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
       return NextResponse.json({ courier: result.courier, pin: result.pin });
+    }
+    if (body.action === "name") {
+      const renamed = await renameCourier(db, id, body.name);
+      if (!renamed.ok) return NextResponse.json({ error: renamed.error }, { status: renamed.status });
+      return NextResponse.json({ courier: renamed.courier });
     }
     const result = await setCourierActive(db, courierAuth(), id, body.active);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
