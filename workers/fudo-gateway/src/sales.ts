@@ -424,6 +424,8 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       if (status !== existing.status || sale.saleState !== existing.fudo_sale_state || totalChanged) {
         plan.updates.push({ id: existing.id, status, fudo_sale_state: sale.saleState, ...stageStamps(sale, existing, status, now), ...(totalChanged ? { total: sale.total } : {}) });
       }
+      // La auto-asignación solo ocurre al detectar la transición a «Enviado»; no es retroactiva: si el
+      // repartidor se habilita después de ese momento, el pedido ya enviado queda sin asignar (decisión de producto).
       const justSent = sale.saleType === "DELIVERY" && sale.saleState === "DELIVERY-SENT" && existing.fudo_sale_state !== "DELIVERY-SENT";
       if (justSent && input.soleCourier && !existing.courier_name && status === "En Camino") plan.autoAssign.push({ id: existing.id, courier_name: input.soleCourier });
       // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
