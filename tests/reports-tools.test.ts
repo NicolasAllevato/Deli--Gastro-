@@ -18,6 +18,7 @@ const DATA: ReportData = {
   reviews: [] as unknown as ReportData["reviews"],
   clients: [] as unknown as ReportData["clients"],
   priceByName: new Map([["Pizza", 5000]]) as unknown as ReportData["priceByName"],
+  comboRules: { comboProductIds: new Set(), comboNames: new Set() },
 };
 
 function byName(name: string) {

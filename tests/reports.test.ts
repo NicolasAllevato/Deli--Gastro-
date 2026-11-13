@@ -7,7 +7,7 @@ import {
   recurringCustomers,
   reviewsSummary,
   salesSummary,
-  topProducts,
+  productSales,
   type ReportOrder,
 } from "../src/lib/reports/analytics.ts";
 import { toCsv } from "../src/lib/reports/csv.ts";
@@ -100,7 +100,7 @@ describe("salesSummary", () => {
   });
 });
 
-describe("topProducts", () => {
+describe("productSales (tabla Productos)", () => {
   const orders = [
     order({ id: "1", items_desc: "2x Pizza Margarita · 1x Limonada" }),
     order({ id: "2", items_desc: "1x Pizza Margarita" }),
@@ -109,16 +109,19 @@ describe("topProducts", () => {
   const prices = new Map([["Pizza Margarita", 12000], ["Limonada", 2600]]);
 
   it("cuenta unidades y estima ingresos, ignorando cancelados", () => {
-    assert.deepEqual(topProducts(orders, RANGE, prices, 5), [
-      { name: "Pizza Margarita", units: 3, estimatedRevenue: 36000 },
-      { name: "Limonada", units: 1, estimatedRevenue: 2600 },
-    ]);
+    assert.deepEqual(productSales(orders, RANGE, prices, 5), {
+      combos: [],
+      products: [
+        { name: "Pizza Margarita", units: 3, revenue: 36000 },
+        { name: "Limonada", units: 1, revenue: 2600 },
+      ],
+    });
   });
 
   it("respeta el límite y deja el ingreso en 0 si el producto ya no tiene precio", () => {
-    const result = topProducts(orders, RANGE, new Map(), 1);
+    const result = productSales(orders, RANGE, new Map(), 1).products;
     assert.equal(result.length, 1);
-    assert.equal(result[0]!.estimatedRevenue, 0);
+    assert.equal(result[0]!.revenue, 0);
   });
 });
 

@@ -17,7 +17,7 @@ import { parseFudoItem, parseFudoSales } from "../workers/fudo-gateway/src/sales
 import { buildCatalogIndex, buildSaleLines, saleItemsDesc } from "../workers/fudo-gateway/src/sale-lines.ts";
 
 const PAGE = 1000;
-const FUDO_COLS = ["fudo_product_id", "fudo_comment", "fudo_options"];
+const FUDO_COLS = ["fudo_product_id", "fudo_comment", "fudo_options", "is_combo"];
 
 function parseArgs(argv) {
   const limitArg = argv.find((a) => a.startsWith("--limite="));
@@ -118,7 +118,7 @@ async function main() {
     await rest("order_items?select=fudo_product_id&limit=1");
   } catch {
     hasFudoCols = false;
-    console.warn("Aviso: la migración 031 no está aplicada; las líneas se escriben sin fudo_product_id/fudo_comment/fudo_options.");
+    console.warn("Aviso: la migración 031 no está aplicada; las líneas se escriben sin fudo_product_id/fudo_comment/fudo_options/is_combo.");
   }
 
   let changed = 0;

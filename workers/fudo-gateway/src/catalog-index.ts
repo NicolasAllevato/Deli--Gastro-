@@ -3,7 +3,7 @@ import { listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo";
 import { buildCatalogIndex, catalogFromCache, catalogToCache, EMPTY_CATALOG, type FudoCatalogIndex } from "./sale-lines.ts";
 
 /** Clave y vida del catálogo de Fudo cacheado en KV (nombres de productos y categoría de opciones). */
-export const CATALOG_KV_KEY = "fudo:catalog-index:v1";
+export const CATALOG_KV_KEY = "fudo:catalog-index:v2";
 const CATALOG_TTL_SECONDS = 6 * 3600;
 
 /**

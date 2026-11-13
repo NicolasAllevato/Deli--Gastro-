@@ -1,4 +1,5 @@
-import { formatMoney, parseItems } from "@/lib/orders";
+import { formatMoney } from "@/lib/orders";
+import { productSales, NO_COMBO_RULES, type ComboRules } from "@/lib/reports/product-sales";
 import type { ReportOrder } from "@/lib/reports/analytics";
 import type { Bounds } from "@/lib/reports/range";
 
@@ -13,6 +14,9 @@ export interface DailySummary {
   revenue: number;
   avgTicket: number;
   avgDeliveryMinutes: number | null;
+  /** Combos más vendidos (unidades). */
+  topCombos: Array<{ name: string; qty: number }>;
+  /** Productos más vendidos: sueltos más los que vinieron dentro de combos. */
   topProducts: Array<{ name: string; qty: number }>;
   channels: Array<{ channel: string; orders: number; revenue: number }>;
 }
@@ -20,7 +24,12 @@ export interface DailySummary {
 const TOP_PRODUCTS = 3;
 
 /** Resumen de los pedidos creados dentro de `bounds` (el día a resumir). */
-export function buildDailySummary(orders: readonly ReportOrder[], bounds: Bounds, date: string): DailySummary {
+export function buildDailySummary(
+  orders: readonly ReportOrder[],
+  bounds: Bounds,
+  date: string,
+  catalog: { priceByName?: ReadonlyMap<string, number>; comboRules?: ComboRules } = {},
+): DailySummary {
   const day = orders.filter((o) => o.created_at >= bounds.from && o.created_at < bounds.to);
   const live = day.filter((o) => o.status !== "Cancelado");
   const delivered = day.filter((o) => o.status === "Finalizados");
@@ -30,12 +39,7 @@ export function buildDailySummary(orders: readonly ReportOrder[], bounds: Bounds
     o.delivered_at ? [(new Date(o.delivered_at).getTime() - new Date(o.created_at).getTime()) / 60_000] : [],
   );
 
-  const qtyByProduct = new Map<string, number>();
-  for (const order of live) {
-    for (const line of parseItems(order.items_desc)) {
-      qtyByProduct.set(line.name, (qtyByProduct.get(line.name) ?? 0) + line.qty);
-    }
-  }
+  const sales = productSales(live, bounds, catalog.priceByName ?? new Map(), TOP_PRODUCTS, catalog.comboRules ?? NO_COMBO_RULES);
 
   const byChannel = new Map<string, { orders: number; revenue: number }>();
   for (const order of live) {
@@ -52,10 +56,8 @@ export function buildDailySummary(orders: readonly ReportOrder[], bounds: Bounds
     revenue,
     avgTicket: live.length > 0 ? Math.round(revenue / live.length) : 0,
     avgDeliveryMinutes: minutes.length > 0 ? Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length) : null,
-    topProducts: [...qtyByProduct.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, TOP_PRODUCTS)
-      .map(([name, qty]) => ({ name, qty })),
+    topCombos: sales.combos.map((r) => ({ name: r.name, qty: r.units })),
+    topProducts: sales.products.map((r) => ({ name: r.name, qty: r.units })),
     channels: [...byChannel.entries()]
       .sort((a, b) => b[1].revenue - a[1].revenue)
       .map(([channel, v]) => ({ channel, ...v })),
@@ -89,6 +91,7 @@ export function renderEmail(summary: DailySummary, businessName: string): Render
     ["Tiempo medio de entrega", summary.avgDeliveryMinutes === null ? "—" : `${summary.avgDeliveryMinutes} min`],
   ];
   const top = summary.topProducts.map((p) => `${p.qty}x ${p.name}`);
+  const combos = summary.topCombos.map((p) => `${p.qty}x ${p.name}`);
   const channels = summary.channels.map((c) => `${c.channel}: ${c.orders} (${formatMoney(c.revenue)})`);
 
   const text = [
@@ -96,7 +99,8 @@ export function renderEmail(summary: DailySummary, businessName: string): Render
     "",
     ...rows.map(([label, value]) => `${label}: ${value}`),
     "",
-    `Más vendidos: ${top.length > 0 ? top.join(", ") : "—"}`,
+    `Combos más vendidos: ${combos.length > 0 ? combos.join(", ") : "—"}`,
+    `Productos más vendidos: ${top.length > 0 ? top.join(", ") : "—"}`,
     `Por canal: ${channels.length > 0 ? channels.join(" · ") : "—"}`,
   ].join("\n");
 
@@ -106,7 +110,8 @@ export function renderEmail(summary: DailySummary, businessName: string): Render
 <table style="width:100%;border-collapse:collapse">
 ${rows.map(([l, v]) => `<tr><td style="padding:6px 0;border-bottom:1px solid #eee">${escapeHtml(l)}</td><td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right"><strong>${escapeHtml(v)}</strong></td></tr>`).join("\n")}
 </table>
-<p style="margin:16px 0 4px"><strong>Más vendidos:</strong> ${escapeHtml(top.length > 0 ? top.join(", ") : "—")}</p>
+<p style="margin:16px 0 4px"><strong>Combos más vendidos:</strong> ${escapeHtml(combos.length > 0 ? combos.join(", ") : "—")}</p>
+<p style="margin:4px 0"><strong>Productos más vendidos:</strong> ${escapeHtml(top.length > 0 ? top.join(", ") : "—")}</p>
 <p style="margin:0"><strong>Por canal:</strong> ${escapeHtml(channels.length > 0 ? channels.join(" · ") : "—")}</p>
 </div>`;
 

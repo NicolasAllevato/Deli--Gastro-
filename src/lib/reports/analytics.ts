@@ -1,4 +1,4 @@
-import { parseItems } from "../orders.ts";
+import type { ReportLine } from "./product-sales.ts";
 import { computeDurations } from "../tracking.ts";
 import { inBounds, localDateKey, type Bounds } from "./range.ts";
 
@@ -102,60 +102,8 @@ export function salesSummary(orders: readonly ReportOrder[], bounds: Bounds, gro
   };
 }
 
-export interface TopProduct {
-  name: string;
-  units: number;
-  /** Unidades × precio actual: los pedidos guardan el texto, no el precio de cada línea. */
-  estimatedRevenue: number;
-}
-
-export interface ReportLine {
-  product_id: string | null;
-  fudo_product_id?: number | null;
-  name: string;
-  qty: number;
-}
-
-/**
- * Clave de agrupación de ventas por producto: el producto de la app si está; si no, el producto de Fudo más
- * el nombre (los genéricos de Fudo comparten id, así que el nombre del comentario los separa); si no, el nombre.
- */
-export function productSalesKey(line: ReportLine): string {
-  if (line.product_id) return `p:${line.product_id}`;
-  if (line.fudo_product_id != null) return `f:${line.fudo_product_id}:${line.name.toLowerCase()}`;
-  return `n:${line.name.toLowerCase()}`;
-}
-
-function linesOf(o: ReportOrder): ReportLine[] {
-  if (o.order_items?.length) return [...o.order_items];
-  return parseItems(o.items_desc).map((l) => ({ product_id: null, name: l.name, qty: l.qty }));
-}
-
-export function topProducts(
-  orders: readonly ReportOrder[],
-  bounds: Bounds,
-  priceByName: ReadonlyMap<string, number>,
-  limit: number,
-): TopProduct[] {
-  const units = new Map<string, { name: string; qty: number }>();
-  for (const o of orders) {
-    if (isCancelled(o) || !inBounds(o.created_at, bounds)) continue;
-    for (const line of linesOf(o)) {
-      const key = productSalesKey(line);
-      const cur = units.get(key);
-      units.set(key, { name: cur?.name ?? line.name, qty: (cur?.qty ?? 0) + line.qty });
-    }
-  }
-
-  // Dos claves con el mismo nombre (pedido viejo sin líneas y uno nuevo con product_id) se muestran juntas.
-  const byName = new Map<string, number>();
-  for (const { name, qty } of units.values()) byName.set(name, (byName.get(name) ?? 0) + qty);
-
-  return [...byName.entries()]
-    .map(([name, qty]) => ({ name, units: qty, estimatedRevenue: qty * (priceByName.get(name) ?? 0) }))
-    .sort((a, b) => b.units - a.units || a.name.localeCompare(b.name))
-    .slice(0, limit);
-}
+export type { ProductSales, SalesRow, ComboRules } from "./product-sales.ts";
+export { productSales, productSalesKey, buildComboRules, isComboCategory } from "./product-sales.ts";
 
 export interface RecurringCustomer {
   name: string;

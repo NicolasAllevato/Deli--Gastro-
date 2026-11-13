@@ -34,8 +34,11 @@ export interface OrderLine {
   options?: OrderLine[];
 }
 
-/** Paréntesis final con opciones "Nx nombre, Nx nombre". "(8 porciones)" no lo es: queda en el nombre. */
-const OPTIONS_SUFFIX = /^(.+?) \(((?:\d+x [^,()]+)(?:, \d+x [^,()]+)*)\)$/;
+/**
+ * Paréntesis final con opciones "Nx nombre, Nx nombre (detalle)". "(8 porciones)" solo no lo es: queda en el nombre.
+ */
+const OPTION = String.raw`\d+x [^,()]+(?: \([^()]*\))?`;
+const OPTIONS_SUFFIX = new RegExp(String.raw`^(.+?) \((${OPTION}(?:, ${OPTION})*)\)$`);
 
 function parseLine(chunk: string): OrderLine {
   const m = /^(\d+)x\s+(.+)$/.exec(chunk);

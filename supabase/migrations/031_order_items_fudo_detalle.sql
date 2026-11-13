@@ -8,7 +8,8 @@
 alter table public.order_items
   add column if not exists fudo_product_id integer,
   add column if not exists fudo_comment    text,
-  add column if not exists fudo_options    jsonb;
+  add column if not exists fudo_options    jsonb,
+  add column if not exists is_combo        boolean not null default false;
 
 -- Ventas por producto de Fudo sin mapear (agrupación por fudo_product_id + nombre).
 create index if not exists order_items_fudo_product_idx on public.order_items (fudo_product_id)
@@ -16,4 +17,5 @@ create index if not exists order_items_fudo_product_idx on public.order_items (f
 
 comment on column public.order_items.fudo_product_id is 'Id del producto en Fudo (también en genéricos). Migración 031.';
 comment on column public.order_items.fudo_comment    is 'Comentario original del ítem en Fudo (nombre real de los genéricos). Migración 031.';
-comment on column public.order_items.fudo_options    is 'Opciones a precio 0 elegidas dentro del ítem: [{qty, name}]. Migración 031.';
+comment on column public.order_items.fudo_options    is 'Productos que vinieron dentro del ítem (gustos, opcional genérico): [{qty, name, product_id, fudo_product_id}]. Migración 031.';
+comment on column public.order_items.is_combo        is 'Combo: genérico de Fudo con opciones o producto de categoría combo/promo. Migración 031.';
