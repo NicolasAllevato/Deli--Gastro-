@@ -30,6 +30,24 @@ export const TRACKING_STEPS: ReadonlyArray<{ status: OrderStatus; label: string;
 export interface OrderLine {
   qty: number;
   name: string;
+  /** Opciones elegidas dentro del producto (gustos de un combo de Fudo): "Combo (2x Carne, 1x Humita)". */
+  options?: OrderLine[];
+}
+
+/** Paréntesis final con opciones "Nx nombre, Nx nombre". "(8 porciones)" no lo es: queda en el nombre. */
+const OPTIONS_SUFFIX = /^(.+?) \(((?:\d+x [^,()]+)(?:, \d+x [^,()]+)*)\)$/;
+
+function parseLine(chunk: string): OrderLine {
+  const m = /^(\d+)x\s+(.+)$/.exec(chunk);
+  const qty = m ? Number(m[1]) : 1;
+  const rest = m ? m[2]! : chunk;
+  const o = OPTIONS_SUFFIX.exec(rest);
+  if (!o) return { qty, name: rest };
+  const options = o[2]!.split(", ").map((opt) => {
+    const om = /^(\d+)x (.+)$/.exec(opt)!;
+    return { qty: Number(om[1]), name: om[2]! };
+  });
+  return { qty, name: o[1]!, options };
 }
 
 /** "2x Pizza · 1x Papas" → líneas. Si el texto es libre devuelve una sola línea. */
@@ -38,10 +56,7 @@ export function parseItems(itemsDesc: string): OrderLine[] {
     .split(" · ")
     .map((chunk) => chunk.trim())
     .filter(Boolean)
-    .map((chunk) => {
-      const m = /^(\d+)x\s+(.+)$/.exec(chunk);
-      return m ? { qty: Number(m[1]), name: m[2]! } : { qty: 1, name: chunk };
-    });
+    .map(parseLine);
 }
 
 export function buildItemsDesc(lines: ReadonlyArray<OrderLine>): string {

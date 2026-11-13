@@ -66,7 +66,9 @@ export interface ReportData {
 export async function loadReportData(db: Db): Promise<ReportData> {
   const [orders, clients, reviews, products] = await Promise.all([
     fetchAll((before) => {
-      let query = db.from("orders").select(ORDER_COLUMNS);
+      // Con las líneas guardadas, las ventas por producto agrupan por product_id (ver productSalesKey).
+      // Sin fudo_product_id a propósito: así no depende de la migración 031.
+      let query = db.from("orders").select(`${ORDER_COLUMNS}, order_items(product_id, name, qty)`);
       if (before) query = query.lt("created_at", before);
       return query.order("created_at", { ascending: false }).limit(PAGE_SIZE) as unknown as PromiseLike<{ data: Array<ReportOrder> | null; error: { message: string } | null }>;
     }),

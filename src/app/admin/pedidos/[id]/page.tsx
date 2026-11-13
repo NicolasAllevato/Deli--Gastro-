@@ -13,6 +13,7 @@ import { formatMoney, formatOrderId, parseItems } from "@/lib/orders";
 import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/lib/buttonClasses";
 import OrderTrace from "./OrderTrace";
+import { detailLines } from "./detail-lines";
 
 const ESTADO_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"> = {
   Finalizados:      "green",
@@ -51,13 +52,15 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
   const { data: row } = await db.from("orders").select("*").eq("id", id.data).maybeSingle();
   if (!row) notFound();
 
-  const [[pedido], reviewRes, clientRes, eventsRes] = await Promise.all([
+  const [[pedido], reviewRes, clientRes, eventsRes, itemsRes] = await Promise.all([
     enrichOrders(db, [row]),
     db.from("reviews").select("rating, feedback, created_at").eq("order_id", row.id).limit(1),
     row.client_id
       ? db.from("clients").select("address").eq("id", row.client_id).maybeSingle()
       : Promise.resolve({ data: null }),
     db.from("order_events").select("event, actor, detail, created_at").eq("order_id", row.id).order("created_at", { ascending: true }),
+    // `*`: las columnas de Fudo (migración 031) aparecen solas cuando la migración está aplicada.
+    db.from("order_items").select("*").eq("order_id", row.id).order("created_at", { ascending: true }),
   ]);
   if (!pedido) notFound();
 
@@ -66,7 +69,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
 
   const review = reviewRes.data?.[0];
   const hasTicket = review !== undefined && review.rating <= TICKET_MAX_RATING;
-  const lines = parseItems(pedido.items_desc);
+  const lines = detailLines(itemsRes.data ?? [], parseItems(pedido.items_desc));
   const subtotal = pedido.total - pedido.delivery_fee;
   const address = pedido.delivery_address ?? clientRes.data?.address ?? "Sin dirección registrada";
 
@@ -156,9 +159,24 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
             <h2 className="font-headline font-bold text-sm uppercase tracking-widest">Detalle</h2>
           </div>
           <ul className="space-y-2.5 mb-5">
-            {lines.map((item) => (
-              <li key={`${item.qty}-${item.name}`} className="flex justify-between text-sm text-gray-600">
-                <span>{item.qty}x {item.name}</span>
+            {lines.map((item, i) => (
+              <li key={`${i}-${item.qty}-${item.name}`} className="text-sm text-gray-600">
+                <div className="flex justify-between gap-3">
+                  <span>{item.qty}x {item.name}</span>
+                  {item.fudoProductId !== null && (
+                    <span className="text-[11px] font-bold text-gray-500 whitespace-nowrap">Fudo #{item.fudoProductId}</span>
+                  )}
+                </div>
+                {item.options.length > 0 && (
+                  <ul className="mt-0.5 pl-4 text-xs text-gray-500">
+                    {item.options.map((o, j) => (
+                      <li key={`${j}-${o.name}`}>{o.qty}x {o.name}</li>
+                    ))}
+                  </ul>
+                )}
+                {item.originalText && (
+                  <p className="mt-0.5 pl-4 text-xs italic text-gray-500">En Fudo: &ldquo;{item.originalText}&rdquo;</p>
+                )}
               </li>
             ))}
           </ul>

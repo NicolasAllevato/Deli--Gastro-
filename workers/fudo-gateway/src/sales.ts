@@ -8,6 +8,8 @@
  * Ver docs/FUDO_INTEGRACION.md.
  */
 
+import { buildSaleLines, saleItemsDesc, type FudoCatalogIndex, type OrderLineInsert } from "./sale-lines.ts";
+
 export type BoardStatus = "Recibidos" | "En Preparación" | "En Camino" | "Finalizados" | "Cancelado";
 export type FudoSaleType = "DELIVERY" | "TAKEAWAY" | "EAT-IN";
 
@@ -258,12 +260,7 @@ export function parseSalesRange(params: URLSearchParams): SalesRange | null {
   return { from, to };
 }
 
-export interface OrderLineInsert {
-  product_id: string | null;
-  name: string;
-  qty: number;
-  unit_price: number;
-}
+export type { OrderLineInsert } from "./sale-lines.ts";
 
 export interface SaleOrderInsert {
   fudo_order_id: number;
@@ -331,6 +328,8 @@ export interface SalesPlanInput {
   sales: FudoSale[];
   itemsBySale: ReadonlyMap<number, FudoItem[]>;
   productsByFudoId: ReadonlyMap<number, { id: string; name: string }>;
+  /** Catálogo de Fudo (nombres y categoría de opciones): para productos sin mapear, genéricos y opciones. */
+  catalog?: FudoCatalogIndex;
   existing: ExistingOrder[];
   clientsByFudoId: ReadonlyMap<number, string>;
   clientsByPhone: ReadonlyMap<string, string>;
@@ -383,19 +382,6 @@ function clientFor(sale: FudoSale, input: SalesPlanInput): string | null {
   );
 }
 
-function linesFor(items: FudoItem[], products: SalesPlanInput["productsByFudoId"]): OrderLineInsert[] {
-  return items
-    .filter((i) => !i.canceled)
-    .map((i) => {
-      const product = i.productId === null ? undefined : products.get(i.productId);
-      return {
-        product_id: product?.id ?? null,
-        name: product?.name ?? (i.productId === null ? "Producto de Fudo" : `Producto Fudo #${i.productId}`),
-        qty: i.quantity,
-        unit_price: i.price,
-      };
-    });
-}
 
 const READY_STATES: readonly string[] = ["READY-TO-DELIVER", "DELIVERY-SENT"];
 
@@ -455,7 +441,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       continue;
     }
 
-    const lines = linesFor(input.itemsBySale.get(sale.id) ?? [], input.productsByFudoId);
+    const lines = buildSaleLines(input.itemsBySale.get(sale.id) ?? [], input.productsByFudoId, input.catalog);
     const clientId = clientFor(sale, input);
     const notes = [sale.anon?.name ?? sale.customerName, sale.anon?.phone, sale.comment].filter(Boolean).join(" · ");
 
@@ -464,7 +450,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       channel: "fudo",
       status: target,
       total: sale.total,
-      items_desc: lines.length ? lines.map((l) => `${l.qty}x ${l.name}`).join(" · ") : `Venta Fudo #${sale.id}`,
+      items_desc: lines.length ? saleItemsDesc(lines) : `Venta Fudo #${sale.id}`,
       delivery_address: sale.saleType === "DELIVERY" ? parseFudoAddress(sale.anon?.address) ?? (clientId ? input.clientAddressById?.get(clientId) ?? null : null) : null,
       notes: notes ? notes.slice(0, NOTES_MAX) : null,
       created_at: sale.createdAt,

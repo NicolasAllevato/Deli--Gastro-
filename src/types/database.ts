@@ -153,6 +153,9 @@ export interface Database {
           name: string
           qty: number
           unit_price: number
+          fudo_product_id: number | null
+          fudo_comment: string | null
+          fudo_options: Array<{ qty: number; name: string }> | null
           created_at: string
         }
         Insert: {
@@ -162,6 +165,9 @@ export interface Database {
           name: string
           qty: number
           unit_price: number
+          fudo_product_id?: number | null
+          fudo_comment?: string | null
+          fudo_options?: Array<{ qty: number; name: string }> | null
         }
         Update: Record<string, never>
         Relationships: []
