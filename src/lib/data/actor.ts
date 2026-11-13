@@ -29,6 +29,25 @@ export const systemActor = (reason: string): Actor => {
   return { kind: "system", reason };
 };
 
+/**
+ * Actor a partir de la sesión ya validada por el servidor (requireRole).
+ * El rol viene de app_metadata (Supabase) o del campo `role` de Better Auth,
+ * nunca de un dato editable por el usuario. Un rol desconocido no da acceso.
+ */
+export function actorFromSession(session: { userId: string; role: string | null | undefined }): Actor {
+  if (!session.userId) return { kind: "anon" };
+  switch (session.role) {
+    case "admin":
+      return { kind: "admin", userId: session.userId };
+    case "repartidor":
+      return { kind: "repartidor", userId: session.userId };
+    case "cliente":
+      return { kind: "cliente", userId: session.userId };
+    default:
+      return { kind: "anon" };
+  }
+}
+
 export function isStaff(actor: Actor): boolean {
   return actor.kind === "admin" || actor.kind === "system";
 }

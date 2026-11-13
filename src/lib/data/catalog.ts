@@ -61,6 +61,27 @@ export async function getConfig(db: SqlDatabase, _actor: Actor, key: string): Pr
   return row ? JSON.parse(row.value) : null;
 }
 
+/** Toda la configuración (panel admin). */
+export async function listConfig(db: SqlDatabase, actor: Actor): Promise<{ key: string; value: unknown }[]> {
+  requireStaff(actor);
+  const { results } = await db.prepare("SELECT key, value FROM global_config ORDER BY key").all<{ key: string; value: string }>();
+  return results.map((r) => ({ key: r.key, value: JSON.parse(r.value) }));
+}
+
+/** Escritura de varias claves en un batch atómico. */
+export async function setConfigMany(db: SqlDatabase, actor: Actor, rows: { key: string; value: unknown }[]): Promise<void> {
+  requireStaff(actor);
+  if (rows.length === 0) return;
+  const now = nowIso();
+  await db.batch(
+    rows.map((r) =>
+      db
+        .prepare("INSERT INTO global_config (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
+        .bind(r.key, JSON.stringify(r.value), now),
+    ),
+  );
+}
+
 export async function setConfig(db: SqlDatabase, actor: Actor, key: string, value: unknown): Promise<void> {
   requireStaff(actor);
   await db

@@ -1,4 +1,3 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { usesD1 } from "./backend.ts";
 import type { SqlDatabase } from "./sql.ts";
 
@@ -10,6 +9,8 @@ import type { SqlDatabase } from "./sql.ts";
  */
 export async function getDb(): Promise<SqlDatabase> {
   if (!usesD1()) throw new Error("D1 desactivado (DATA_BACKEND=supabase)");
+  // Import dinámico (como email-binding.ts): con DATA_BACKEND=supabase el módulo ni se carga.
+  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as { DB?: SqlDatabase }).DB;
   if (!db) throw new Error("Binding D1 'DB' no configurado");
