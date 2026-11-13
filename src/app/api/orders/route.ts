@@ -14,6 +14,8 @@ import type { OrderStatus } from "@/types/database";
 import { locationSchema } from "@/lib/courier-location";
 import { isCourierApproved } from "@/lib/courier-shifts";
 import { courierToVerify } from "@/lib/courier-gate";
+import { courierMayActOn, courierMaySelfAssign, needsAutoAssign } from "@/lib/courier-assign";
+import { autoPickCourier, getAssignMode } from "@/lib/courier-assign-server";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
@@ -57,10 +59,12 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient();
   // El repartidor sólo ve lo que tiene que entregar.
-  const orders =
-    auth.role === "repartidor"
-      ? await listOrders(supabase, { statuses: ["En Camino"] })
-      : await listOrders(supabase, { excludeCancelled: true });
+  if (auth.role !== "repartidor") return NextResponse.json(await listOrders(supabase, { excludeCancelled: true }));
+  const onTheWay = await listOrders(supabase, { statuses: ["En Camino"] });
+  // Fuera del modo libre el repartidor solo ve lo suyo: no hay pedidos para tomar.
+  const mode = await getAssignMode(supabase);
+  const own = courierDisplayName(auth.user);
+  const orders = courierMaySelfAssign(mode) ? onTheWay : onTheWay.filter((o) => o.courier_name === own);
 
   return NextResponse.json(orders);
 }
@@ -145,6 +149,10 @@ export async function PATCH(req: NextRequest) {
     if (!courierMayPatch(current, courierName, body)) {
       return NextResponse.json({ error: "Acceso denegado." }, { status: 403 });
     }
+    // En modo manual o automático asigna el local: el repartidor no toma ni entrega pedidos ajenos.
+    if (current.courier_name !== courierName && !courierMayActOn(await getAssignMode(supabase), current.courier_name, courierName)) {
+      return NextResponse.json({ error: "Los pedidos los asigna el local." }, { status: 403 });
+    }
     // Tomar un pedido nuevo requiere que el local lo haya habilitado hoy; entregar lo que ya lleva, no.
     if (toVerify !== null && !(await isCourierApproved(supabase, toVerify))) {
       return NextResponse.json({ error: "El local todavía no te habilitó hoy." }, { status: 403 });
@@ -191,6 +199,18 @@ export async function PATCH(req: NextRequest) {
     Object.assign(patch, stagePatch("En Camino"));
   }
   if (body.status === "Finalizados" && isFudoOrigin(current)) patch.delivered_in_app = true;
+  // Modo automático: el delivery que sale sin repartidor va al habilitado con menos carga.
+  if (auth.role === "admin" && patch.status === "En Camino" && patch.courier_name === undefined) {
+    const mode = await getAssignMode(supabase);
+    if (needsAutoAssign(mode, current)) {
+      try {
+        const picked = await autoPickCourier(supabase);
+        if (picked) patch.courier_name = picked;
+      } catch (error: unknown) {
+        console.error("[orders] asignación automática", error);
+      }
+    }
+  }
   // Solo el repartidor que entrega deja el punto: es su teléfono el que estaba en la puerta.
   if (auth.role === "repartidor" && body.status === "Finalizados" && body.delivered_point) {
     patch.delivered_lat = body.delivered_point.lat;

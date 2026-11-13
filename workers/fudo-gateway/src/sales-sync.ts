@@ -2,6 +2,7 @@ import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./
 import { rest, type DbEnv } from "./db";
 import { geocodeNewOrders } from "./geocode.ts";
 import { shiftDay, soleCourier } from "../../../src/lib/courier-shift-day.ts";
+import { COURIER_ASSIGN_MODE_KEY, buildCandidates, courierPicker, parseAssignMode } from "../../../src/lib/courier-assign.ts";
 import { listPublicResource, type FudoEnv } from "./fudo";
 import { parseFudoItem, parseFudoSales, parsePaymentMethods, parsePaymentRows, paymentMethodIds, phoneKey, planSalesImport, salePaymentLines, type ExistingOrder, type FudoItem, type SalesRange } from "./sales.ts";
 
@@ -50,6 +51,23 @@ async function logRun(env: DbEnv, kind: "sales" | "customers", created: number, 
   } catch {
     // La bitácora no cambia el resultado.
   }
+}
+
+/** Lista PostgREST `in.(...)` con cada nombre entre comillas (pueden tener espacios o comas). */
+const inList = (names: readonly string[]): string =>
+  encodeURIComponent(`(${names.map((n) => `"${n.replace(/["\\]/g, "")}"`).join(",")})`);
+
+/** Selector del modo automático: carga en curso y última asignación de cada habilitado hoy. */
+async function automaticPicker(env: DbEnv, approvedNames: readonly string[]): Promise<() => string | null> {
+  const names = [...new Set(approvedNames)];
+  if (names.length === 0) return () => null;
+  const [active, events] = await Promise.all([
+    rest<Array<{ courier_name: string | null }>>(env, `orders?status=in.(${encodeURIComponent('"En Preparación","En Camino"')})&courier_name=in.${inList(names)}&select=courier_name`),
+    rest<Array<{ detail: string | null; created_at: string }>>(env, `order_events?event=eq.assigned&detail=in.${inList(names)}&select=detail,created_at&order=created_at.desc&limit=500`),
+  ]);
+  const lastAssigned = new Map<string, string>();
+  for (const e of events) if (e.detail && !lastAssigned.has(e.detail)) lastAssigned.set(e.detail, e.created_at);
+  return courierPicker(buildCandidates(names, active.map((o) => o.courier_name), lastAssigned), new Date().toISOString());
 }
 
 export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: SalesRange | null = null): Promise<SalesSyncSummary> {
@@ -108,15 +126,28 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       if (key && !clientsByPhone.has(key)) clientsByPhone.set(key, c.id);
     }
 
-    // Un solo repartidor habilitado hoy recibe los deliveries que Fudo marca "Enviado". Se consulta solo si hay alguno.
+    // Deliveries que Fudo marca "Enviado": en modo libre los recibe el único habilitado hoy (si hay uno solo);
+    // en automático, el habilitado con menos pedidos en curso. Se consulta solo si hay alguno.
     let soleCourierName: string | null = null;
+    let assignCourier: (() => string | null) | undefined;
+    let autoMode = false;
     if (sales.some((s) => s.saleType === "DELIVERY" && s.saleState === "DELIVERY-SENT")) {
-      const approved = await rest<Array<{ courier_name: string }>>(env, `courier_shifts?shift_day=eq.${shiftDay()}&status=eq.approved&select=courier_name`);
-      soleCourierName = soleCourier(approved.map((r) => r.courier_name));
+      const [approved, modeRows] = await Promise.all([
+        rest<Array<{ courier_name: string }>>(env, `courier_shifts?shift_day=eq.${shiftDay()}&status=eq.approved&select=courier_name`),
+        rest<Array<{ value: unknown }>>(env, `global_config?key=eq.${COURIER_ASSIGN_MODE_KEY}&select=value`),
+      ]);
+      const mode = parseAssignMode(modeRows[0]?.value);
+      const names = approved.map((r) => r.courier_name);
+      if (mode === "automatico") {
+        autoMode = true;
+        assignCourier = await automaticPicker(env, names);
+      } else if (mode === "libre") {
+        soleCourierName = soleCourier(names);
+      }
     }
-
     const plan = planSalesImport({
       soleCourier: soleCourierName,
+      assignCourier,
       sales,
       itemsBySale,
       productsByFudoId: new Map(productMap.map((m) => [m.fudo_product_id, { id: m.product_id, name: m.products?.name ?? `Producto Fudo #${m.fudo_product_id}` }])),
@@ -143,6 +174,10 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
           const orderId = idByFudo.get(o.fudo_order_id);
           return orderId ? o.lines.map((l) => ({ ...l, order_id: orderId })) : [];
         });
+        const assigned = autoMode ? batch.flatMap((o) => (o.courier_name && idByFudo.get(o.fudo_order_id) ? [{ order_id: idByFudo.get(o.fudo_order_id), event: "assigned", actor: "fudo", detail: o.courier_name }] : [])) : [];
+        if (assigned.length) {
+          await rest(env, "order_events", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(assigned) });
+        }
         if (items.length) {
           await rest(env, "order_items", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(items) });
         }
@@ -152,6 +187,14 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
           method: "PATCH",
           headers: { prefer: "return=minimal" },
           body: JSON.stringify({ courier_name }),
+        });
+      }
+      // En automático la asignación queda en la bitácora: el desempate usa la última que recibió cada uno.
+      if (autoMode && plan.autoAssign.length) {
+        await rest(env, "order_events", {
+          method: "POST",
+          headers: { prefer: "return=minimal" },
+          body: JSON.stringify(plan.autoAssign.map((a) => ({ order_id: a.id, event: "assigned", actor: "fudo", detail: a.courier_name }))),
         });
       }
       for (const { id, ...patch } of plan.updates) {
