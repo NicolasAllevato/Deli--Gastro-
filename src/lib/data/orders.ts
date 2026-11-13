@@ -45,12 +45,11 @@ export async function listOrders(db: SqlDatabase, actor: Actor, limit = 50): Pro
     ).results;
   }
   if (actor.kind === "repartidor") {
-    return (
-      await db
-        .prepare(`SELECT ${COLS} FROM orders o WHERE ${COURIER_SCOPE} ORDER BY o.created_at DESC LIMIT ?`)
-        .bind(actor.userId, lim)
-        .all<OrderRow>()
-    ).results;
+    const { results } = await db
+      .prepare(`SELECT ${COLS} FROM orders o WHERE ${COURIER_SCOPE} ORDER BY o.created_at DESC LIMIT ?`)
+      .bind(actor.userId, lim)
+      .all<OrderRow>();
+    return results.map((o) => redactForCourier(o, actor.userId));
   }
   throw new ForbiddenError();
 }
@@ -66,9 +65,15 @@ export async function getOrder(db: SqlDatabase, actor: Actor, orderId: string): 
       .first<OrderRow>();
   }
   if (actor.kind === "repartidor") {
-    return db.prepare(`SELECT ${COLS} FROM orders o WHERE o.id = ? AND ${COURIER_SCOPE}`).bind(orderId, actor.userId).first<OrderRow>();
+    const row = await db.prepare(`SELECT ${COLS} FROM orders o WHERE o.id = ? AND ${COURIER_SCOPE}`).bind(orderId, actor.userId).first<OrderRow>();
+    return row ? redactForCourier(row, actor.userId) : null;
   }
   throw new ForbiddenError();
+}
+
+/** Pedido libre: el repartidor no ve la dirección hasta tomarlo (condición del auditor). */
+function redactForCourier(o: OrderRow, userId: string): OrderRow {
+  return o.courier_user_id === userId ? o : { ...o, delivery_address: null };
 }
 
 /** G5: items solo de pedidos propios. */

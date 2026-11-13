@@ -42,11 +42,16 @@ export async function createPaymentIntent(
 /**
  * G15: aprobación idempotente. Solo pasa pending→approved una vez; el webhook
  * repetido (o dos webhooks a la vez) obtiene `false` y no repite efectos.
- * `effects` (crear pedido, items, eventos, puntos) se ejecutan en el MISMO
- * batch atómico y condicionados a que la transición haya ocurrido: cada
- * efecto debe incluir `WHERE EXISTS (SELECT 1 FROM payment_intents WHERE id = ? AND status = 'approved' AND mp_payment_id = ?)`
- * o depender de la fila aprobada. Si un efecto falla, se revierte también
- * la transición.
+ * `effects` (crear pedido, items, eventos, puntos) van en el MISMO batch
+ * atómico. Como el batch corre aunque la transición no cambie filas, la
+ * idempotencia NO depende de un guard por estado (un webhook repetido lo
+ * cumpliría): los efectos tienen que ser idempotentes por esquema:
+ *   - el pedido se inserta con `payment_intent_id = <intent>` (UNIQUE) y
+ *     `ON CONFLICT (payment_intent_id) DO NOTHING`;
+ *   - items/eventos con INSERT…SELECT desde ese pedido recién creado
+ *     (`WHERE NOT EXISTS` previo o PK determinística);
+ *   - puntos con `idempotency_key` UNIQUE (`addPointsStatement`).
+ * Si un efecto falla, se revierte también la transición.
  */
 export async function approvePaymentIntent(
   db: SqlDatabase,

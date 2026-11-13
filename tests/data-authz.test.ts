@@ -308,6 +308,57 @@ describe("G15 payment_intents: aprobación idempotente", () => {
   });
 });
 
+describe("G15 HIGH del auditor: webhook repetido en serie no duplica pedido ni puntos", () => {
+  // Misma fábrica de efectos que usaría el webhook real: crea pedido, item y puntos.
+  const effects = (d: typeof db) => () => [
+    d.prepare(
+      "INSERT INTO orders (id, client_id, items_desc, total_cents, payment_intent_id) VALUES (?, 'c-ana', 'Pizza', 1250050, ?) ON CONFLICT (payment_intent_id) DO NOTHING",
+    ).bind(crypto.randomUUID(), "pi-ana"),
+    d.prepare(
+      "INSERT INTO order_items (id, order_id, name, qty, unit_price_cents) SELECT ?, o.id, 'Pizza', 1, 1250050 FROM orders o WHERE o.payment_intent_id = ? AND NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id)",
+    ).bind(crypto.randomUUID(), "pi-ana"),
+    points.addPointsStatement(d, actors.system, {
+      id: crypto.randomUUID(), clientId: "c-ana", delta: 12, description: "pedido pagado", idempotencyKey: "earn:pi-ana",
+    }),
+  ];
+  it("dos llamadas seguidas: 1 pedido, 1 item, 1 asiento", async () => {
+    const a = await payments.approvePaymentIntent(db, actors.system, { id: "pi-ana", mpPaymentId: "mp-1", expectedVersion: 0 }, effects(db));
+    const b = await payments.approvePaymentIntent(db, actors.system, { id: "pi-ana", mpPaymentId: "mp-1", expectedVersion: 0 }, effects(db));
+    const c = await payments.approvePaymentIntent(db, actors.system, { id: "pi-ana", mpPaymentId: "mp-1", expectedVersion: 1 }, effects(db));
+    assert.deepEqual([a, b, c], [true, false, false]);
+    const count = (sql: string) => (db.raw.prepare(sql).get() as { n: number }).n;
+    assert.equal(count("SELECT count(*) n FROM orders WHERE payment_intent_id = 'pi-ana'"), 1);
+    assert.equal(count("SELECT count(*) n FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.payment_intent_id = 'pi-ana'"), 1);
+    assert.equal(count("SELECT count(*) n FROM points_ledger WHERE idempotency_key = 'earn:pi-ana'"), 1);
+    assert.equal(count("SELECT total_points n FROM clients WHERE id = 'c-ana'"), 112);
+  });
+  it("addPoints con la misma clave no suma dos veces", async () => {
+    const e = { clientId: "c-beto", delta: 5, description: "x", idempotencyKey: "k1" };
+    assert.equal(await points.addPoints(db, actors.system, { id: "a1", ...e }), true);
+    assert.equal(await points.addPoints(db, actors.system, { id: "a2", ...e }), false);
+    assert.equal((db.raw.prepare("SELECT total_points n FROM clients WHERE id='c-beto'").get() as { n: number }).n, 55);
+  });
+});
+
+describe("Condiciones del auditor", () => {
+  it("el repartidor no ve la dirección de un pedido libre hasta tomarlo", async () => {
+    db.raw.prepare("UPDATE orders SET delivery_address = 'Calle 123' WHERE id IN ('o-libre','o-ana-2')").run();
+    const libre = await orders.getOrder(db, actors.rep1, "o-libre");
+    assert.equal(libre?.delivery_address, null);
+    assert.equal((await orders.getOrder(db, actors.rep1, "o-ana-2"))?.delivery_address, "Calle 123");
+    const listed = await orders.listOrders(db, actors.rep1);
+    assert.equal(listed.find((o) => o.id === "o-libre")?.delivery_address, null);
+    await orders.claimOrder(db, actors.rep1, "o-libre", "Rep Uno");
+    assert.equal((await orders.getOrder(db, actors.rep1, "o-libre"))?.delivery_address, "Calle 123");
+  });
+  it("tope global de fallos de PIN aunque se roten IPs", async () => {
+    const t0 = new Date("2026-11-12T12:00:00Z");
+    for (let i = 0; i < pins.PIN_GLOBAL_MAX; i++) await pins.recordPinFailure(db, actors.system, `ip:rot-${i}`, t0);
+    assert.equal(await pins.isPinLocked(db, actors.system, "ip:nueva", t0), true);
+    await assert.rejects(pins.recordPinFailure(db, actors.system, pins.PIN_GLOBAL_KEY, t0));
+  });
+});
+
 describe("G18 rol solo del servidor", () => {
   it("el CHECK del esquema solo admite los 3 roles", () => {
     assert.throws(() =>

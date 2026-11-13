@@ -14,6 +14,14 @@ Hecho:
 - Tests (`tests/data-*.test.ts`, node:sqlite con el esquema real): garantías G1–G18 del auditor, doble gasto de puntos, webhook MP repetido/concurrente, PIN con bloqueo, fechas AR, centavos, interruptor, guardas estáticas (nadie fuera de la capa toca `env.DB` ni importa sus módulos internos; ningún `${}` no permitido dentro de `prepare`).
 - Pendiente de config: la regla ESLint equivalente (`no-restricted-imports`) no se pudo agregar porque un hook local protege `eslint.config.mjs`; la misma regla la hace cumplir `tests/data-guard.test.ts`.
 
+Revisión del auditor (commit 0db7bc5) y respuesta:
+- HIGH webhook MP repetido duplicaba efectos → **corregido**: `orders.payment_intent_id` UNIQUE, `points_ledger.idempotency_key` UNIQUE, efectos idempotentes por esquema y test de dos llamadas seguidas.
+- MEDIUM tope global de fallos de PIN (rotación de IPs) → **corregido** (50 fallos / 15 min bloquea el login por PIN).
+- MEDIUM salida del script en Windows → **corregido**: por defecto en `%LOCALAPPDATA%\deli-gastro-d1-out`, fuera del repo; borrarla tras importar. `verificar.sql` compara saldo con la suma del ledger.
+- Condición: pedidos libres sin dirección para el repartidor hasta tomarlos → **cumplido** con test.
+- MEDIUM `pin_hash` determinista sin sal (se busca por igualdad) → **pendiente fase 3**: identificar al repartidor (usuario/dispositivo) y verificar el PIN con HMAC + pepper en Worker secret o KDF con sal; re-generar los hashes al migrar.
+- LOW el staff puede mover un pedido a cualquier estado → **pendiente fase 2**: matriz de transiciones (hoy Supabase permite lo mismo).
+
 Siguientes fases: ver §6 (fase 2 = rutas a la capa + escritura doble; fase 3 = auth; 4 = polling; 5 = Workers; 6 = corte con OK).
 
 Artefactos:

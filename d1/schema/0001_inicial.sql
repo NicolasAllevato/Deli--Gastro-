@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS points_ledger (
   order_id    TEXT REFERENCES orders(id) ON DELETE SET NULL,
   delta       INTEGER NOT NULL,
   description TEXT NOT NULL,
+  idempotency_key TEXT UNIQUE,   -- NUEVA (G6/G15): p. ej. 'earn:<order_id>'; repetir no suma dos veces
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS points_ledger_client_idx ON points_ledger (client_id, created_at);
@@ -222,7 +223,8 @@ CREATE TABLE IF NOT EXISTS orders (
   fudo_payment         TEXT,
   fudo_payments        TEXT CHECK (fudo_payments IS NULL OR (json_valid(fudo_payments) AND json_type(fudo_payments) = 'array')),
   geocode_attempts     INTEGER NOT NULL DEFAULT 0 CHECK (geocode_attempts >= 0),
-  delivered_in_app     INTEGER NOT NULL DEFAULT 0 CHECK (delivered_in_app IN (0,1))
+  delivered_in_app     INTEGER NOT NULL DEFAULT 0 CHECK (delivered_in_app IN (0,1)),
+  payment_intent_id    TEXT UNIQUE   -- NUEVA (G15): un pedido por pago; un webhook repetido no duplica
 );
 CREATE INDEX IF NOT EXISTS orders_client_created_idx     ON orders (client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_status_idx             ON orders (status);

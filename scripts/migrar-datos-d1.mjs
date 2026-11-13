@@ -26,6 +26,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
 // Orden respetando FKs (padres primero).
 const TABLAS = [
@@ -69,7 +70,9 @@ function args() {
   const a = process.argv.slice(2);
   const get = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
   return {
-    out: get("--out") ?? "d1/out",
+    // Fuera del repo y del Desktop: en Windows los modos 0600/0700 no aplican.
+    // Borrar la carpeta después de importar (contiene datos personales y pin_hash).
+    out: get("--out") ?? join(process.env.LOCALAPPDATA ?? join(homedir(), ".local", "share"), "deli-gastro-d1-out"),
     tablas: (get("--tablas")?.split(",") ?? TABLAS).filter((t) => {
       if (EXCLUIDAS.has(t)) console.warn(`Se omite ${t}: contiene secretos (van a Worker secrets).`);
       return !EXCLUIDAS.has(t);
@@ -216,6 +219,10 @@ async function main() {
   lineas.push(
     "CREATE TRIGGER IF NOT EXISTS points_ledger_after_insert AFTER INSERT ON points_ledger BEGIN UPDATE clients SET total_points = total_points + NEW.delta WHERE id = NEW.client_id; END;",
   );
+  // G15: un pedido por pago (UNIQUE orders.payment_intent_id).
+  lineas.push(
+    "UPDATE orders SET payment_intent_id = (SELECT p.id FROM payment_intents p WHERE p.order_id = orders.id) WHERE (SELECT count(*) FROM payment_intents p WHERE p.order_id = orders.id) = 1;",
+  );
   // G13: dueño del pedido por id, derivado del nombre del repartidor (si es único).
   lineas.push(
     "UPDATE orders SET courier_user_id = (SELECT c.user_id FROM couriers c WHERE c.name = orders.courier_name) WHERE courier_name IS NOT NULL AND (SELECT count(*) FROM couriers c WHERE c.name = orders.courier_name) = 1;",
@@ -233,6 +240,8 @@ async function main() {
     ),
     "PRAGMA foreign_key_check;",
     "SELECT 'puntos_inconsistentes' AS chequeo, count(*) AS n FROM clients c WHERE c.total_points < 0;",
+    // Condición del auditor: el saldo de cada cliente = suma de su ledger (si no, listar).
+    "SELECT 'saldo_distinto_del_ledger' AS chequeo, c.id, c.total_points, COALESCE(SUM(l.delta), 0) AS suma_ledger FROM clients c LEFT JOIN points_ledger l ON l.client_id = c.id GROUP BY c.id HAVING c.total_points <> MAX(0, COALESCE(SUM(l.delta), 0));",
   ];
 
   const privado = { mode: 0o600 };
