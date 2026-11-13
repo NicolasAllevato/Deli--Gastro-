@@ -4,6 +4,7 @@
  */
 
 import { isBotPausedUntil } from "../../../../lib/whatsapp/pause.ts";
+import { formatDateAR, formatTimeAR } from "../../../../lib/time-ar.ts";
 
 export interface ConversationItem {
   id: string;
@@ -67,7 +68,7 @@ export function personAttends(c: { humanTakeover: boolean; botPausedUntil?: stri
 export function attendedLabel(c: { humanTakeover: boolean; botPausedUntil?: string | null }, now: number): string {
   if (c.humanTakeover) return "Atiende una persona (el agente no responde)";
   if (isBotPausedUntil(c.botPausedUntil, now)) {
-    const time = new Date(c.botPausedUntil as string).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const time = formatTimeAR(c.botPausedUntil as string, { hour: "2-digit", minute: "2-digit", hour12: false });
     return `Bot en pausa hasta ${time}`;
   }
   return "Responde el agente";
@@ -121,5 +122,5 @@ export function dayLabel(day: string, now: number): string {
   const yesterday = DAY_KEY.format(new Date(now - 24 * 60 * 60 * 1000));
   if (day === today) return "Hoy";
   if (day === yesterday) return "Ayer";
-  return new Date(`${day}T12:00:00-03:00`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  return formatDateAR(`${day}T12:00:00-03:00`, { weekday: "long", day: "numeric", month: "long" });
 }

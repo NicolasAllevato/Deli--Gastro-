@@ -5,13 +5,14 @@ import { Bike, KeyRound, Loader2, Pencil, Plus, Power, Shuffle } from "lucide-re
 import type { Courier } from "@/lib/courier-pins";
 import { CourierShiftsToday } from "../_components/CourierShifts";
 import { EditCourierModal, PinReveal } from "./CourierRowTools";
+import { formatDateAR } from "@/lib/time-ar";
 
 interface PinNotice {
   name: string;
   pin: string;
 }
 
-const fmt = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { dateStyle: "short" });
+const fmt = (iso: string) => formatDateAR(iso, { dateStyle: "short" });
 
 async function send<T>(url: string, method: string, body: unknown): Promise<T> {
   const res = await fetch(url, {

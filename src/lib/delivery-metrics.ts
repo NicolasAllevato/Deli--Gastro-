@@ -1,3 +1,4 @@
+import { isSameDayAR } from "./time-ar.ts";
 /** Métricas de una entrega a partir de las marcas de tiempo y del punto donde se marcó entregado. */
 
 export interface DeliveryTimes {
@@ -39,9 +40,10 @@ export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number
   return Math.round(2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h)));
 }
 
+/** ¿`iso` cae el mismo día argentino que `now`? (antes usaba la zona del entorno: UTC en el Worker). */
 export function isSameLocalDay(iso: string | null, now: Date = new Date()): boolean {
   if (!iso) return false;
-  return new Date(iso).toDateString() === now.toDateString();
+  return isSameDayAR(iso, now);
 }
 
 /** Dónde marcar una entrega: el punto real del repartidor o, sin él, la dirección del pedido. No depende de tener repartidor. */

@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock, Search } from "lucide-react";
 import type { LegalUserRow } from "@/app/api/admin/legal/route";
+import { formatDateTimeAR } from "@/lib/time-ar";
 
 interface Doc { id: "terminos" | "privacidad"; title: string; version: string; href: string }
 interface Payload { documents: Doc[]; users: LegalUserRow[]; truncated: boolean }
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", cliente: "Cliente", repartidor: "Repartidor" };
-const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) : null);
+const fmt = (iso?: string) => (iso ? formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" }) : null);
 
 export default function LegalAdminPage() {
   const [data, setData] = useState<Payload | null>(null);

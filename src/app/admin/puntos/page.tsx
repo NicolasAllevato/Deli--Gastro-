@@ -5,9 +5,10 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import PuntosClient, { type ClientePuntos } from "./PuntosClient";
 import PuntosCatalogo, { type CategoriaPuntos, type ProductoPuntos } from "./PuntosCatalogo";
 import type { ClientTier } from "@/types/database";
+import { formatDateAR } from "@/lib/time-ar";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("es-AR", {
+  return formatDateAR(iso, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

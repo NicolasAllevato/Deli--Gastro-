@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/lib/buttonClasses";
 import { cn } from "@/lib/cn";
 import type { OrderStatus } from "@/types/database";
+import { formatDateTimeAR } from "@/lib/time-ar";
 
 const STATUS_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"> = {
   Finalizados:      "green",
@@ -29,7 +30,7 @@ const FILTERS: ReadonlyArray<{ label: string; value: OrderStatus | "todos" }> = 
 ];
 
 function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("es-AR", {
+  return formatDateTimeAR(iso, {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isSameDayAR } from "@/lib/time-ar";
 import { sendToDispatcher } from "@/utils/api";
 import { Wallet, UtensilsCrossed, Timer } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
@@ -29,10 +30,9 @@ const MAX_FINISHED_SHOWN = 10;
 const BOARD_BOTTOM_GAP = 16;
 const BOARD_MIN_HEIGHT = 416;
 
+/** "Hoy" en hora argentina, aunque el navegador esté en otra zona. */
 function isToday(iso: string): boolean {
-  const d = new Date(iso);
-  const n = new Date();
-  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  return isSameDayAR(iso, new Date());
 }
 
 export default function TableroClient({ initialOrders, targetMinutes }: Props) {
