@@ -1,0 +1,46 @@
+/* Tokens de Tailwind (@theme). Nota: --color-brand-orange es el VIOLETA de marca #7c3aed (nombre heredado; renombrar en una fase posterior). */
+/* ── Design Tokens ── */
+@theme {
+  /* Legado: se mantiene para compatibilidad con refs existentes */
+  --color-brand-orange: #7c3aed;
+
+  /* Paleta nueva — Deli-Gastro Refined */
+  --color-brand-olive: #7c3aed;        /* Verde oliva primario — 4.84:1 sobre #f0f3f8 ✓ AA */
+  --color-brand-olive-hover: #6d28d9;  /* Hover más oscuro — 6.8:1 ✓ AA */
+  --color-brand-beige: #c9b99a;        /* Beige/arena cálido — superficies secundarias */
+  --color-brand-beige-deep: #a8956d;   /* Beige profundo — texto sobre beige claro */
+  --color-brand-gold: #8a6e1e;         /* Dorado oscurecido — 5.86:1 sobre #f0f3f8 ✓ AA */
+  --color-brand-gold-light: #d4a832;   /* Dorado decorativo — solo iconos/acentos grandes */
+  --color-brand-green: #22d3ee;        /* Verde acento (heredado, se mantiene en badge) */
+
+  /* Primario semántico — verde oliva */
+  --color-primary: #7c3aed;
+  --color-primary-container: #6d28d9;
+  --color-on-primary-container: #ffffff;
+
+  /* Superficie y fondo — arena cálida (tema claro): fondo más oscuro que las tarjetas para dar relieve */
+  --color-background: #e4d8bf;
+  --color-on-background: #20170c;
+  --color-surface: #e4d8bf;
+  --color-on-surface: #1a1208;
+  --color-on-surface-variant: #4a3b26;
+  --color-surface-container: #e4d8bf;
+  --color-surface-container-low: #e9dec8;
+  --color-surface-container-lowest: #f2e9d6;
+  --color-surface-container-highest: #d5c6a6;
+  --color-inset: #d5c6a6;
+  --color-outline: #a8946d;
+  --color-outline-variant: #c5b48e;
+  --color-error: #b02a1e;              /* Rojo sobrio — ≥5:1 sobre la arena ✓ AA */
+
+  --font-headline: var(--font-manrope, 'Manrope', sans-serif);
+  --font-display: var(--font-manrope, 'Manrope', sans-serif);
+  --font-body: var(--font-inter, 'Inter', sans-serif);
+  --font-label: var(--font-inter, 'Inter', sans-serif);
+
+  /* Texto semántico accesible — WCAG AA sobre #f0f3f8 */
+  --color-text-muted: #4a3b26;
+  --color-text-subtle: #5f4f36;
+  --color-text-disabled: #8a785a;
+  --color-switch-off: #cdbd9c;
+}

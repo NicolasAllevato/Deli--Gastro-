@@ -1,0 +1,89 @@
+/* ── Tema global ──
+   Claro en :root; oscuro con <html data-theme="dark"> (es el predeterminado, ver layout.tsx).
+   Todo color de superficie, texto y borde sale de estas variables. */
+:root {
+  color-scheme: light;
+  /* Arena cálida: fondo de página más oscuro que las tarjetas, texto marrón casi negro, bordes visibles. */
+  --app-bg: #e4d8bf;
+  --app-surface: #f2e9d6;
+  --app-inset: #d5c6a6;
+  --app-hover: #eadfc6;
+  --app-glass: rgba(242, 233, 214, 0.86);
+  --app-edge: rgba(255, 251, 240, 0.75);
+  --app-border: rgba(110, 85, 45, 0.38);
+  --app-text: #20170c;
+  --app-text-soft: #36291a;
+  --app-text-muted: #4a3b26;
+  --app-text-subtle: #5f4f36;
+  --app-text-faint: #7d6b4e;
+  --app-shadow-dark: rgba(110, 85, 45, 0.5);
+  --app-shadow-light: rgba(255, 251, 240, 0.92);
+  --app-shadow-dark-strong: rgba(110, 85, 45, 0.62);
+  --app-shadow-light-strong: rgba(255, 251, 240, 0.96);
+  --app-card-shadow: 0 4px 14px rgba(90, 65, 25, 0.24);
+  --app-scroll: rgba(140, 115, 70, 0.6);
+  --app-focus: #5b21b6;
+  --app-accent-text: #5b21b6;
+  --app-accent-contrast: #ffffff;
+  --app-good: #14532d;
+  --app-bad: #991b1b;
+  --app-warn: #78350f;
+  --app-info: #1e3a8a;
+  --app-switch-off: #cdbd9c;
+  --app-chip-text: #36291a;
+  --app-btn-secondary: #4a3f2a;
+  --app-btn-ghost: #5b21b6;
+  --app-btn-ghost-hover: rgba(124, 58, 237, 0.12);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-background: #0c0a1d;
+  --color-on-background: #e2e8f0;
+  --color-surface: #0c0a1d;
+  --color-on-surface: #f1f5f9;
+  --color-on-surface-variant: #cbd5e1;
+  --color-surface-container: #141029;
+  --color-surface-container-low: #110e24;
+  --color-surface-container-lowest: #0c0a1d;
+  --color-surface-container-highest: #221b3d;
+  --color-inset: #100d22;
+  --color-outline: #475569;
+  --color-outline-variant: #334155;
+  --color-error: #f87171;
+  --color-text-muted: #cbd5e1;
+  --color-text-subtle: #94a3b8;
+  --color-text-disabled: #64748b;
+  --color-switch-off: #334155;
+
+  --app-bg: #0c0a1d;
+  --app-surface: #17132b;
+  --app-inset: #100d22;
+  --app-hover: #2a2245;
+  --app-glass: rgba(23, 19, 43, 0.78);
+  --app-edge: rgba(148, 163, 184, 0.12);
+  --app-border: rgba(148, 163, 184, 0.22);
+  --app-text: #f1f5f9;
+  --app-text-soft: #e2e8f0;
+  --app-text-muted: #cbd5e1;
+  --app-text-subtle: #94a3b8;
+  --app-text-faint: #64748b;
+  --app-shadow-dark: rgba(0, 0, 0, 0.55);
+  --app-shadow-light: rgba(255, 255, 255, 0.04);
+  --app-shadow-dark-strong: rgba(0, 0, 0, 0.65);
+  --app-shadow-light-strong: rgba(255, 255, 255, 0.06);
+  --app-card-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --app-scroll: rgba(100, 116, 139, 0.55);
+  --app-focus: #c4b5fd;
+  --app-accent-text: #c4b5fd;
+  --app-accent-contrast: #0c0a1d;
+  --app-good: #4ade80;
+  --app-bad: #fca5a5;
+  --app-warn: #fcd34d;
+  --app-info: #93c5fd;
+  --app-switch-off: #334155;
+  --app-chip-text: #e2e8f0;
+  --app-btn-secondary: #e7d9b0;
+  --app-btn-ghost: #c4b5fd;
+  --app-btn-ghost-hover: rgba(124, 58, 237, 0.22);
+}

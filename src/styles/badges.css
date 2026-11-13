@@ -1,0 +1,17 @@
+/* ── Status Badges — tonos apagados y elegantes ── */
+/* verde oliva suave — "Entregado", "Activo"       contraste texto ~5.2:1 ✓ AA */
+.badge-green  { background:#e8eddc; color:#4a5a2a; border:1px solid #c8d4aa; }
+/* rojo sobrio — "Error", "Cancelado"              contraste texto ~5.2:1 ✓ AA */
+.badge-red    { background:#f5e0de; color:#8b2a24; border:1px solid #e0b0ab; }
+/* azul pizarra — "En camino", "Info"              contraste texto ~5.5:1 ✓ AA */
+.badge-blue   { background:#dde4ef; color:#2c4a7a; border:1px solid #b3c2d8; }
+/* dorado suave — "Puntos", "Pendiente"            contraste texto ~5.9:1 ✓ AA */
+.badge-orange { background:#f0e8d0; color:#6b4e10; border:1px solid #d4c090; }
+/* arena cálida — "Advertencia", "Revisar"         contraste texto ~5.7:1 ✓ AA */
+.badge-yellow { background:#ede8dc; color:#5c4a20; border:1px solid #cfc0a0; }
+
+:root[data-theme="dark"] .badge-green  { background: rgba(107,124,69,0.25); color:#d6e3a8; border-color: rgba(163,184,108,0.35); }
+:root[data-theme="dark"] .badge-red    { background: rgba(185,28,28,0.22); color:#fecaca; border-color: rgba(252,165,165,0.3); }
+:root[data-theme="dark"] .badge-blue   { background: rgba(59,130,246,0.2); color:#bfdbfe; border-color: rgba(147,197,253,0.3); }
+:root[data-theme="dark"] .badge-orange { background: rgba(212,168,50,0.2); color:#fde68a; border-color: rgba(253,224,71,0.3); }
+:root[data-theme="dark"] .badge-yellow { background: rgba(160,130,70,0.2); color:#e7d9b0; border-color: rgba(207,192,160,0.3); }
