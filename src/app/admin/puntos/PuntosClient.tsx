@@ -52,10 +52,12 @@ function getPromos(puntos: number) {
   return PROMOS.filter(p => p.activa && puntos >= p.puntosRequeridos);
 }
 
-export default function PuntosClient({ clientes }: { clientes: ClientePuntos[] }) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+export default function PuntosClient({ clientes, initialClientId = null }: { clientes: ClientePuntos[]; initialClientId?: string | null }) {
+  // Llegando desde el rastreo de un pedido (?cliente=<id>): ese cliente filtrado y abierto.
+  const initial = initialClientId ? clientes.find((c) => c.id === initialClientId) : undefined;
+  const [expandedId, setExpandedId] = useState<string | null>(initial?.id ?? null);
   const [notifCliente, setNotifCliente] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initial?.nombre ?? "");
   const [notice, setNotice] = useState<string | null>(null);
   const [visible, setVisible] = useState(PAGE_SIZE);
 
