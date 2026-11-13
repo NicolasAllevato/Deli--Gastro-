@@ -57,8 +57,13 @@ export async function shadowRead<P, S>(
     log({ kind: "shadow_error", op: opts.op, error: errorName(s.reason) });
     return p.value;
   }
-  const diff = await compareRows(opts.op, p.value.map(opts.normalize), s.value.map(opts.normalizeShadow), opts.key);
-  if (diff) log({ kind: "shadow_diff", diff });
+  try {
+    const diff = await compareRows(opts.op, p.value.map(opts.normalize), s.value.map(opts.normalizeShadow), opts.key);
+    if (diff) log({ kind: "shadow_diff", diff });
+  } catch (err) {
+    // Comparar nunca rompe la petición (p. ej. una clave rechazada por assertIdKey).
+    log({ kind: "shadow_error", op: opts.op, error: errorName(err) });
+  }
   return p.value;
 }
 

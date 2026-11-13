@@ -66,6 +66,11 @@ describe("clave de comparación solo ids", () => {
     assert.equal(assertIdKey("promos_del_dia"), "promos_del_dia");
     for (const bad of ["1155554444", "+5491155554444", "ana@x.test", "123456"]) assert.throws(() => assertIdKey(bad));
     await assert.rejects(compareRows("t", [{ id: "ana@x.test" }], [], (r) => String(r.id)));
+    const { events, log } = capture();
+    const r = await shadowRead(async () => [{ id: "ana@x.test" }], async () => [], { ...opts, backend: "dual", log });
+    assert.deepEqual(r, [{ id: "ana@x.test" }], "una clave rechazada no rompe la petición");
+    assert.equal((events[0] as { kind: string }).kind, "shadow_error");
+    assert.ok(!JSON.stringify(events).includes("ana@"));
   });
 });
 
