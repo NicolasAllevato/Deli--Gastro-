@@ -44,7 +44,7 @@ describe("consultas parametrizadas", () => {
   it("prepare() no recibe valores interpolados", () => {
     // Se permiten solo interpolaciones de constantes de la capa (COLS, where,
     // COURIER_SCOPE, sets de lista blanca, table de lista blanca).
-    const ALLOWED = /^\$\{(COLS|PRODUCT_COLS|CATEGORY_COLS|where|COURIER_SCOPE|table|sets\.join\(", "\))\}$/;
+    const ALLOWED = /^\$\{(COLS|PRODUCT_COLS|CATEGORY_COLS|CLIENT_ORDER_COLS|where|COURIER_SCOPE|table|sets\.join\(", "\))\}$/;
     const offenders: string[] = [];
     for (const f of inside) {
       const src = readFileSync(f, "utf8");

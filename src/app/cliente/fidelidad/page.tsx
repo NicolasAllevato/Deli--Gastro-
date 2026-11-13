@@ -5,6 +5,7 @@ import { AnimatedProgressBar } from "@/components/ui/AnimatedProgressBar";
 import { requireClientPage } from "@/lib/auth/clientPage";
 import { REWARDS } from "@/lib/orders";
 import { RedeemButton } from "./RedeemButton";
+import { clientLedger, orFallback } from "@/lib/client-reads";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("es-AR", {
@@ -15,16 +16,9 @@ function formatDate(iso: string) {
 }
 
 export default async function FidelidadPage() {
-  const { client, db } = await requireClientPage();
+  const { user, client, db } = await requireClientPage();
 
-  const { data: ledger } = client
-    ? await db
-        .from("points_ledger")
-        .select("id, delta, description, created_at")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false })
-        .limit(10)
-    : { data: [] };
+  const ledger = client ? await orFallback(clientLedger({ db, userId: user.id, clientId: client.id }, 10), []) : [];
 
   const totalPuntos = client?.total_points ?? 0;
   const nextReward = [...REWARDS]

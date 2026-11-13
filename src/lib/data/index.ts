@@ -17,6 +17,7 @@ import * as points from "./points.ts";
 import * as reviews from "./reviews.ts";
 import * as catalog from "./catalog.ts";
 import * as catalogAdmin from "./catalog-admin.ts";
+import * as clientViews from "./client-views.ts";
 import * as payments from "./payments.ts";
 import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
@@ -27,6 +28,7 @@ export { shadowRead, dualWrite, type DiffLogger, type ShadowDiff } from "./shado
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
 export { toCents, fromCents } from "./money.ts";
+export { comparableClientOrder, type ClientOrder, type ClientLedgerEntry } from "./client-views.ts";
 export { comparableProduct, comparableCategory, type ApiProduct, type ApiCategory, type UpdateResult, type DeleteResult } from "./catalog-admin.ts";
 
 type Bound<F> = F extends (db: SqlDatabase, actor: Actor, ...rest: infer A) => infer R ? (...rest: A) => R : never;
@@ -62,6 +64,13 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       setConfigMany: bind(catalog.setConfigMany, db, actor),
       setConfig: bind(catalog.setConfig, db, actor),
       dailyReports: bind(catalog.listDailyReports, db, actor),
+    },
+    clientViews: {
+      orders: bind(clientViews.listOwnOrders, db, actor),
+      order: bind(clientViews.getOwnOrder, db, actor),
+      reviewedOrderIds: bind(clientViews.listOwnReviewedOrderIds, db, actor),
+      ledger: bind(clientViews.listOwnLedger, db, actor),
+      earnedByOrder: bind(clientViews.listOwnEarnedByOrder, db, actor),
     },
     catalogAdmin: {
       products: bind(catalogAdmin.listAllProducts, db, actor),

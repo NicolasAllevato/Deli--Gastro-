@@ -5,6 +5,7 @@ import { Clock, CheckCircle, XCircle, ChevronRight, ShoppingBag, ArrowRight, Spa
 import { requireClientPage } from "@/lib/auth/clientPage";
 import { formatOrderId, pointsForTotal } from "@/lib/orders";
 import { numberConfig, readConfig } from "@/lib/orders-server";
+import { clientEarnedByOrder, clientOrders, clientReviewedOrderIds, orFallback } from "@/lib/client-reads";
 
 const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> = {
   Finalizados:      { icon: <CheckCircle size={12} />, classes: "badge-green" },
@@ -41,33 +42,18 @@ function OrderPoints({ status, earned, upcoming }: { status: string; earned?: nu
 }
 
 export default async function ClientePedidosPage() {
-  const { client, db } = await requireClientPage();
+  const { user, client, db } = await requireClientPage();
+  const ctx = client ? { db, userId: user.id, clientId: client.id } : null;
 
-  const { data: orders } = client
-    ? await db
-        .from("orders")
-        .select("id, status, items_desc, total, created_at, points_earned")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false })
-        .limit(50)
-    : { data: [] };
-
-  const pedidos = orders ?? [];
-
-  // Pedidos ya reseñados (si la tabla `reviews` no existe todavía, queda vacío).
-  const { data: reviewRows } = client
-    ? await db.from("reviews").select("order_id").eq("client_id", client.id)
-    : { data: [] };
-  const reviewed = new Set((reviewRows ?? []).map((r) => r.order_id));
-
-  // Puntos acreditados por pedido (historial real) y, para los que siguen en curso, cuántos va a sumar.
-  const { data: ledger } = client
-    ? await db.from("points_ledger").select("order_id, delta").eq("client_id", client.id).gt("delta", 0)
-    : { data: [] };
-  const earned = new Map<string, number>();
-  for (const row of ledger ?? []) {
-    if (row.order_id) earned.set(row.order_id, (earned.get(row.order_id) ?? 0) + row.delta);
-  }
+  // Pedidos, reseñados y puntos acreditados por pedido (con sombra D1 si DATA_BACKEND=dual).
+  const [pedidos, reviewed, earned] = ctx
+    ? await Promise.all([
+        // Igual que antes: si una consulta falla, la página muestra vacío en vez de romperse.
+        orFallback(clientOrders(ctx), []),
+        orFallback(clientReviewedOrderIds(ctx), new Set<string>()),
+        orFallback(clientEarnedByOrder(ctx), new Map<string, number>()),
+      ])
+    : [[], new Set<string>(), new Map<string, number>()];
   const puntosPor100 = numberConfig(await readConfig(db), "puntos_por_100", 0.5);
 
   return (
