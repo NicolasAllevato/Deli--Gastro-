@@ -5,15 +5,22 @@
 //   node --env-file=.env.local scripts/backfill-fudo-lineas.mjs                  -> dry-run (por defecto): solo muestra qué cambiaría
 //   node --env-file=.env.local scripts/backfill-fudo-lineas.mjs --aplicar        -> escribe items_desc y order_items
 //   ... --limite=5                                                               -> prueba con pocos pedidos
+//   ... --verbose                                                                -> muestra el texto viejo y el nuevo de cada pedido
 //
 // Idempotente: un pedido cuyo items_desc ya coincide con el derivado no se toca, y un pedido ya corregido no
-// vuelve a aparecer (el filtro busca "Producto Fudo #"). Con --aplicar reemplaza las order_items del pedido.
+// vuelve a aparecer (el filtro busca "Producto Fudo #"). Con --aplicar reemplaza las order_items del pedido de forma
+// segura (scripts/lib/replace-order-lines.mjs: inserta las nuevas y recién después borra las viejas por id) y antes
+// guarda las filas viejas en un respaldo JSON local (la ruta se imprime al final; restaurable a mano).
 // Si la migración 031 no está aplicada, escribe las líneas sin las columnas de Fudo y lo avisa.
 // Env: NEXT_PUBLIC_SUPABASE_URL (o SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY, FUDO_AUTH_URL,
 //      FUDO_PUBLIC_API_URL, FUDO_API_KEY, FUDO_API_SECRET. No imprime secretos ni datos de clientes.
 
 import { parseFudoCategories, parseFudoProducts } from "../workers/fudo-gateway/src/catalog.ts";
 import { parseFudoItem, parseFudoSales } from "../workers/fudo-gateway/src/sales.ts";
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { replaceOrderLines } from "./lib/replace-order-lines.mjs";
 import { buildCatalogIndex, buildSaleLines, saleItemsDesc } from "../workers/fudo-gateway/src/sale-lines.ts";
 
 const PAGE = 1000;
@@ -23,7 +30,7 @@ function parseArgs(argv) {
   const limitArg = argv.find((a) => a.startsWith("--limite="));
   const limit = limitArg ? Number(limitArg.slice("--limite=".length)) : null;
   if (limit !== null && (!Number.isInteger(limit) || limit <= 0)) throw new Error("--limite tiene que ser un entero positivo.");
-  return { apply: argv.includes("--aplicar"), limit };
+  return { apply: argv.includes("--aplicar"), limit, verbose: argv.includes("--verbose") };
 }
 
 function need(name) {
@@ -81,7 +88,7 @@ function createFudo(env) {
 }
 
 async function main() {
-  const { apply, limit } = parseArgs(process.argv.slice(2));
+  const { apply, limit, verbose } = parseArgs(process.argv.slice(2));
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "").trim().replace(/\/$/, "");
   if (!url) throw new Error("Falta NEXT_PUBLIC_SUPABASE_URL o SUPABASE_URL.");
   const rest = createRest(url, need("SUPABASE_SERVICE_ROLE_KEY"));
@@ -121,6 +128,7 @@ async function main() {
     console.warn("Aviso: la migración 031 no está aplicada; las líneas se escriben sin fudo_product_id/fudo_comment/fudo_options/is_combo.");
   }
 
+  const backupFile = join(tmpdir(), `backfill-fudo-lineas-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
   let changed = 0;
   let failed = 0;
   for (const order of todo) {
@@ -134,15 +142,19 @@ async function main() {
       const desc = lines.length ? saleItemsDesc(lines) : order.items_desc;
       if (desc === order.items_desc) continue;
       changed++;
-      console.log(`- venta ${order.fudo_order_id}: "${order.items_desc}" → "${desc}"`);
+      // El texto puede traer comentarios libres de PedidosYa/Rappi: solo con --verbose.
+      console.log(verbose ? `- venta ${order.fudo_order_id}: "${order.items_desc}" → "${desc}"` : `- venta ${order.fudo_order_id}: ${lines.length} línea(s) a reescribir`);
       if (!apply) continue;
       const rows = lines.map((l) => {
         const row = { ...l, order_id: order.id };
         if (!hasFudoCols) for (const c of FUDO_COLS) delete row[c];
         return row;
       });
-      await rest(`order_items?order_id=eq.${order.id}`, { method: "DELETE" });
-      if (rows.length) await rest("order_items", { method: "POST", body: JSON.stringify(rows) });
+      // Inserta primero y borra después: si algo falla, el pedido nunca queda sin líneas.
+      await replaceOrderLines(rest, order.id, rows, (previous) =>
+        appendFileSync(backupFile, `${JSON.stringify({ order_id: order.id, items_desc: order.items_desc, order_items: previous })}
+`),
+      );
       // El filtro por items_desc viejo evita pisar un cambio hecho entre la lectura y la escritura.
       await rest(`orders?id=eq.${order.id}&channel=eq.fudo&items_desc=eq.${encodeURIComponent(order.items_desc)}`, {
         method: "PATCH",
@@ -154,6 +166,7 @@ async function main() {
     }
   }
   console.log(`Listo. ${apply ? "Corregidos" : "A corregir"}: ${changed}. Con error: ${failed}.`);
+  if (apply && changed > 0) console.log(`Respaldo de las líneas anteriores: ${backupFile}`);
 }
 
 main().catch((e) => {
