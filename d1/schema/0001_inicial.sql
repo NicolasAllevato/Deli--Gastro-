@@ -1,0 +1,487 @@
+-- =============================================================================
+-- Deli-Gastro → Cloudflare D1 (SQLite) · esquema inicial
+-- Fuente: estado real de Supabase (proyecto wlznhichyivfcqwbosyi, 2026-11-12),
+--         equivalente a supabase/migrations/001–030.
+-- SOLO tablas de esta app. NO se migran las del sistema ajeno de recetas/insumos
+-- (recetas, insumos_maestro, ordenes_compra, ordenes_detalle, ventas_turno,
+--  ventas_detalle, productos_vendidos, mermas, promos, promo_items, proveedores,
+--  receta_*, unidades, menu_personal_planning, pedido_semanal_template,
+--  precios_historico_insumos, perfiles_usuario, flujo_financiero, sync_log,
+--  telegram_sessions, reclamos, vistas vista_*).
+--
+-- Convenciones de conversión (Postgres → SQLite):
+--   uuid          → TEXT (36 chars, minúsculas). Default: generado en código
+--                   (crypto.randomUUID()); el DEFAULT de abajo es un fallback v4.
+--   timestamptz   → TEXT ISO-8601 UTC con milisegundos y 'Z'
+--                   ('2026-11-12T15:04:05.123Z'). Ordena bien lexicográficamente.
+--                   Default: strftime('%Y-%m-%dT%H:%M:%fZ','now').
+--   date          → TEXT 'YYYY-MM-DD' (día en America/Argentina/Buenos_Aires,
+--                   calculado en código: SQLite no tiene zonas horarias).
+--   bool          → INTEGER 0/1 con CHECK.
+--   numeric (montos) → INTEGER en CENTAVOS, columnas con sufijo _cents (decisión D6).
+--                   Conversión solo en src/lib/data/money.ts. Nunca REAL para dinero.
+--   int2/int4/int8→ INTEGER (64 bits en SQLite).
+--   float4/float8 → REAL.
+--   jsonb         → TEXT con CHECK (json_valid(...)). Se consulta con json_extract().
+--   FK a auth.users(id) → FK a "user"(id) (tabla de Better Auth).
+--   Índices parciales → SQLite los soporta (WHERE ...).
+--   Índice por expresión clients_phone_digits_idx (regexp_replace) → columna
+--   phone_digits mantenida en código + índice normal (SQLite no trae regexp).
+--   Triggers set_updated_at → triggers SQLite equivalentes (abajo).
+--   Triggers de Realtime (notify_*), handle_new_user, protect_client_columns,
+--   orders_link_fudo_client, update_client_points → pasan a CÓDIGO (ver plan §5).
+--   RLS → no existe en D1: la autorización vive en la capa de acceso a datos.
+--
+-- D1 aplica PRAGMA foreign_keys = ON siempre.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Autenticación: tablas de Better Auth (decisión D2: librería auditada, nada casero).
+-- Nombres y columnas = esquema por defecto de Better Auth 1.x + plugin admin.
+-- `role` lo escribe solo el servidor (input:false, G18).
+-- Los 7 usuarios actuales resetean contraseña en el corte (D3): no se copian hashes.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "user" (
+  id              TEXT PRIMARY KEY,                       -- mismo uuid que auth.users para no romper FKs
+  name            TEXT NOT NULL DEFAULT '',
+  email           TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  emailVerified   INTEGER NOT NULL DEFAULT 0 CHECK (emailVerified IN (0,1)),
+  image           TEXT,
+  role            TEXT NOT NULL DEFAULT 'cliente' CHECK (role IN ('admin','cliente','repartidor')),
+  banned          INTEGER NOT NULL DEFAULT 0 CHECK (banned IN (0,1)),
+  banReason       TEXT,
+  banExpires      DATE,
+  createdAt       DATE NOT NULL,
+  updatedAt       DATE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "session" (
+  id              TEXT PRIMARY KEY,
+  expiresAt       DATE NOT NULL,
+  token           TEXT NOT NULL UNIQUE,
+  createdAt       DATE NOT NULL,
+  updatedAt       DATE NOT NULL,
+  ipAddress       TEXT,
+  userAgent       TEXT,
+  userId          TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  impersonatedBy  TEXT
+);
+CREATE INDEX IF NOT EXISTS session_user_idx ON "session" (userId);
+
+CREATE TABLE IF NOT EXISTS "account" (
+  id                    TEXT PRIMARY KEY,
+  accountId             TEXT NOT NULL,
+  providerId            TEXT NOT NULL,
+  userId                TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  accessToken           TEXT,
+  refreshToken          TEXT,
+  idToken               TEXT,
+  accessTokenExpiresAt  DATE,
+  refreshTokenExpiresAt DATE,
+  scope                 TEXT,
+  password              TEXT,                             -- hash de Better Auth; nunca bcrypt importado
+  createdAt             DATE NOT NULL,
+  updatedAt             DATE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS account_user_idx ON "account" (userId);
+
+CREATE TABLE IF NOT EXISTS "verification" (
+  id          TEXT PRIMARY KEY,
+  identifier  TEXT NOT NULL,
+  value       TEXT NOT NULL,
+  expiresAt   DATE NOT NULL,
+  createdAt   DATE,
+  updatedAt   DATE
+);
+CREATE INDEX IF NOT EXISTS verification_identifier_idx ON "verification" (identifier);
+
+-- Rate limit de Better Auth (storage "database"): vale entre isolates del Worker.
+CREATE TABLE IF NOT EXISTS "rateLimit" (
+  id          TEXT PRIMARY KEY,
+  key         TEXT NOT NULL UNIQUE,
+  count       INTEGER NOT NULL,
+  lastRequest INTEGER NOT NULL
+);
+
+-- Intentos de PIN de repartidor (G14): rate limit + bloqueo por clave (ip/dispositivo).
+CREATE TABLE IF NOT EXISTS courier_pin_attempts (
+  key           TEXT PRIMARY KEY,
+  failures      INTEGER NOT NULL DEFAULT 0,
+  window_start  TEXT NOT NULL,
+  locked_until  TEXT
+);
+
+-- ---------------------------------------------------------------------------
+-- Catálogo
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS categories (
+  id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-4'||substr(hex(randomblob(2)),2)||'-'||substr('89ab',1+abs(random())%4,1)||substr(hex(randomblob(2)),2)||'-'||hex(randomblob(6)))),
+  name            TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  points_per_100  REAL CHECK (points_per_100 IS NULL OR points_per_100 >= 0),
+  fudo_id         INTEGER UNIQUE,
+  source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','fudo')),
+  fudo_synced_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id              TEXT PRIMARY KEY,
+  category_id     TEXT REFERENCES categories(id) ON DELETE SET NULL,
+  name            TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  price_cents     INTEGER NOT NULL DEFAULT 0 CHECK (price_cents >= 0),
+  image_url       TEXT NOT NULL DEFAULT '',               -- ya apunta a R2 (Worker uploads)
+  is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  points_per_100  REAL,
+  fudo_id         INTEGER,
+  source          TEXT NOT NULL DEFAULT 'manual',
+  fudo_synced_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS products_category_idx ON products (category_id);
+CREATE INDEX IF NOT EXISTS products_fudo_id_idx  ON products (fudo_id);
+
+-- ---------------------------------------------------------------------------
+-- Clientes y fidelidad
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS clients (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT UNIQUE REFERENCES "user"(id) ON DELETE CASCADE,
+  name                TEXT NOT NULL,
+  phone               TEXT,
+  phone_digits        TEXT,   -- NUEVA: últimos 10 dígitos de phone, la mantiene el código (reemplaza índice por regexp)
+  address             TEXT,
+  tier                TEXT NOT NULL DEFAULT 'Bronce' CHECK (tier IN ('Bronce','Plata','Oro','Platino')),
+  total_points        INTEGER NOT NULL DEFAULT 0 CHECK (total_points >= 0),
+  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  wa_marketing_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (wa_marketing_opt_in IN (0,1)),
+  fudo_customer_id    INTEGER UNIQUE,
+  email               TEXT,
+  source              TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app','fudo')),
+  channel             TEXT CHECK (channel IS NULL OR channel IN ('app','local','pedidosya','rappi','morfy')),
+  is_anonymous        INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0,1))
+);
+CREATE INDEX IF NOT EXISTS clients_phone_digits_idx ON clients (phone_digits);
+-- Igual que en Postgres: lower(name) + channel único entre anónimos (índice parcial por expresión, soportado).
+CREATE UNIQUE INDEX IF NOT EXISTS clients_anonymous_unique ON clients (lower(name), channel) WHERE is_anonymous = 1;
+
+CREATE TABLE IF NOT EXISTS points_ledger (
+  id          TEXT PRIMARY KEY,
+  client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  order_id    TEXT REFERENCES orders(id) ON DELETE SET NULL,
+  delta       INTEGER NOT NULL,
+  description TEXT NOT NULL,
+  idempotency_key TEXT UNIQUE,   -- NUEVA (G6/G15): p. ej. 'earn:<order_id>'; repetir no suma dos veces
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS points_ledger_client_idx ON points_ledger (client_id, created_at);
+
+-- ---------------------------------------------------------------------------
+-- Pedidos
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS orders (
+  id                   TEXT PRIMARY KEY,
+  client_id            TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  status               TEXT NOT NULL DEFAULT 'Recibidos'
+                       CHECK (status IN ('Recibidos','En Preparación','En Camino','Finalizados','Cancelado')),
+  items_desc           TEXT NOT NULL,
+  total_cents          INTEGER NOT NULL DEFAULT 0 CHECK (total_cents >= 0),
+  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  delivery_fee_cents   INTEGER NOT NULL DEFAULT 0 CHECK (delivery_fee_cents >= 0),
+  delivery_address     TEXT,
+  delivery_lat         REAL CHECK (delivery_lat BETWEEN -90 AND 90),
+  delivery_lng         REAL CHECK (delivery_lng BETWEEN -180 AND 180),
+  payment_method       TEXT CHECK (payment_method IS NULL OR payment_method IN ('Efectivo','Tarjeta','Mercado Pago')),
+  notes                TEXT CHECK (notes IS NULL OR length(notes) <= 300),
+  courier_name         TEXT,
+  courier_user_id      TEXT REFERENCES "user"(id) ON DELETE SET NULL,   -- NUEVA (G13): dueño real del pedido
+  accepted_at          TEXT,
+  ready_at             TEXT,
+  picked_up_at         TEXT,
+  delivered_at         TEXT,
+  channel              TEXT NOT NULL DEFAULT 'web' CHECK (channel IN ('web','whatsapp','mostrador','fudo')),
+  survey_sent_at       TEXT,
+  points_earned        INTEGER CHECK (points_earned IS NULL OR points_earned >= 0),
+  fudo_order_id        INTEGER UNIQUE,
+  fudo_sync_status     TEXT CHECK (fudo_sync_status IN ('pending','sent','failed','skipped')),
+  fudo_error           TEXT,
+  fudo_attempts        INTEGER NOT NULL DEFAULT 0,
+  fudo_synced_at       TEXT,
+  delivered_lat        REAL CHECK (delivered_lat BETWEEN -90 AND 90),
+  delivered_lng        REAL CHECK (delivered_lng BETWEEN -180 AND 180),
+  delivered_accuracy_m REAL,
+  fudo_sale_type       TEXT CHECK (fudo_sale_type IN ('DELIVERY','TAKEAWAY','EAT-IN')),
+  fudo_sale_state      TEXT,
+  fudo_source          TEXT CHECK (fudo_source IS NULL OR fudo_source IN ('pedidosya','rappi','morfy','local')),
+  customer_name        TEXT,
+  fudo_payment         TEXT,
+  fudo_payments        TEXT CHECK (fudo_payments IS NULL OR (json_valid(fudo_payments) AND json_type(fudo_payments) = 'array')),
+  geocode_attempts     INTEGER NOT NULL DEFAULT 0 CHECK (geocode_attempts >= 0),
+  delivered_in_app     INTEGER NOT NULL DEFAULT 0 CHECK (delivered_in_app IN (0,1)),
+  payment_intent_id    TEXT UNIQUE   -- NUEVA (G15): un pedido por pago; un webhook repetido no duplica
+);
+CREATE INDEX IF NOT EXISTS orders_client_created_idx     ON orders (client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_status_idx             ON orders (status);
+CREATE INDEX IF NOT EXISTS orders_courier_idx            ON orders (courier_user_id) WHERE courier_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS orders_created_at_idx         ON orders (created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_survey_idx             ON orders (delivered_at) WHERE status = 'Finalizados' AND survey_sent_at IS NULL;
+CREATE INDEX IF NOT EXISTS orders_fudo_pending_idx       ON orders (created_at) WHERE fudo_sync_status IN ('pending','failed');
+CREATE INDEX IF NOT EXISTS orders_fudo_source_idx        ON orders (fudo_source) WHERE fudo_source IS NOT NULL;
+CREATE INDEX IF NOT EXISTS orders_geocode_pendiente_idx  ON orders (created_at DESC)
+  WHERE delivery_lat IS NULL AND delivery_address IS NOT NULL AND channel = 'fudo' AND fudo_sale_type = 'DELIVERY';
+CREATE INDEX IF NOT EXISTS orders_finalizados_created_idx ON orders (created_at DESC, id DESC) WHERE status = 'Finalizados';
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id          TEXT PRIMARY KEY,
+  order_id    TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id  TEXT REFERENCES products(id) ON DELETE SET NULL,
+  name        TEXT NOT NULL,
+  qty         INTEGER NOT NULL CHECK (qty > 0),
+  unit_price_cents INTEGER NOT NULL CHECK (unit_price_cents >= 0),
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);
+
+CREATE TABLE IF NOT EXISTS order_events (
+  id          TEXT PRIMARY KEY,
+  order_id    TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  event       TEXT NOT NULL,
+  actor       TEXT,
+  detail      TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS order_events_order_idx ON order_events (order_id, created_at);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id          TEXT PRIMARY KEY,
+  order_id    TEXT NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+  client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  rating      INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  feedback    TEXT CHECK (feedback IS NULL OR length(feedback) <= 1000),
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS reviews_client_idx ON reviews (client_id);
+
+CREATE TABLE IF NOT EXISTS payment_intents (
+  id                TEXT PRIMARY KEY,
+  client_id         TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  channel           TEXT NOT NULL CHECK (channel IN ('web','whatsapp','mostrador')),
+  status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','cancelled','expired','refunded')),
+  total_cents       INTEGER NOT NULL CHECK (total_cents >= 0),
+  snapshot          TEXT NOT NULL CHECK (json_valid(snapshot)),
+  mp_preference_id  TEXT,
+  checkout_url      TEXT,
+  mp_payment_id     TEXT,
+  order_id          TEXT REFERENCES orders(id) ON DELETE SET NULL,
+  expires_at        TEXT NOT NULL,
+  refund_error      TEXT,
+  version           INTEGER NOT NULL DEFAULT 0,      -- NUEVA: concurrencia optimista (G15)
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS payment_intents_client_idx  ON payment_intents (client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS payment_intents_order_idx   ON payment_intents (order_id) WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS payment_intents_pending_idx ON payment_intents (expires_at) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS payment_intents_mp_payment_uidx ON payment_intents (mp_payment_id) WHERE mp_payment_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS delivery_zones (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+  shape       TEXT NOT NULL CHECK (json_valid(shape) AND json_extract(shape,'$.type') IN ('circle','polygon')),
+  fee_cents   INTEGER NOT NULL DEFAULT 0 CHECK (fee_cents >= 0),
+  min_order_cents INTEGER NOT NULL DEFAULT 0 CHECK (min_order_cents >= 0),
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  is_active   INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS reports_daily (
+  id               TEXT PRIMARY KEY,
+  report_date      TEXT NOT NULL UNIQUE,                  -- 'YYYY-MM-DD'
+  total_income_cents INTEGER NOT NULL DEFAULT 0,
+  total_orders     INTEGER NOT NULL DEFAULT 0,
+  orders_cancelled INTEGER NOT NULL DEFAULT 0,
+  generated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- ---------------------------------------------------------------------------
+-- Repartidores
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS couriers (
+  user_id       TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 60),
+  pin_hash      TEXT NOT NULL UNIQUE,
+  active        INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  pin_encrypted TEXT
+);
+
+CREATE TABLE IF NOT EXISTS courier_locations (
+  user_id      TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+  courier_name TEXT NOT NULL,
+  lat          REAL NOT NULL CHECK (lat BETWEEN -90 AND 90),
+  lng          REAL NOT NULL CHECK (lng BETWEEN -180 AND 180),
+  accuracy_m   REAL,
+  heading      REAL,
+  speed_mps    REAL,
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS courier_locations_updated_idx ON courier_locations (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS courier_shifts (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  courier_name TEXT NOT NULL CHECK (length(courier_name) BETWEEN 1 AND 60),
+  shift_day    TEXT NOT NULL,                             -- 'YYYY-MM-DD' (hora Argentina)
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  requested_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  decided_at   TEXT,
+  UNIQUE (user_id, shift_day)
+);
+CREATE INDEX IF NOT EXISTS courier_shifts_day_status ON courier_shifts (shift_day, status);
+
+-- ---------------------------------------------------------------------------
+-- Configuración, legales, secretos
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS global_config (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL CHECK (json_valid(value)),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- integration_secrets NO existe en D1 (D5/G12): sus valores van a Worker secrets / Secrets Store.
+
+CREATE TABLE IF NOT EXISTS legal_acceptances (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  email       TEXT,
+  role        TEXT,
+  document    TEXT NOT NULL CHECK (document IN ('terminos','privacidad')),
+  version     TEXT NOT NULL,
+  accepted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  ip          TEXT,
+  user_agent  TEXT,
+  UNIQUE (user_id, document, version)
+);
+CREATE INDEX IF NOT EXISTS legal_acceptances_user_idx     ON legal_acceptances (user_id);
+CREATE INDEX IF NOT EXISTS legal_acceptances_accepted_idx ON legal_acceptances (accepted_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Fudo
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS fudo_product_map (
+  product_id      TEXT PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  fudo_product_id INTEGER NOT NULL,
+  fudo_name       TEXT,
+  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS fudo_payment_map (
+  payment_method          TEXT PRIMARY KEY,
+  fudo_payment_method_id  INTEGER NOT NULL,
+  updated_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS fudo_sync_runs (
+  id                    TEXT PRIMARY KEY,
+  ran_at                TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  ok                    INTEGER NOT NULL CHECK (ok IN (0,1)),
+  categories_created    INTEGER NOT NULL DEFAULT 0,
+  categories_updated    INTEGER NOT NULL DEFAULT 0,
+  products_created      INTEGER NOT NULL DEFAULT 0,
+  products_updated      INTEGER NOT NULL DEFAULT 0,
+  products_deactivated  INTEGER NOT NULL DEFAULT 0,
+  error                 TEXT,
+  kind                  TEXT NOT NULL DEFAULT 'catalog' CHECK (kind IN ('catalog','sales','customers'))
+);
+CREATE INDEX IF NOT EXISTS fudo_sync_runs_ran_at_idx ON fudo_sync_runs (ran_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- WhatsApp
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS wa_conversations (
+  id               TEXT PRIMARY KEY,
+  client_phone     TEXT NOT NULL UNIQUE,
+  client_id        TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  contact_name     TEXT,
+  state            TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(state)),
+  human_takeover   INTEGER NOT NULL DEFAULT 0 CHECK (human_takeover IN (0,1)),
+  last_inbound_at  TEXT,
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  bot_paused_until TEXT
+);
+CREATE INDEX IF NOT EXISTS wa_conversations_client_idx ON wa_conversations (client_id);
+
+CREATE TABLE IF NOT EXISTS wa_messages (
+  id              TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES wa_conversations(id) ON DELETE CASCADE,
+  wamid           TEXT UNIQUE,
+  direction       TEXT NOT NULL CHECK (direction IN ('in','out')),
+  type            TEXT NOT NULL,
+  body            TEXT,
+  status          TEXT,
+  tokens          INTEGER CHECK (tokens IS NULL OR tokens >= 0),
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS wa_messages_conversation_idx ON wa_messages (conversation_id, created_at);
+
+CREATE TABLE IF NOT EXISTS wa_campaigns (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  segment     TEXT NOT NULL CHECK (json_valid(segment)),
+  message     TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 300),
+  status      TEXT NOT NULL DEFAULT 'sending' CHECK (status IN ('sending','done','failed')),
+  recipients  INTEGER NOT NULL DEFAULT 0 CHECK (recipients >= 0),
+  sent        INTEGER NOT NULL DEFAULT 0 CHECK (sent >= 0),
+  failed      INTEGER NOT NULL DEFAULT 0 CHECK (failed >= 0),
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  finished_at TEXT
+);
+
+-- ---------------------------------------------------------------------------
+-- Triggers updated_at (equivalentes a set_updated_at()). La condición WHEN evita
+-- recursión: solo actúan si el UPDATE no tocó updated_at a mano.
+-- ---------------------------------------------------------------------------
+CREATE TRIGGER IF NOT EXISTS orders_updated_at AFTER UPDATE ON orders
+  WHEN NEW.updated_at = OLD.updated_at
+  BEGIN UPDATE orders SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS clients_updated_at AFTER UPDATE ON clients
+  WHEN NEW.updated_at = OLD.updated_at
+  BEGIN UPDATE clients SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS categories_updated_at AFTER UPDATE ON categories
+  WHEN NEW.updated_at = OLD.updated_at
+  BEGIN UPDATE categories SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS products_updated_at AFTER UPDATE ON products
+  WHEN NEW.updated_at = OLD.updated_at
+  BEGIN UPDATE products SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS delivery_zones_updated_at AFTER UPDATE ON delivery_zones
+  WHEN NEW.updated_at = OLD.updated_at
+  BEGIN UPDATE delivery_zones SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS wa_conversations_updated_at AFTER UPDATE ON wa_conversations
+  WHEN NEW.updated_at = OLD.updated_at
+  BEGIN UPDATE wa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END;
+
+-- update_client_points(): suma el delta al cliente al insertar en el ledger (G6).
+-- SIN max(0, ...): si un canje deja el saldo negativo, el CHECK (total_points >= 0)
+-- falla y el INSERT del ledger se revierte (y, dentro de un batch, todo el batch).
+-- Un doble canje concurrente no puede gastar dos veces el mismo saldo.
+CREATE TRIGGER IF NOT EXISTS points_ledger_after_insert AFTER INSERT ON points_ledger
+  BEGIN
+    UPDATE clients SET total_points = total_points + NEW.delta WHERE id = NEW.client_id;
+  END;
+
+-- Marca de migración (la usa scripts/migrar-datos-d1.mjs para conteos).
+CREATE TABLE IF NOT EXISTS _migracion (
+  tabla        TEXT PRIMARY KEY,
+  filas_origen INTEGER NOT NULL,
+  importado_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);

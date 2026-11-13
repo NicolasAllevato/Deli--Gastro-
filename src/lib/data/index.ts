@@ -1,0 +1,90 @@
+/**
+ * Punto de entrada público de la capa de datos D1. Las rutas usan SOLO esto:
+ *
+ *   const data = await dataFor(actor);
+ *   const pedidos = await data.orders.list();
+ *
+ * El actor queda fijado al crear el objeto y el handle de la base nunca sale
+ * de la capa. Importar ./db o ./sql desde afuera está prohibido (ESLint +
+ * tests/data-guard.test.ts).
+ */
+import type { Actor } from "./actor.ts";
+import { getDb } from "./db.ts";
+import type { SqlDatabase } from "./sql.ts";
+import * as clients from "./clients.ts";
+import * as orders from "./orders.ts";
+import * as points from "./points.ts";
+import * as reviews from "./reviews.ts";
+import * as catalog from "./catalog.ts";
+import * as payments from "./payments.ts";
+import * as couriers from "./couriers.ts";
+import * as pins from "./pin-attempts.ts";
+import * as restricted from "./restricted.ts";
+
+export { anon, systemActor, ForbiddenError, type Actor } from "./actor.ts";
+export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
+export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
+export { toCents, fromCents } from "./money.ts";
+
+type Bound<F> = F extends (db: SqlDatabase, actor: Actor, ...rest: infer A) => infer R ? (...rest: A) => R : never;
+const bind = <F extends (db: SqlDatabase, actor: Actor, ...rest: never[]) => unknown>(f: F, db: SqlDatabase, actor: Actor) =>
+  ((...rest: never[]) => f(db, actor, ...rest)) as Bound<F>;
+
+export function bindRepos(db: SqlDatabase, actor: Actor) {
+  return {
+    clients: {
+      get: bind(clients.getClient, db, actor),
+      own: bind(clients.getOwnClient, db, actor),
+      list: bind(clients.listClients, db, actor),
+      createOwn: bind(clients.createOwnClient, db, actor),
+      update: bind(clients.updateClient, db, actor),
+    },
+    orders: {
+      list: bind(orders.listOrders, db, actor),
+      get: bind(orders.getOrder, db, actor),
+      items: bind(orders.listOrderItems, db, actor),
+      setStatus: bind(orders.setOrderStatus, db, actor),
+      claim: bind(orders.claimOrder, db, actor),
+      assign: bind(orders.assignOrder, db, actor),
+    },
+    points: { ledger: bind(points.listLedger, db, actor), add: bind(points.addPoints, db, actor) },
+    reviews: { list: bind(reviews.listReviews, db, actor), createOwn: bind(reviews.createOwnReview, db, actor) },
+    catalog: {
+      products: bind(catalog.listProducts, db, actor),
+      categories: bind(catalog.listCategories, db, actor),
+      upsertProduct: bind(catalog.upsertProduct, db, actor),
+      upsertCategory: bind(catalog.upsertCategory, db, actor),
+      getConfig: bind(catalog.getConfig, db, actor),
+      setConfig: bind(catalog.setConfig, db, actor),
+      dailyReports: bind(catalog.listDailyReports, db, actor),
+    },
+    payments: {
+      get: bind(payments.getPaymentIntent, db, actor),
+      create: bind(payments.createPaymentIntent, db, actor),
+      approve: bind(payments.approvePaymentIntent, db, actor),
+      close: bind(payments.closePaymentIntent, db, actor),
+    },
+    couriers: {
+      list: bind(couriers.listCouriers, db, actor),
+      byPinHash: bind(couriers.findCourierByPinHash, db, actor),
+      upsertOwnLocation: bind(couriers.upsertOwnLocation, db, actor),
+      locations: bind(couriers.listLocations, db, actor),
+      requestOwnShift: bind(couriers.requestOwnShift, db, actor),
+      ownShift: bind(couriers.getOwnShift, db, actor),
+      decideShift: bind(couriers.decideShift, db, actor),
+    },
+    pins: {
+      isLocked: bind(pins.isPinLocked, db, actor),
+      recordFailure: bind(pins.recordPinFailure, db, actor),
+      clear: bind(pins.clearPinFailures, db, actor),
+    },
+    staffTable: bind(restricted.listStaffTable, db, actor),
+  };
+}
+
+export type DataApi = ReturnType<typeof bindRepos>;
+
+/** Requiere DATA_BACKEND=dual|d1; con el default (supabase) lanza. */
+export async function dataFor(actor: Actor): Promise<DataApi> {
+  return bindRepos(await getDb(), actor);
+}
