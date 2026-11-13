@@ -17,6 +17,8 @@ interface Props {
   courierName: string;
   /** Habilitación del día (migración 029). Sin "approved" no puede tomar pedidos. */
   shift: ShiftStatus;
+  /** Modo libre: puede tomar pedidos sin asignar. En manual/automático los asigna el local. */
+  selfAssign: boolean;
 }
 
 /** Mientras el local no lo habilita, el repartidor ve el estado y la pantalla se actualiza sola al responder. */
@@ -118,7 +120,7 @@ function TrackingBadge({ state }: { state: Exclude<TrackingState, "off"> }) {
   );
 }
 
-export default function CourierClient({ initialOrders, courierName, shift }: Props) {
+export default function CourierClient({ initialOrders, courierName, shift, selfAssign }: Props) {
   const router = useRouter();
   const approved = shift === "approved";
   const [orders, setOrders] = useState<EnrichedOrder[]>(initialOrders);
@@ -168,8 +170,8 @@ export default function CourierClient({ initialOrders, courierName, shift }: Pro
     }
   };
 
-  const available = orders.filter((o) => o.courier_name === null);
-  const others = orders.filter((o) => o.courier_name !== null && o.courier_name !== courierName);
+  const available = selfAssign ? orders.filter((o) => o.courier_name === null) : [];
+  const others = selfAssign ? orders.filter((o) => o.courier_name !== null && o.courier_name !== courierName) : [];
 
   const renderCard = (order: EnrichedOrder) => {
     const isMine = order.courier_name === courierName;
@@ -219,7 +221,7 @@ export default function CourierClient({ initialOrders, courierName, shift }: Pro
         )}
         {order.notes && <p className="text-xs text-gray-500 italic">&ldquo;{order.notes}&rdquo;</p>}
 
-        {isFree && approved && (
+        {isFree && approved && selfAssign && (
           <button
             type="button"
             disabled={busy}
@@ -288,6 +290,7 @@ export default function CourierClient({ initialOrders, courierName, shift }: Pro
         )}
       </section>
 
+      {selfAssign && (
       <section aria-labelledby="free-title" className="space-y-3">
         <h3 id="free-title" className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
           Disponibles ({available.length})
@@ -301,6 +304,7 @@ export default function CourierClient({ initialOrders, courierName, shift }: Pro
           available.map(renderCard)
         )}
       </section>
+      )}
 
       {others.length > 0 && (
         <section aria-labelledby="others-title" className="space-y-3">

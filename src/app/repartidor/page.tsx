@@ -6,6 +6,8 @@ import { courierDisplayName } from "@/lib/auth/courier";
 import { requestShift } from "@/lib/courier-shifts";
 import type { ShiftStatus } from "@/lib/courier-shift-day";
 import { listOrders } from "@/lib/orders-server";
+import { courierMaySelfAssign } from "@/lib/courier-assign";
+import { getAssignMode } from "@/lib/courier-assign-server";
 import CourierClient from "./CourierClient";
 
 export default async function RepartidorPage() {
@@ -24,7 +26,10 @@ export default async function RepartidorPage() {
       console.error("[repartidor] habilitación del día", error);
     }
   }
-  const orders = await listOrders(db, { statuses: ["En Camino"] });
+  const [onTheWay, mode] = await Promise.all([listOrders(db, { statuses: ["En Camino"] }), getAssignMode(db)]);
+  const selfAssign = courierMaySelfAssign(mode);
+  // Fuera del modo libre solo ve lo suyo (igual que GET /api/orders).
+  const orders = selfAssign ? onTheWay : onTheWay.filter((o) => o.courier_name === courierName);
 
-  return <CourierClient initialOrders={orders} courierName={courierName} shift={shift} />;
+  return <CourierClient initialOrders={orders} courierName={courierName} shift={shift} selfAssign={selfAssign} />;
 }

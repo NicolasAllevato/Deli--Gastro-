@@ -344,6 +344,11 @@ export interface SalesPlanInput {
   now?: string;
   /** Único repartidor habilitado hoy (migración 029): recibe solo los deliveries que Fudo marca "Enviado". */
   soleCourier?: string | null;
+  /**
+   * Modo automático (`courier_assign_mode`): elige repartidor para cada delivery recién "Enviado". Tiene
+   * prioridad sobre `soleCourier` y se llama solo cuando de verdad hay que asignar.
+   */
+  assignCourier?: () => string | null;
 }
 
 export interface SalesPlan {
@@ -404,6 +409,15 @@ function stageStamps(sale: FudoSale, existing: ExistingOrder, status: BoardStatu
   return stamps;
 }
 
+/** Repartidor para un delivery que sale: el del modo automático o, si no, el único habilitado. */
+function courierFor(input: SalesPlanInput): string | null {
+  return input.assignCourier ? input.assignCourier() : input.soleCourier ?? null;
+}
+
+function withCourier(courier: string | null): { courier_name?: string } {
+  return courier ? { courier_name: courier } : {};
+}
+
 export function planSalesImport(input: SalesPlanInput): SalesPlan {
   const now = input.now ?? new Date().toISOString();
   const plan: SalesPlan = { inserts: [], updates: [], relinks: [], enrich: [], paymentFills: [], autoAssign: [] };
@@ -427,7 +441,10 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       // La auto-asignación solo ocurre al detectar la transición a «Enviado»; no es retroactiva: si el
       // repartidor se habilita después de ese momento, el pedido ya enviado queda sin asignar (decisión de producto).
       const justSent = sale.saleType === "DELIVERY" && sale.saleState === "DELIVERY-SENT" && existing.fudo_sale_state !== "DELIVERY-SENT";
-      if (justSent && input.soleCourier && !existing.courier_name && status === "En Camino") plan.autoAssign.push({ id: existing.id, courier_name: input.soleCourier });
+      if (justSent && !existing.courier_name && status === "En Camino") {
+        const courier = courierFor(input);
+        if (courier) plan.autoAssign.push({ id: existing.id, courier_name: courier });
+      }
       // Solo se completa un cliente faltante; nunca se pisa uno ya asignado.
       const relinkTo = existing.client_id === null ? clientFor(sale, input) : null;
       if (relinkTo) relinks.set(relinkTo, [...(relinks.get(relinkTo) ?? []), existing.id]);
@@ -459,7 +476,7 @@ export function planSalesImport(input: SalesPlanInput): SalesPlan {
       ...saleMeta(sale, input),
       // Sin pagos todavía (venta abierta) queda null, para completarlo cuando se cobre.
       fudo_payments: input.paymentLinesBySale?.get(sale.id)?.length ? input.paymentLinesBySale.get(sale.id) ?? null : null,
-      ...(sale.saleType === "DELIVERY" && sale.saleState === "DELIVERY-SENT" && input.soleCourier ? { courier_name: input.soleCourier } : {}),
+      ...withCourier(sale.saleType === "DELIVERY" && sale.saleState === "DELIVERY-SENT" ? courierFor(input) : null),
       lines,
     });
   }

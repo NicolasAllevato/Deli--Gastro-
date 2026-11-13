@@ -7,6 +7,7 @@ import {
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
+import { COURIER_ASSIGN_MODES, parseAssignMode, type CourierAssignMode } from "@/lib/courier-assign";
 
 type Tab = "general" | "puntos" | "notificaciones";
 
@@ -30,6 +31,7 @@ interface ConfigState {
   costo_por_km: number;
   tiempo_entrega_min: number;
   modo_pausa: boolean;
+  courier_assign_mode: CourierAssignMode;
   puntos_por_100: number;
   puntos_minimos: number;
   puntos_vencimiento_dias: number;
@@ -45,6 +47,7 @@ const DEFAULT_CONFIG: ConfigState = {
   costo_por_km: 150,
   tiempo_entrega_min: 30,
   modo_pausa: false,
+  courier_assign_mode: "libre",
   puntos_por_100: 0.5,
   puntos_minimos: 5,
   puntos_vencimiento_dias: 180,
@@ -53,6 +56,42 @@ const DEFAULT_CONFIG: ConfigState = {
   notif_email_from: "noreply@deli-gastro.com",
   notif_template: "¡Hola {nombre}! Tenés {puntos} puntos acumulados y podés canjear {promo}. ¡Aprovechalo!",
 };
+
+const ASSIGN_MODE_TEXT: Record<CourierAssignMode, { label: string; hint: string }> = {
+  libre: { label: "Libre", hint: "Los repartidores habilitados toman los pedidos sin asignar. Vos también podés asignar desde el tablero." },
+  manual: { label: "Manual", hint: "Solo vos asignás desde el tablero. Los repartidores ven únicamente sus pedidos." },
+  automatico: {
+    label: "Automático",
+    hint: "Al salir un delivery se asigna al habilitado con menos pedidos en curso (empate: el que hace más que no recibe uno). Podés reasignar.",
+  },
+};
+
+function AssignModeField({ value, onChange }: { value: CourierAssignMode; onChange: (v: CourierAssignMode) => void }) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Modo de asignación de repartidores</legend>
+      {COURIER_ASSIGN_MODES.map(mode => (
+        <label
+          key={mode}
+          className={`neumorphic-inset rounded-xl px-4 py-3 flex items-start gap-3 cursor-pointer border ${value === mode ? "border-brand-orange/50" : "border-transparent"}`}
+        >
+          <input
+            type="radio"
+            name="courier_assign_mode"
+            value={mode}
+            checked={value === mode}
+            onChange={() => onChange(mode)}
+            className="mt-1 accent-brand-orange"
+          />
+          <span>
+            <span className="block text-sm font-bold text-gray-700">{ASSIGN_MODE_TEXT[mode].label}</span>
+            <span className="block text-[11px] text-gray-500 mt-0.5">{ASSIGN_MODE_TEXT[mode].hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
 
 const DEFAULT_NIVELES: Nivel[] = [
   { id: "bronce",  nombre: "Bronce",  desde: 0,   hasta: 149,  multiplicador: 0.5 },
@@ -103,6 +142,10 @@ function TabGeneral({
           onChange={e => onChange("tiempo_entrega_min", Number(e.target.value))}
           hint="Tiempo base mostrado al cliente al confirmar pedido."
         />
+      </div>
+
+      <div className="pt-2 border-t border-gray-200/60">
+        <AssignModeField value={config.courier_assign_mode} onChange={v => onChange("courier_assign_mode", v)} />
       </div>
 
       <div className="pt-2 border-t border-gray-200/60">
@@ -335,6 +378,7 @@ export default function ConfiguracionPage() {
           costo_por_km:            Number(data.costo_por_km            ?? DEFAULT_CONFIG.costo_por_km),
           tiempo_entrega_min:      Number(data.tiempo_entrega_min      ?? DEFAULT_CONFIG.tiempo_entrega_min),
           modo_pausa:              Boolean(data.modo_pausa             ?? DEFAULT_CONFIG.modo_pausa),
+          courier_assign_mode:     parseAssignMode(data.courier_assign_mode),
           puntos_por_100:          Number(data.puntos_por_100          ?? DEFAULT_CONFIG.puntos_por_100),
           puntos_minimos:          Number(data.puntos_minimos          ?? DEFAULT_CONFIG.puntos_minimos),
           puntos_vencimiento_dias: Number(data.puntos_vencimiento_dias ?? DEFAULT_CONFIG.puntos_vencimiento_dias),
