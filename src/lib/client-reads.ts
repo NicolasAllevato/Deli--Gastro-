@@ -1,5 +1,9 @@
 import type { createAdminClient } from "@/utils/supabase/admin";
-import { comparableClientOrder, dataFor, shadowRead, type Actor } from "@/lib/data";
+import { CLIENT_ORDER_SELECT, comparableClientOrder, dataFor, shadowRead, type Actor, type ClientOrderField } from "@/lib/data";
+import type { Database } from "@/types/database";
+
+/** Pedido tal como lo recibe el cliente: solo CLIENT_ORDER_FIELDS (misma lista en Supabase y D1). */
+export type ClientOrderRow = Pick<Database["public"]["Tables"]["orders"]["Row"], ClientOrderField>;
 
 /**
  * Lecturas del portal cliente con sombra D1 (fase 2, tanda 3).
@@ -39,7 +43,10 @@ export async function orFallback<T>(p: Promise<T>, fallback: T): Promise<T> {
 /** Pedidos propios, más recientes primero (máx. 50). */
 export async function clientOrders(ctx: ClientContext) {
   return shadowRead(
-    () => rows(ctx.db.from("orders").select("*").eq("client_id", ctx.clientId).order("created_at", { ascending: false }).limit(50)),
+    async () =>
+      (await rows(
+        ctx.db.from("orders").select(CLIENT_ORDER_SELECT).eq("client_id", ctx.clientId).order("created_at", { ascending: false }).limit(50),
+      )) as unknown as ClientOrderRow[],
     async () => (await dataFor(actorOf(ctx))).clientViews.orders(50),
     { op: "client.orders", normalize: (r) => comparableClientOrder(r as never), normalizeShadow: (r) => comparableClientOrder(r as never), key: byId },
   );
@@ -49,9 +56,9 @@ export async function clientOrders(ctx: ClientContext) {
 export async function clientOrder(ctx: ClientContext, orderId: string) {
   const [order] = await shadowRead(
     async () => {
-      const { data, error } = await ctx.db.from("orders").select("*").eq("id", orderId).eq("client_id", ctx.clientId).maybeSingle();
+      const { data, error } = await ctx.db.from("orders").select(CLIENT_ORDER_SELECT).eq("id", orderId).eq("client_id", ctx.clientId).maybeSingle();
       if (error) throw new Error(error.message);
-      return data ? [data] : [];
+      return data ? [data as unknown as ClientOrderRow] : [];
     },
     async () => {
       const o = await (await dataFor(actorOf(ctx))).clientViews.order(orderId);

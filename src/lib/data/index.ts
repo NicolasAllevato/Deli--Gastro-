@@ -28,6 +28,7 @@ export { shadowRead, dualWrite, type DiffLogger, type ShadowDiff } from "./shado
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
 export { toCents, fromCents } from "./money.ts";
+export { CLIENT_ORDER_FIELDS, CLIENT_ORDER_SELECT, type ClientOrderField } from "./client-order-fields.ts";
 export { comparableClientOrder, type ClientOrder, type ClientLedgerEntry } from "./client-views.ts";
 export { comparableProduct, comparableCategory, type ApiProduct, type ApiCategory, type UpdateResult, type DeleteResult } from "./catalog-admin.ts";
 

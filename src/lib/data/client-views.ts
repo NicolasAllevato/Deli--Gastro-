@@ -9,6 +9,7 @@
 import { ForbiddenError, type Actor } from "./actor.ts";
 import { fromCents, toCents } from "./money.ts";
 import type { SqlDatabase } from "./sql.ts";
+import { CLIENT_ORDER_D1_COLUMNS } from "./client-order-fields.ts";
 
 function requireCliente(actor: Actor): string {
   if (actor.kind !== "cliente") throw new ForbiddenError();
@@ -19,8 +20,7 @@ function requireCliente(actor: Actor): string {
  * Columnas que ve el cliente de sus pedidos (minimización: sin datos internos
  * de Fudo, geocodificación ni ubicación de entrega del repartidor).
  */
-const CLIENT_ORDER_COLS =
-  "o.id, o.status, o.items_desc, o.total_cents, o.delivery_fee_cents, o.delivery_address, o.delivery_lat, o.delivery_lng, o.payment_method, o.notes, o.courier_name, o.channel, o.points_earned, o.created_at, o.accepted_at, o.ready_at, o.picked_up_at, o.delivered_at";
+const CLIENT_ORDER_COLS = CLIENT_ORDER_D1_COLUMNS;
 
 interface ClientOrderDbRow {
   id: string;
@@ -37,6 +37,7 @@ interface ClientOrderDbRow {
   channel: string;
   points_earned: number | null;
   created_at: string;
+  updated_at: string;
   accepted_at: string | null;
   ready_at: string | null;
   picked_up_at: string | null;
