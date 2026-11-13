@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { ArrowLeft, User, MapPin, Receipt, AlertTriangle, Phone, Bike, CreditCard, Star, Timer } from "lucide-react";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { createClient } from "@/utils/supabase/server";
+import { getUserRole } from "@/lib/auth/roles";
 import { enrichOrders } from "@/lib/orders-server";
 import { computeDurations, type TrackingDurations } from "@/lib/tracking";
 import { formatMoney, formatOrderId, parseItems } from "@/lib/orders";
@@ -38,6 +40,12 @@ const TICKET_MAX_RATING = 3;
 export default async function PedidoDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const id = z.string().uuid().safeParse((await params).id);
   if (!id.success) notFound();
+
+  // Defensa en profundidad: además del proxy, esta página (37 columnas, con datos personales) exige rol admin.
+  const {
+    data: { user },
+  } = await (await createClient()).auth.getUser();
+  if (!user || getUserRole(user) !== "admin") notFound();
 
   const db = createAdminClient();
   const { data: row } = await db.from("orders").select("*").eq("id", id.data).maybeSingle();
