@@ -54,8 +54,16 @@ export interface LedgerEntry {
   idempotencyKey?: string | null;
 }
 
-/** Sentencia de asiento para usar dentro de un batch (p. ej. efectos de un pago). */
-export function addPointsStatement(db: SqlDatabase, actor: Actor, entry: LedgerEntry): SqlStatement {
+/**
+ * Sentencia de asiento para usar dentro de un batch (p. ej. efectos de un
+ * pago). La idempotencyKey es OBLIGATORIA acá: con NULL no hay protección.
+ */
+export function addPointsStatement(db: SqlDatabase, actor: Actor, entry: LedgerEntry & { idempotencyKey: string }): SqlStatement {
+  if (!entry.idempotencyKey?.trim()) throw new Error("idempotencyKey obligatoria en efectos de pago");
+  return ledgerStatement(db, actor, entry);
+}
+
+function ledgerStatement(db: SqlDatabase, actor: Actor, entry: LedgerEntry): SqlStatement {
   if (!isStaff(actor)) throw new ForbiddenError();
   if (!Number.isSafeInteger(entry.delta) || entry.delta === 0) throw new Error("delta inválido");
   return db
@@ -67,7 +75,7 @@ export function addPointsStatement(db: SqlDatabase, actor: Actor, entry: LedgerE
 
 /** Devuelve false si el asiento ya existía (misma idempotencyKey). */
 export async function addPoints(db: SqlDatabase, actor: Actor, entry: LedgerEntry): Promise<boolean> {
-  const stmt = addPointsStatement(db, actor, entry);
+  const stmt = ledgerStatement(db, actor, entry);
   try {
     return (await stmt.run()).meta.changes === 1;
   } catch (err) {

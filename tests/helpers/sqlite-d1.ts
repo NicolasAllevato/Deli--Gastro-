@@ -3,10 +3,18 @@
  * datos. Aplica el esquema real d1/schema/0001_inicial.sql.
  */
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import type { SqlDatabase, SqlStatement, SqlValue, SqlRunResult } from "../../src/lib/data/sql.ts";
 
-const SCHEMA = readFileSync(new URL("../../d1/schema/0001_inicial.sql", import.meta.url), "utf8");
+// Esquema base + migraciones en orden, igual que se aplican en la D1 remota.
+const MIGRATIONS = new URL("../../d1/migrations/", import.meta.url);
+const SCHEMA = [
+  readFileSync(new URL("../../d1/schema/0001_inicial.sql", import.meta.url), "utf8"),
+  ...readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(new URL(f, MIGRATIONS), "utf8")),
+].join("\n");
 
 export function createTestDb(): SqlDatabase & { raw: DatabaseSync } {
   const raw = new DatabaseSync(":memory:");

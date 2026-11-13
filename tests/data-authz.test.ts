@@ -332,6 +332,16 @@ describe("G15 HIGH del auditor: webhook repetido en serie no duplica pedido ni p
     assert.equal(count("SELECT count(*) n FROM points_ledger WHERE idempotency_key = 'earn:pi-ana'"), 1);
     assert.equal(count("SELECT total_points n FROM clients WHERE id = 'c-ana'"), 112);
   });
+  it("en efectos de pago la idempotencyKey es obligatoria", () => {
+    assert.throws(() =>
+      points.addPointsStatement(db, actors.system, { id: "z", clientId: "c-ana", delta: 1, description: "x", idempotencyKey: " " }),
+    );
+  });
+  it("ON CONFLICT matchea los índices únicos del esquema + migraciones", async () => {
+    const idx = db.raw.prepare("SELECT name, sql FROM sqlite_master WHERE type='index' AND name LIKE '%full_uidx'").all() as { sql: string }[];
+    assert.equal(idx.length, 2);
+    assert.ok(idx.every((i) => !/WHERE/i.test(i.sql)), "índices completos, no parciales");
+  });
   it("addPoints con la misma clave no suma dos veces", async () => {
     const e = { clientId: "c-beto", delta: 5, description: "x", idempotencyKey: "k1" };
     assert.equal(await points.addPoints(db, actors.system, { id: "a1", ...e }), true);
