@@ -1,0 +1,116 @@
+/* ── Tablero ejecutivo: alias de los tokens globales (el tema lo maneja el toggle de la app) ── */
+.exec-theme {
+  --ex-bg: var(--app-bg);
+  --ex-surface: var(--app-surface);
+  --ex-surface-2: var(--app-inset);
+  --ex-border: var(--app-border);
+  --ex-text: var(--app-text);
+  --ex-muted: var(--app-text-muted);
+  --ex-accent: var(--app-accent-text);
+  --ex-accent-contrast: var(--app-accent-contrast);
+  --ex-good: var(--app-good);
+  --ex-bad: var(--app-bad);
+  --ex-warn: var(--app-warn);
+  --ex-info: var(--app-info);
+  --ex-hover: var(--app-hover);
+  --ex-shadow: var(--app-card-shadow);
+  background: var(--ex-bg);
+  color: var(--ex-text);
+}
+/* Página: cubre todo el área de contenido, ignorando el fondo neumórfico del layout. */
+.exec-page {
+  margin: -0.5rem;
+  min-height: calc(100% + 1rem);
+  border-radius: 1rem;
+}
+@media (min-width: 768px) {
+  .exec-page { margin: -0.75rem; min-height: calc(100% + 1.5rem); }
+}
+.exec-card {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  border-radius: 1rem;
+  box-shadow: var(--ex-shadow);
+  color: var(--ex-text);
+  min-width: 0;
+}
+.exec-muted { color: var(--ex-muted); }
+.exec-skeleton {
+  background: linear-gradient(90deg, var(--ex-surface-2) 25%, var(--ex-surface) 50%, var(--ex-surface-2) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  border: 1px solid var(--ex-border);
+  border-radius: 1rem;
+}
+.exec-chip {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  color: var(--ex-text);
+  border-radius: 9999px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  box-shadow: var(--ex-shadow);
+  transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+}
+.exec-chip:hover { background: var(--ex-hover); border-color: var(--ex-accent); }
+.exec-chip:active { transform: translateY(1px); }
+.exec-chip[aria-pressed="true"] {
+  background: var(--ex-accent);
+  border-color: var(--ex-accent);
+  color: var(--ex-accent-contrast);
+}
+.exec-chip[aria-pressed="true"]:hover { filter: brightness(1.08); }
+.exec-theme a:focus-visible,
+.exec-theme button:focus-visible,
+.exec-theme select:focus-visible {
+  outline: 2px solid var(--ex-accent);
+  outline-offset: 2px;
+}
+.exec-theme select {
+  background: var(--ex-surface);
+  color: var(--ex-text);
+  border: 1px solid var(--ex-border);
+  border-radius: 9999px;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  max-width: 100%;
+  box-shadow: var(--ex-shadow);
+  cursor: pointer;
+}
+.exec-theme select:hover { border-color: var(--ex-accent); }
+.exec-theme select option { background: var(--ex-surface); color: var(--ex-text); }
+.exec-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.15rem 0.55rem 0.15rem 0.4rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.exec-copilot {
+  background:
+    linear-gradient(var(--ex-surface), var(--ex-surface)) padding-box,
+    linear-gradient(135deg, #7c9a3a, #3b82f6 55%, #a855f7) border-box;
+  border: 1.5px solid transparent;
+  border-radius: 1rem;
+  box-shadow: var(--ex-shadow);
+  color: var(--ex-text);
+  min-width: 0;
+}
+.exec-insight {
+  background: color-mix(in srgb, var(--sev) 9%, var(--ex-surface));
+  border: 1px solid color-mix(in srgb, var(--sev) 35%, transparent);
+  border-radius: 0.75rem;
+}
+
+/* Modal de ajustes: el panel usa neumorphic y los tokens globales, así que adopta el tema solo. */
+.exec-modal { background: transparent; color: inherit; }

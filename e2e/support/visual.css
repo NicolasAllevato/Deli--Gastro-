@@ -1,0 +1,4 @@
+/* Se inyecta solo al capturar: oculta el indicador de `next dev`, que no es parte de la app. */
+nextjs-portal {
+  display: none !important;
+}

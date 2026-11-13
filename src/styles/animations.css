@@ -1,0 +1,194 @@
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background: var(--app-scroll); border-radius:10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--app-scroll); filter: brightness(1.15); }
+.custom-scrollbar::-webkit-scrollbar { width:4px; height:4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--app-scroll); border-radius:10px; }
+
+/* ── Entrance animations (page content only, not nav) ── */
+@keyframes fade-up {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity:0; }
+  to   { opacity:1; }
+}
+
+/* Page-level fade: subtle, no scale → no jump on navigation */
+@keyframes page-fade {
+  from { opacity:0; }
+  to   { opacity:1; }
+}
+
+.fade-up   { animation: fade-up  0.4s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-up-1 { animation: fade-up  0.4s 0.05s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-up-2 { animation: fade-up  0.4s 0.10s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-up-3 { animation: fade-up  0.4s 0.15s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-up-4 { animation: fade-up  0.4s 0.20s cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in   { animation: fade-in  0.35s ease both; }
+
+/* Applied to page <main> content, NOT layouts */
+.page-fade { animation: page-fade 0.25s ease both; }
+
+/* ── Float animations ── */
+@keyframes float {
+  0%,100% { transform:translateY(0); }
+  50%      { transform:translateY(-6px); }
+}
+@keyframes float-slow {
+  0%,100% { transform:translateY(0) rotate(0deg); }
+  50%     { transform:translateY(-5px) rotate(0.3deg); }
+}
+
+.float      { animation: float      3.5s ease-in-out infinite; will-change:transform; }
+.float-slow { animation: float-slow 5.5s ease-in-out infinite; will-change:transform; }
+
+/* ── Glow & Shimmer ── */
+@keyframes glow-pulse {
+  0%,100% { box-shadow:0 0 8px rgba(124, 58, 237,0.22); }
+  50%     { box-shadow:0 0 20px rgba(124, 58, 237,0.45); }
+}
+@keyframes shimmer {
+  0%   { background-position:-200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Alias renombrado — glow-olive es el nuevo primario */
+.glow-olive  { animation: glow-pulse 2.5s ease-in-out infinite; }
+/* Compatibilidad hacia atrás */
+.glow-orange { animation: glow-pulse 2.5s ease-in-out infinite; }
+.shimmer {
+  background: linear-gradient(90deg, var(--app-inset) 25%, var(--app-surface) 50%, var(--app-inset) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* ── Promo del día (cliente): banner con los colores del logo ── */
+.promo-banner {
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 45%, #0e7490 100%);
+  box-shadow: 0 10px 28px rgba(124, 58, 237, 0.35);
+}
+
+/* ── Reloj del pedido activo: agujas girando ── */
+@keyframes clock-spin { to { transform: rotate(360deg); } }
+.clock-hand-minute,
+.clock-hand-hour { transform-origin: 12px 12px; transform-box: view-box; }
+.clock-hand-minute { animation: clock-spin 3s linear infinite; }
+.clock-hand-hour   { animation: clock-spin 36s linear infinite; }
+
+/* ── Landing: presentación animada ── */
+@keyframes logo-glow {
+  0%, 100% { box-shadow: 0 0 24px rgba(124, 58, 237, 0.35), 0 0 60px rgba(34, 211, 238, 0.12); }
+  50%      { box-shadow: 0 0 40px rgba(124, 58, 237, 0.55), 0 0 90px rgba(34, 211, 238, 0.25); }
+}
+.logo-glow { animation: logo-glow 4s ease-in-out infinite; }
+@keyframes brand-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.brand-sheen {
+  background: linear-gradient(110deg, var(--app-accent-text) 0%, #22d3ee 35%, var(--app-accent-text) 60%, #e879f9 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brand-sheen 6s ease-in-out infinite;
+}
+@keyframes word-rise {
+  from { opacity: 0; transform: translateY(0.6em); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+.word-rise { display: inline-block; animation: word-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Punto que recorre el flujo del pedido (4 pasos, ~3.6 s por vuelta) */
+@keyframes flow-run {
+  0%   { left: -10%; }
+  100% { left: 100%; }
+}
+.flow-runner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--app-accent-text), transparent);
+  animation: flow-run 3.6s linear infinite;
+}
+@keyframes flow-pulse {
+  0%, 18%, 100% { box-shadow: 7px 7px 14px var(--app-shadow-dark), -7px -7px 14px var(--app-shadow-light); transform: translateY(0); }
+  8%            { box-shadow: 0 0 0 3px var(--app-accent-text), 0 10px 28px rgba(124, 58, 237, 0.45); transform: translateY(-4px); }
+}
+.flow-step { animation: flow-pulse 3.6s ease-in-out infinite; }
+
+/* ── Animaciones de interfaz ── */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(26px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes bump {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+@keyframes btn-sheen {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
+}
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@keyframes check-draw {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.animate-pop-in         { animation: pop-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-rise-in        { animation: rise-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-in-right { animation: slide-in-right 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-bump           { animation: bump 0.35s ease; }
+.animate-soft-pulse     { animation: soft-pulse 2s ease-in-out infinite; }
+
+/* Listas y grillas: cada hijo entra escalonado (hasta 12; el resto entra junto). */
+.stagger > * { animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > :nth-child(1)  { animation-delay: 0.03s; }
+.stagger > :nth-child(2)  { animation-delay: 0.07s; }
+.stagger > :nth-child(3)  { animation-delay: 0.11s; }
+.stagger > :nth-child(4)  { animation-delay: 0.15s; }
+.stagger > :nth-child(5)  { animation-delay: 0.19s; }
+.stagger > :nth-child(6)  { animation-delay: 0.23s; }
+.stagger > :nth-child(7)  { animation-delay: 0.27s; }
+.stagger > :nth-child(8)  { animation-delay: 0.31s; }
+.stagger > :nth-child(9)  { animation-delay: 0.35s; }
+.stagger > :nth-child(10) { animation-delay: 0.39s; }
+.stagger > :nth-child(11) { animation-delay: 0.43s; }
+.stagger > :nth-child(n+12) { animation-delay: 0.47s; }
+
+/* Brillo que cruza el botón principal al pasar el mouse */
+.btn-glow:hover:not(:disabled) {
+  background: linear-gradient(110deg, #6d28d9 35%, #8b5cf6 50%, #6d28d9 65%) 0 0 / 250% 100%;
+  animation: btn-sheen 0.8s ease;
+}
+
+/* Iconos y chips responden al tacto */
+.neumorphic-hover:active { transform: scale(0.985); }
+a, button { -webkit-tap-highlight-color: transparent; }
+
+/* ── Reduce Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,*::before,*::after {
+    animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.01ms !important;
+  }
+}

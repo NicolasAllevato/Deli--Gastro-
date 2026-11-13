@@ -1,0 +1,19 @@
+/* ── Base ── */
+/* Escala general al 90%: todo lo definido en rem (Tailwind) se reduce en proporción. */
+html {
+  font-size: 90%;
+  -webkit-text-size-adjust: 100%;
+}
+/* `clip` y no `hidden`: con hidden el body pasa a ser un contenedor de scroll que nunca se
+   desplaza, y eso anula todos los `position: sticky` (cabeceras, buscador del menú). */
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-background);
+  color: var(--color-on-background);
+  min-height: 100dvh;
+}
+h1,h2,h3,h4,h5,h6,.headline { font-family: var(--font-headline); }
