@@ -16,6 +16,7 @@ import * as orders from "./orders.ts";
 import * as points from "./points.ts";
 import * as reviews from "./reviews.ts";
 import * as catalog from "./catalog.ts";
+import * as catalogAdmin from "./catalog-admin.ts";
 import * as payments from "./payments.ts";
 import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
@@ -26,6 +27,7 @@ export { shadowRead, dualWrite, type DiffLogger, type ShadowDiff } from "./shado
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
 export { toCents, fromCents } from "./money.ts";
+export { comparableProduct, comparableCategory, type ApiProduct, type ApiCategory, type UpdateResult, type DeleteResult } from "./catalog-admin.ts";
 
 type Bound<F> = F extends (db: SqlDatabase, actor: Actor, ...rest: infer A) => infer R ? (...rest: A) => R : never;
 const bind = <F extends (db: SqlDatabase, actor: Actor, ...rest: never[]) => unknown>(f: F, db: SqlDatabase, actor: Actor) =>
@@ -60,6 +62,16 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       setConfigMany: bind(catalog.setConfigMany, db, actor),
       setConfig: bind(catalog.setConfig, db, actor),
       dailyReports: bind(catalog.listDailyReports, db, actor),
+    },
+    catalogAdmin: {
+      products: bind(catalogAdmin.listAllProducts, db, actor),
+      categories: bind(catalogAdmin.listAllCategories, db, actor),
+      createProduct: bind(catalogAdmin.createProduct, db, actor),
+      updateProduct: bind(catalogAdmin.updateProduct, db, actor),
+      deleteProduct: bind(catalogAdmin.deleteProduct, db, actor),
+      createCategory: bind(catalogAdmin.createCategory, db, actor),
+      updateCategory: bind(catalogAdmin.updateCategory, db, actor),
+      deleteCategory: bind(catalogAdmin.deleteCategory, db, actor),
     },
     payments: {
       get: bind(payments.getPaymentIntent, db, actor),
