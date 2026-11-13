@@ -72,7 +72,8 @@ export async function GET(req: NextRequest) {
     );
     return NextResponse.json(Object.fromEntries(rows.map((r) => [r.key, r.value])));
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+    console.error("[config] lectura", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "Error interno." }, { status: 500 });
   }
 }
 
@@ -112,7 +113,8 @@ export async function PATCH(req: NextRequest) {
       async () => (await dataFor(actor)).catalog.setConfigMany(rows),
     );
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+    console.error("[config] escritura", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "Error interno." }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }

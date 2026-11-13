@@ -99,8 +99,9 @@ export async function compareRows(
   shadow: Record<string, unknown>[],
   key: (row: Record<string, unknown>) => string,
 ): Promise<ShadowDiff | null> {
-  const pMap = new Map(primary.map((r) => [key(r), r]));
-  const sMap = new Map(shadow.map((r) => [key(r), r]));
+  const safeKey = (r: Record<string, unknown>) => assertIdKey(key(r));
+  const pMap = new Map(primary.map((r) => [safeKey(r), r]));
+  const sMap = new Map(shadow.map((r) => [safeKey(r), r]));
   const missing: string[] = [];
   const extra: string[] = [];
   const fieldDiffs: Record<string, string[]> = {};
@@ -116,6 +117,18 @@ export async function compareRows(
   for (const k of sMap.keys()) if (!pMap.has(k)) extra.push(await hashKey(k));
   if (!missing.length && !extra.length && !Object.keys(fieldDiffs).length) return null;
   return { op, primaryCount: primary.length, shadowCount: shadow.length, missingInShadow: missing, extraInShadow: extra, fieldDiffs };
+}
+
+/**
+ * La clave de comparación tiene que ser un id (uuid o clave de config), nunca
+ * un dato enumerable (teléfono, email, fudo_customer_id): con SHA-256 y sal
+ * fija esos se revertirían por fuerza bruta. Si hiciera falta, usar HMAC con secreto.
+ */
+export function assertIdKey(k: string): string {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k);
+  const isConfigKey = /^[a-z][a-z0-9_.:-]{0,63}$/.test(k);
+  if (!isUuid && !isConfigKey) throw new Error("shadow: la clave debe ser un id, no un dato personal");
+  return k;
 }
 
 function stable(v: unknown): string {

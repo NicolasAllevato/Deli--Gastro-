@@ -5,7 +5,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createTestDb, seed, actors } from "./helpers/sqlite-d1.ts";
-import { shadowRead, dualWrite, compareRows, type DiffLogger } from "../src/lib/data/shadow.ts";
+import { shadowRead, dualWrite, compareRows, assertIdKey, type DiffLogger } from "../src/lib/data/shadow.ts";
 import { actorFromSession, ForbiddenError } from "../src/lib/data/actor.ts";
 import * as orders from "../src/lib/data/orders.ts";
 import * as fudo from "../src/lib/data/fudo.ts";
@@ -56,7 +56,16 @@ describe("shadowRead", () => {
     assert.deepEqual(r, [{ id: 9 }]);
   });
   it("sin diferencias no registra nada; JSON con otro orden de claves es igual", async () => {
-    assert.equal(await compareRows("t", [{ id: 1, v: { a: 1, b: 2 }, ok: true }], [{ id: 1, v: { b: 2, a: 1 }, ok: 1 }], (r) => String(r.id)), null);
+    assert.equal(await compareRows("t", [{ id: "k1", v: { a: 1, b: 2 }, ok: true }], [{ id: "k1", v: { b: 2, a: 1 }, ok: 1 }], (r) => String(r.id)), null);
+  });
+});
+
+describe("clave de comparación solo ids", () => {
+  it("acepta uuid y claves de config; rechaza teléfonos, emails y números de Fudo", async () => {
+    assert.equal(assertIdKey("8e293f66-d614-4519-8514-be4dd6a3ac44"), "8e293f66-d614-4519-8514-be4dd6a3ac44");
+    assert.equal(assertIdKey("promos_del_dia"), "promos_del_dia");
+    for (const bad of ["1155554444", "+5491155554444", "ana@x.test", "123456"]) assert.throws(() => assertIdKey(bad));
+    await assert.rejects(compareRows("t", [{ id: "ana@x.test" }], [], (r) => String(r.id)));
   });
 });
 
