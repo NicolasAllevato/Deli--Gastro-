@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import PuntosClient, { type ClientePuntos } from "./PuntosClient";
 import PuntosCatalogo, { type CategoriaPuntos, type ProductoPuntos } from "./PuntosCatalogo";
@@ -13,7 +14,9 @@ function formatDate(iso: string) {
   });
 }
 
-export default async function AdminPuntosPage() {
+export default async function AdminPuntosPage({ searchParams }: { searchParams: Promise<{ cliente?: string | string[] }> }) {
+  const raw = (await searchParams).cliente;
+  const clienteId = z.string().uuid().safeParse(Array.isArray(raw) ? raw[0] : raw);
   const supabase = createAdminClient();
 
   const [{ data: clients }, { data: ledger }, { data: categories }, { data: products }, { data: orders }] = await Promise.all([
@@ -92,7 +95,7 @@ export default async function AdminPuntosPage() {
   return (
     <div className="space-y-5">
       <PuntosCatalogo categorias={categorias} productos={productos} />
-      <PuntosClient clientes={clientes} />
+      <PuntosClient clientes={clientes} initialClientId={clienteId.success ? clienteId.data : null} />
     </div>
   );
 }

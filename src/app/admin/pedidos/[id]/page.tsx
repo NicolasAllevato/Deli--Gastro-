@@ -10,6 +10,7 @@ import { computeDurations, type TrackingDurations } from "@/lib/tracking";
 import { formatMoney, formatOrderId, parseItems } from "@/lib/orders";
 import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/lib/buttonClasses";
+import OrderTrace from "./OrderTrace";
 
 const ESTADO_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"> = {
   Finalizados:      "green",
@@ -197,6 +198,9 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
           </ol>
         )}
       </div>
+
+      {/* Todas las columnas del pedido (solo staff: /admin está protegido por rol en el proxy). */}
+      <OrderTrace order={row as Record<string, unknown>} />
     </div>
   );
 }
