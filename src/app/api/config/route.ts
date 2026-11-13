@@ -4,6 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import type { Json } from "@/types/database";
+import { actorFromSession, dataFor, dualWrite, shadowRead } from "@/lib/data";
 import { promoListSchema } from "@/lib/promos";
 import { COURIER_ASSIGN_MODES, COURIER_ASSIGN_MODE_KEY } from "@/lib/courier-assign";
 import { DAILY_SUMMARY_KEY, dailySummarySettingsSchema } from "@/lib/daily-summary/settings";
@@ -57,15 +58,22 @@ export async function GET(req: NextRequest) {
   const auth = await requireRole("admin", req);
   if (isAuthorizationError(auth)) return auth.error;
 
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("global_config")
-    .select("key, value");
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const config = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]));
-  return NextResponse.json(config);
+  const actor = actorFromSession({ userId: auth.user.id, role: auth.role });
+  try {
+    // DATA_BACKEND=supabase (default): solo Supabase. dual: además compara con D1 sin afectar la respuesta.
+    const rows = await shadowRead(
+      async () => {
+        const { data, error } = await createAdminClient().from("global_config").select("key, value");
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      },
+      async () => (await dataFor(actor)).catalog.listConfig(),
+      { op: "config.list", normalize: (r) => ({ key: r.key, value: r.value }), normalizeShadow: (r) => r, key: (r) => String(r.key) },
+    );
+    return NextResponse.json(Object.fromEntries(rows.map((r) => [r.key, r.value])));
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: NextRequest) {
@@ -93,11 +101,18 @@ export async function PATCH(req: NextRequest) {
   );
   if (rows.length === 0) return NextResponse.json({ ok: true });
 
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("global_config")
-    .upsert(rows, { onConflict: "key" });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const actor = actorFromSession({ userId: auth.user.id, role: auth.role });
+  try {
+    await dualWrite(
+      "config.upsert",
+      async () => {
+        const { error } = await createAdminClient().from("global_config").upsert(rows, { onConflict: "key" });
+        if (error) throw new Error(error.message);
+      },
+      async () => (await dataFor(actor)).catalog.setConfigMany(rows),
+    );
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

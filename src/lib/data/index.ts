@@ -21,7 +21,8 @@ import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
 import * as restricted from "./restricted.ts";
 
-export { anon, systemActor, ForbiddenError, type Actor } from "./actor.ts";
+export { anon, systemActor, actorFromSession, ForbiddenError, type Actor } from "./actor.ts";
+export { shadowRead, dualWrite, type DiffLogger, type ShadowDiff } from "./shadow.ts";
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
 export { toCents, fromCents } from "./money.ts";
@@ -55,6 +56,8 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       upsertProduct: bind(catalog.upsertProduct, db, actor),
       upsertCategory: bind(catalog.upsertCategory, db, actor),
       getConfig: bind(catalog.getConfig, db, actor),
+      listConfig: bind(catalog.listConfig, db, actor),
+      setConfigMany: bind(catalog.setConfigMany, db, actor),
       setConfig: bind(catalog.setConfig, db, actor),
       dailyReports: bind(catalog.listDailyReports, db, actor),
     },

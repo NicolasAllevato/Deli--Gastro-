@@ -91,10 +91,54 @@ export async function listOrderItems(db: SqlDatabase, actor: Actor, orderId: str
 export const ORDER_STATUSES = ["Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+/**
+ * Matriz de transiciones del staff (igual a NEXT_STATUSES de src/lib/orders.ts,
+ * verificado por test). Nadie sale de un estado final ni saltea pasos.
+ */
+export const STAFF_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
+  Recibidos: ["En Preparación", "Cancelado"],
+  "En Preparación": ["En Camino", "Cancelado"],
+  "En Camino": ["Finalizados", "Cancelado"],
+  Finalizados: [],
+  Cancelado: [],
+};
+
+const FORWARD: readonly OrderStatus[] = ["Recibidos", "En Preparación", "En Camino", "Finalizados"];
+
+/**
+ * Sistema (webhooks de Fudo): puede saltear pasos hacia adelante (Fudo cierra
+ * pedidos que nunca vimos confirmados), nunca volver atrás ni salir de un final.
+ */
+export function systemCanTransition(from: OrderStatus, to: OrderStatus): boolean {
+  if (from === "Finalizados" || from === "Cancelado") return false;
+  if (to === "Cancelado") return true;
+  return FORWARD.indexOf(to) > FORWARD.indexOf(from);
+}
+
+export function staffCanTransition(actor: Actor, from: OrderStatus, to: OrderStatus): boolean {
+  if (actor.kind === "admin") return STAFF_TRANSITIONS[from]?.includes(to) ?? false;
+  if (actor.kind === "system") return systemCanTransition(from, to);
+  return false;
+}
+
+export class InvalidTransitionError extends Error {
+  constructor() {
+    super("Transición de estado no permitida");
+    this.name = "InvalidTransitionError";
+  }
+}
+
 export async function setOrderStatus(db: SqlDatabase, actor: Actor, orderId: string, status: OrderStatus): Promise<boolean> {
   if (!ORDER_STATUSES.includes(status)) throw new Error("Estado inválido");
   if (isStaff(actor)) {
-    const r = await db.prepare("UPDATE orders SET status = ?, updated_at = ? WHERE id = ?").bind(status, nowIso(), orderId).run();
+    const current = await db.prepare("SELECT status FROM orders WHERE id = ?").bind(orderId).first<{ status: OrderStatus }>();
+    if (!current) return false;
+    if (!staffCanTransition(actor, current.status, status)) throw new InvalidTransitionError();
+    // Concurrencia optimista: solo aplica si nadie cambió el estado entre la lectura y el UPDATE.
+    const r = await db
+      .prepare("UPDATE orders SET status = ?, updated_at = ? WHERE id = ? AND status = ?")
+      .bind(status, nowIso(), orderId, current.status)
+      .run();
     return r.meta.changes === 1;
   }
   if (actor.kind === "repartidor") {
