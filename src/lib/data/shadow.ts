@@ -71,16 +71,20 @@ export async function shadowRead<P, S>(
 export async function dualWrite<R>(
   op: string,
   primary: () => Promise<R>,
-  mirror: () => Promise<unknown>,
-  opts: { backend?: DataBackend; log?: DiffLogger } = {},
+  mirror: () => Promise<R | void>,
+  opts: {
+    backend?: DataBackend;
+    log?: DiffLogger;
+    /** En dual: reflejar en D1 solo si la escritura en Supabase realmente ocurrió (p. ej. no en un 404/409). */
+    shouldMirror?: (result: R) => boolean;
+  } = {},
 ): Promise<R | undefined> {
   const backend = opts.backend ?? dataBackend();
   if (backend === "supabase") return primary();
-  if (backend === "d1") {
-    await mirror();
-    return undefined;
-  }
+  // d1: D1 es la fuente de verdad y su resultado es la respuesta.
+  if (backend === "d1") return (await mirror()) ?? undefined;
   const result = await primary();
+  if (opts.shouldMirror && !opts.shouldMirror(result)) return result;
   try {
     await mirror();
   } catch (err) {
