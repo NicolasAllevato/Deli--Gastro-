@@ -16,8 +16,15 @@
     { "pattern": "www.opsyndely.la-gambeta.com", "custom_domain": true }
   ],
   "vars": {
-    "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com"
+    "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com",
+    // Migración D1 (docs/migracion-supabase-d1.md). supabase = comportamiento actual.
+    // Cambiar a dual/d1 SOLO con OK explícito del usuario.
+    "DATA_BACKEND": "supabase"
   },
+  // Base D1 de la migración. Solo la usa src/lib/data/db.ts y solo si DATA_BACKEND != supabase.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "deli-gastro", "database_id": "8e293f66-d614-4519-8514-be4dd6a3ac44" }
+  ],
   // Cloudflare Email Sending (resumen diario). Requiere onboardear la-gambeta.com: docs/EMAIL_CLOUDFLARE.md.
   "send_email": [{ "name": "EMAIL" }],
   "observability": { "enabled": true }
