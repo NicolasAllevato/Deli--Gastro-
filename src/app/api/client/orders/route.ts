@@ -9,6 +9,7 @@ import { createDeliveryOrder } from "@/lib/orders-create";
 import { notifyOrderEvent } from "@/lib/whatsapp/notify";
 import { getGateway } from "@/lib/payments/gateway";
 import { startOnlinePayment } from "@/lib/payments/intents";
+import { clientOrders } from "@/lib/client-reads";
 
 const createSchema = z.object({
   items: z
@@ -34,15 +35,13 @@ export async function GET(req: NextRequest) {
   const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
 
-  const { data, error } = await createAdminClient()
-    .from("orders")
-    .select("*")
-    .eq("client_id", auth.client.id)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  try {
+    const data = await clientOrders({ db: createAdminClient(), userId: auth.user.id, clientId: auth.client.id });
+    return NextResponse.json(data);
+  } catch (err) {
+    console.error("[client] pedidos", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "Error interno." }, { status: 500 });
+  }
 }
 
 /**

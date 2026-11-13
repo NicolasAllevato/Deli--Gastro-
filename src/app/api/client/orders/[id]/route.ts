@@ -7,6 +7,7 @@ import { isAuthorizationError } from "@/lib/auth/requireRole";
 import { minutesSince } from "@/lib/orders";
 import { numberConfig, readConfig } from "@/lib/orders-server";
 import { cancelOrderForClient } from "@/lib/orders-create";
+import { clientOrder, clientReviewedOrderIds } from "@/lib/client-reads";
 
 const idSchema = z.string().uuid();
 const patchSchema = z.object({ action: z.literal("cancel") });
@@ -26,18 +27,18 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   if (!id.success) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
 
   const db = createAdminClient();
-  const { data: order } = await db
-    .from("orders")
-    .select("*")
-    .eq("id", id.data)
-    .eq("client_id", auth.client.id)
-    .maybeSingle();
-  if (!order) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 });
-
-  const [config, reviewRes] = await Promise.all([
-    readConfig(db),
-    db.from("reviews").select("id").eq("order_id", order.id).limit(1),
-  ]);
+  const ctx = { db, userId: auth.user.id, clientId: auth.client.id };
+  let order: Awaited<ReturnType<typeof clientOrder>>;
+  let reviewed: Set<string>;
+  let config: Awaited<ReturnType<typeof readConfig>>;
+  try {
+    order = await clientOrder(ctx, id.data);
+    if (!order) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 });
+    [config, reviewed] = await Promise.all([readConfig(db), clientReviewedOrderIds(ctx)]);
+  } catch (err) {
+    console.error("[client] pedido", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "Error interno." }, { status: 500 });
+  }
 
   const cancelWindow = numberConfig(config, "cancelacion_min", 15);
   const canCancel = order.status === "Recibidos" && minutesSince(order.created_at) <= cancelWindow;
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     etaMinutes: numberConfig(config, "tiempo_entrega_min", 30),
     canCancel,
     cancelWindow,
-    reviewed: (reviewRes.data ?? []).length > 0,
+    reviewed: reviewed.has(String(order.id)),
   });
 }
 
