@@ -117,7 +117,7 @@ Cada fase termina en un PR propio; ninguna se despliega sin OK.
 - **D2. Auth:** ¿auth propia (recomendado) o Better Auth? ¿Admin con Cloudflare Access además?
 - **D3. Contraseñas:** ¿copiar hashes bcrypt (requiere connection string de Supabase) o pedir a los 7 usuarios que reseteen?
 - **D4. Realtime:** ¿alcanza con polling cada ~5 s o se quiere el Durable Object (instantáneo)?
-- **D5. Secretos** (`integration_secrets`, 8 filas): ¿pasarlos a secretos de Worker / Secrets Store en vez de una tabla?
+- **D5. Secretos** (`integration_secrets`, 8 filas): el script ya NO los vuelca; se propone pasarlos a secretos de Worker / Secrets Store. Confirmar.
 - **D6. Montos:** ¿REAL con redondeo (simple) o centavos enteros (exacto, más cambios)?
 - **D7. Ventana de corte** y tolerancia a un re-login de todos los usuarios.
 - **D8.** OK para **crear la base D1 remota** `deli-gastro` en la cuenta e7351 (fase 0).

@@ -31,9 +31,13 @@ const TABLAS = [
   "categories", "products", "clients", "orders", "order_items", "order_events",
   "points_ledger", "reviews", "payment_intents", "delivery_zones", "reports_daily",
   "couriers", "courier_locations", "courier_shifts", "global_config",
-  "integration_secrets", "legal_acceptances", "fudo_product_map", "fudo_payment_map",
+  "legal_acceptances", "fudo_product_map", "fudo_payment_map",
   "fudo_sync_runs", "wa_conversations", "wa_messages", "wa_campaigns",
 ];
+
+// Tablas con tokens/claves: NUNCA se vuelcan. Sus valores pasan a Worker secrets
+// (`wrangler secret put`), no a D1. Se rechazan aunque se pidan con --tablas.
+const EXCLUIDAS = new Set(["integration_secrets"]);
 
 // Columnas por tipo de conversión (el resto pasa tal cual).
 const BOOL = new Set([
@@ -55,7 +59,10 @@ function args() {
   const get = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
   return {
     out: get("--out") ?? "d1/out",
-    tablas: get("--tablas")?.split(",") ?? TABLAS,
+    tablas: (get("--tablas")?.split(",") ?? TABLAS).filter((t) => {
+      if (EXCLUIDAS.has(t)) console.warn(`Se omite ${t}: contiene secretos (van a Worker secrets).`);
+      return !EXCLUIDAS.has(t);
+    }),
     borrar: a.includes("--borrar"),
   };
 }
@@ -179,7 +186,8 @@ async function main() {
   const { out, tablas, borrar } = args();
   const url = env("SUPABASE_URL").replace(/\/$/, "");
   const key = env("SUPABASE_SERVICE_ROLE_KEY");
-  await mkdir(out, { recursive: true });
+  // La salida contiene datos personales y hashes: solo legible por el dueño.
+  await mkdir(out, { recursive: true, mode: 0o700 });
 
   // D1 no admite BEGIN/COMMIT en archivos: `wrangler d1 execute --file` ya corre el lote.
   // Se desactivan FKs durante la carga para tolerar el orden; verificar.sql corre foreign_key_check.
@@ -217,9 +225,10 @@ async function main() {
     "SELECT 'puntos_inconsistentes' AS chequeo, count(*) AS n FROM clients c WHERE c.total_points < 0;",
   ];
 
-  await writeFile(join(out, "datos.sql"), lineas.join("\n") + "\n");
-  await writeFile(join(out, "verificar.sql"), verificar.join("\n") + "\n");
-  await writeFile(join(out, "conteos.json"), JSON.stringify({ generado: new Date().toISOString(), conteos }, null, 2));
+  const privado = { mode: 0o600 };
+  await writeFile(join(out, "datos.sql"), lineas.join("\n") + "\n", privado);
+  await writeFile(join(out, "verificar.sql"), verificar.join("\n") + "\n", privado);
+  await writeFile(join(out, "conteos.json"), JSON.stringify({ generado: new Date().toISOString(), conteos }, null, 2), privado);
   console.log(`\nListo: ${join(out, "datos.sql")} (${lineas.length} sentencias). Verificar con verificar.sql.`);
 }
 
