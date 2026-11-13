@@ -131,7 +131,7 @@ export async function updateProduct(db: SqlDatabase, actor: Actor, id: string, p
   const current = await getProduct(db, id);
   if (!current) return { status: "not_found" };
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
-  const unknown = entries.filter(([k]) => !(k in PRODUCT_EDITABLE)).map(([k]) => k);
+  const unknown = entries.filter(([k]) => !Object.hasOwn(PRODUCT_EDITABLE, k)).map(([k]) => k);
   if (unknown.length) throw new Error(`Campos no editables: ${unknown.join(", ")}`);
   const locked = current.fudo_id != null;
   const ignored = locked ? entries.filter(([k]) => PRODUCT_FUDO_MANAGED.has(k)).map(([k]) => k) : [];
@@ -191,7 +191,7 @@ export async function updateCategory(db: SqlDatabase, actor: Actor, id: string, 
   const current = await getCategory(db, id);
   if (!current) return { status: "not_found" };
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
-  const unknown = entries.filter(([k]) => !(k in CATEGORY_EDITABLE)).map(([k]) => k);
+  const unknown = entries.filter(([k]) => !Object.hasOwn(CATEGORY_EDITABLE, k)).map(([k]) => k);
   if (unknown.length) throw new Error(`Campos no editables: ${unknown.join(", ")}`);
   const ignored = current.fudo_id != null ? entries.filter(([k]) => k === "name").map(([k]) => k) : [];
   const kept = entries.filter(([k]) => !ignored.includes(k));

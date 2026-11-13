@@ -66,6 +66,12 @@ describe("productos", () => {
   it("campos fuera de la lista blanca se rechazan", async () => {
     await assert.rejects(cat.updateProduct(db, actors.admin, "p-on", { fudo_id: 1 } as never));
     await assert.rejects(cat.updateProduct(db, actors.admin, "p-on", { "name = 'x', price_cents": 1 } as never));
+    // Claves heredadas de Object.prototype no pasan la lista blanca (Object.hasOwn).
+    for (const k of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const patch = JSON.parse(`{"${k}": 1}`);
+      await assert.rejects(cat.updateProduct(db, actors.admin, "p-on", patch), /Campos no editables/);
+      await assert.rejects(cat.updateCategory(db, actors.admin, "cat-1", patch), /Campos no editables/);
+    }
   });
   it("inexistente → not_found; borrar: manual sí, Fudo no", async () => {
     assert.deepEqual(await cat.updateProduct(db, actors.admin, "nada", { name: "x" }), { status: "not_found" });
