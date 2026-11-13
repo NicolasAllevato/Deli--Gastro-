@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bike, Check, Loader2, X } from "lucide-react";
 import type { CourierShift } from "@/lib/courier-shifts";
 import { freshPendingNotice } from "@/lib/courier-shift-notice";
@@ -26,19 +26,39 @@ function useCourierShifts() {
   const [announcement, setAnnouncement] = useState("");
   const announcedIds = useRef<ReadonlySet<string>>(new Set());
 
+  const applyShifts = useCallback((next: CourierShift[]) => {
+    setShifts(next);
+    const { notice, seen } = freshPendingNotice(next, announcedIds.current);
+    announcedIds.current = seen;
+    if (notice) setAnnouncement(notice);
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/courier-shifts", { cache: "no-store" });
       if (!res.ok) return;
-      const next = (await res.json()) as CourierShift[];
-      setShifts(next);
-      const { notice, seen } = freshPendingNotice(next, announcedIds.current);
-      announcedIds.current = seen;
-      if (notice) setAnnouncement(notice);
+      applyShifts((await res.json()) as CourierShift[]);
     } catch {
       /* sin red: se reintenta con el próximo aviso */
     }
-  }, []);
+  }, [applyShifts]);
+
+  // Carga inicial: useLiveRefresh solo recarga ante un aviso o una reconexión, no al montar.
+  // El setState queda en el callback de la promesa, no en el cuerpo del efecto.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/courier-shifts", { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<CourierShift[]>) : null))
+      .then((next) => {
+        if (alive && next) applyShifts(next);
+      })
+      .catch(() => {
+        /* sin red: carga con el próximo aviso */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [applyShifts]);
 
   useLiveRefresh({ topic: TOPIC_COURIER_SHIFTS, refresh, demoPollMs: DEMO_POLL_MS });
 
