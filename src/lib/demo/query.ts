@@ -1,4 +1,5 @@
 import type { Row, TableName, Tables } from "@/lib/demo/seed";
+import { parseOrFilter, type OrNode } from "../or-filter.ts";
 
 /**
  * Motor de consultas mínimo, compatible con el subconjunto de la API de
@@ -7,7 +8,7 @@ import type { Row, TableName, Tables } from "@/lib/demo/seed";
  * servidor lo ejecuta contra el store.
  */
 
-export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike" | "like" | "not";
+export type FilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "is" | "ilike" | "like" | "not" | "or";
 
 export interface Filter {
   op: FilterOp;
@@ -120,12 +121,31 @@ function matches(row: Row, f: Filter): boolean {
       const inner = f.value as { op: FilterOp; value: unknown };
       return !matches(row, { op: inner.op, column: f.column, value: inner.value });
     }
+    case "or":
+      return evalOr(row, parseOrFilter(String(f.value)));
     case "ilike":
     case "like": {
       const pattern = String(f.value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*");
       return new RegExp(`^${pattern}$`, f.op === "ilike" ? "i" : "").test(String(v ?? ""));
     }
   }
+}
+
+/** `.or()` de PostgREST (mismo subconjunto que el motor D1). */
+function evalOr(row: Row, node: OrNode): boolean {
+  if (node.kind === "cond") {
+    const v = row[node.column];
+    switch (node.op) {
+      case "eq": return String(v) === node.value;
+      case "neq": return String(v) !== node.value;
+      case "gt": return compare(v, node.value) > 0;
+      case "gte": return compare(v, node.value) >= 0;
+      case "lt": return compare(v, node.value) < 0;
+      case "lte": return compare(v, node.value) <= 0;
+      case "is": return v === null || v === undefined;
+    }
+  }
+  return node.kind === "and" ? node.items.every((n) => evalOr(row, n)) : node.items.some((n) => evalOr(row, n));
 }
 
 function project(row: Row, columns: string): Row {

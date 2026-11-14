@@ -89,6 +89,8 @@ class DemoQueryBuilder implements PromiseLike<QueryResult> {
     return this.filter("not", column, { op: operator, value });
   }
 
+  /** Filtro `.or()` de PostgREST (subconjunto: ver src/lib/data/or-filter.ts). */
+  or(expr: string): this { return this.filter("or", "", expr); }
   order(column: string, opts?: { ascending?: boolean }): this {
     this.plan.order.push({ column, ascending: opts?.ascending ?? true });
     return this;

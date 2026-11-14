@@ -53,7 +53,10 @@ describe("consultas parametrizadas", () => {
       for (const m of src.matchAll(/prepare\(\s*`([\s\S]*?)`/g)) {
         for (const expr of m[1].match(/\$\{[^}]*\}/g) ?? []) {
           const mirrorOk = f === join(DATA, "mirror.ts") && MIRROR_ONLY.test(expr);
-          if (!ALLOWED.test(expr) && !mirrorOk) offenders.push(`${relative(ROOT, f)}: ${expr}`);
+          // plan-sql.ts arma SQL desde planes: identificadores solo vía ident() sobre APP_TABLES y columnas
+          // reales de D1, valores siempre con bind (cubierto por tests/data-plan-sql.test.ts).
+          const planOk = f === join(DATA, "plan-sql.ts");
+          if (!ALLOWED.test(expr) && !mirrorOk && !planOk) offenders.push(`${relative(ROOT, f)}: ${expr}`);
         }
       }
       if (/prepare\([^)`"']*\+/.test(src)) offenders.push(`${relative(ROOT, f)}: concatenación`);

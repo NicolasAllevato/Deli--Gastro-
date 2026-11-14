@@ -23,6 +23,8 @@ import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
 import * as restricted from "./restricted.ts";
 import * as mirror from "./mirror.ts";
+import { executeD1Plan, type Plan, type PlanResult } from "./plan-sql.ts";
+import { systemActor as sysActor } from "./actor.ts";
 
 export { anon, systemActor, actorFromSession, ForbiddenError, type Actor } from "./actor.ts";
 export { type SupabaseAuthUser, authUserRow } from "./mirror.ts";
@@ -126,3 +128,12 @@ export type DataApi = ReturnType<typeof bindRepos>;
 export async function dataFor(actor: Actor): Promise<DataApi> {
   return bindRepos(await getDb(), actor);
 }
+
+/**
+ * Etapa 1 del corte (DATA_BACKEND=d1): ejecuta en D1 un plan del cliente compatible con supabase-js.
+ * Equivale al service-role: la autorización sigue en cada ruta. Ver plan-sql.ts.
+ */
+export async function executePlanInD1(plan: Plan): Promise<PlanResult> {
+  return executeD1Plan(await getDb(), sysActor("admin-client"), plan);
+}
+export type { Plan as D1Plan, PlanResult as D1PlanResult } from "./plan-sql.ts";
