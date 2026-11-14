@@ -27,6 +27,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { authUserRow } from "../src/lib/data/mirror.ts";
 
 // Orden respetando FKs (padres primero).
 const TABLAS = [
@@ -54,7 +56,7 @@ function toCents(v) {
 // Columnas por tipo de conversión (el resto pasa tal cual).
 const BOOL = new Set([
   "is_active", "wa_marketing_opt_in", "is_anonymous", "delivered_in_app", "active",
-  "ok", "human_takeover",
+  "ok", "human_takeover", "is_combo",
 ]);
 const JSON_COLS = new Set(["fudo_payments", "fudo_options", "snapshot", "shape", "value_json", "state", "segment"]);
 const JSON_BY_TABLE = { global_config: new Set(["value"]) };
@@ -75,6 +77,8 @@ function args() {
     out: get("--out") ?? join(process.env.LOCALAPPDATA ?? join(homedir(), ".local", "share"), "deli-gastro-d1-out"),
     tablas: (get("--tablas")?.split(",") ?? TABLAS).filter((t) => {
       if (EXCLUIDAS.has(t)) console.warn(`Se omite ${t}: contiene secretos (van a Worker secrets).`);
+      // Solo tablas de la app: nunca las del sistema de recetas/insumos que comparte la base.
+      if (!TABLAS.includes(t)) throw new Error(`Tabla fuera de la app, no se copia: ${t}`);
       return !EXCLUIDAS.has(t);
     }),
     borrar: a.includes("--borrar"),
@@ -120,17 +124,7 @@ async function exportarUsuarios(url, key) {
     usuarios.push(...users);
     if (users.length < 1000) break;
   }
-  return usuarios.map((u) => ({
-    id: u.id,
-    name: u.user_metadata?.name ?? u.user_metadata?.full_name ?? "",
-    email: u.email ?? `${u.id}@sin-email.invalid`,
-    emailVerified: u.email_confirmed_at ? 1 : 0,
-    role: ["admin", "cliente", "repartidor"].includes(u.app_metadata?.role) ? u.app_metadata.role : "cliente",
-    banned: u.banned_until && new Date(u.banned_until) > new Date() ? 1 : 0,
-    banExpires: u.banned_until ? isoUtc(u.banned_until) : null,
-    createdAt: isoUtc(u.created_at),
-    updatedAt: isoUtc(u.updated_at ?? u.created_at),
-  }));
+  return usuarios;
 }
 
 /** timestamptz → ISO UTC con ms y Z (ordenable como texto). */
@@ -185,35 +179,39 @@ function insertSql(tabla, filas) {
   });
 }
 
-async function main() {
-  const { out, tablas, borrar } = args();
-  const url = env("SUPABASE_URL").replace(/\/$/, "");
-  const key = env("SUPABASE_SERVICE_ROLE_KEY");
-  // La salida contiene datos personales (y pin_hash/pin_encrypted de repartidores): solo legible por el dueño.
-  await mkdir(out, { recursive: true, mode: 0o700 });
-
+/**
+ * Arma el SQL de la copia completa a partir de lo exportado de Supabase (sin red ni disco: testeable).
+ * Devuelve las sentencias de carga, las de verificación y los conteos y sumas de control de origen.
+ */
+export function construir(usuarios, filasPorTabla, { borrar = false } = {}) {
   // D1 no admite BEGIN/COMMIT en archivos: `wrangler d1 execute --file` ya corre el lote.
   // Se desactivan FKs durante la carga para tolerar el orden; verificar.sql corre foreign_key_check.
   const lineas = ["PRAGMA defer_foreign_keys = on;"];
   const conteos = {};
+  /** Sumas de control en origen: montos en centavos y deltas de puntos (tabla.columna → valor). */
+  const sumas = {};
   const puntos = new Map();
 
-  const usuarios = await exportarUsuarios(url, key);
   conteos.user = usuarios.length;
   if (borrar) lineas.push('DELETE FROM "user";');
-  lineas.push(...insertSql("user", usuarios.map((u) => transformar("user", u))));
+  lineas.push(...insertSql("user", usuarios.map((u) => authUserRow(u))));
   // El ledger se importa sin el trigger (el orden de carga podría dejar saldos
   // negativos transitorios); total_points se re-escribe desde origen al final.
   lineas.push("DROP TRIGGER IF EXISTS points_ledger_after_insert;");
 
-  for (const tabla of tablas) {
-    const filas = await exportarTabla(url, key, tabla);
+  for (const [tabla, filas] of filasPorTabla) {
     conteos[tabla] = filas.length;
     if (tabla === "clients") for (const c of filas) puntos.set(c.id, Number(c.total_points) || 0);
+    for (const [col, d1col] of Object.entries(CENTS)) {
+      if (filas.some((f) => f[col] !== undefined)) {
+        sumas[`${tabla}.${d1col}`] = filas.reduce((acc, f) => acc + (f[col] == null ? 0 : toCents(f[col])), 0);
+      }
+    }
+    if (tabla === "points_ledger") sumas["points_ledger.delta"] = filas.reduce((acc, f) => acc + Number(f.delta || 0), 0);
+    if (tabla === "clients") sumas["clients.total_points"] = filas.reduce((acc, f) => acc + Number(f.total_points || 0), 0);
     if (borrar) lineas.push(`DELETE FROM ${tabla};`);
     lineas.push(...insertSql(tabla, filas.map((f) => transformar(tabla, f))));
     lineas.push(`INSERT OR REPLACE INTO _migracion (tabla, filas_origen) VALUES ('${tabla}', ${filas.length});`);
-    console.log(`${tabla.padEnd(22)} ${String(filas.length).padStart(6)} filas`);
   }
   lineas.push(`INSERT OR REPLACE INTO _migracion (tabla, filas_origen) VALUES ('user', ${usuarios.length});`);
   lineas.push(
@@ -227,31 +225,55 @@ async function main() {
   lineas.push(
     "UPDATE orders SET courier_user_id = (SELECT c.user_id FROM couriers c WHERE c.name = orders.courier_name) WHERE courier_name IS NOT NULL AND (SELECT count(*) FROM couriers c WHERE c.name = orders.courier_name) = 1;",
   );
-
-  // El trigger points_ledger_after_insert suma deltas al importar el ledger, pero
-  // clients.total_points ya viene calculado de origen: se re-escribe al final.
-  if (puntos.size) {
-    for (const [id, pts] of puntos) lineas.push(`UPDATE clients SET total_points = ${pts} WHERE id = ${literal(id)};`);
-  }
+  // El trigger suma deltas al importar el ledger, pero clients.total_points ya viene calculado de origen.
+  for (const [id, pts] of puntos) lineas.push(`UPDATE clients SET total_points = ${pts} WHERE id = ${literal(id)};`);
 
   const verificar = [
     ...Object.keys(conteos).map(
       (t) => `SELECT '${t}' AS tabla, (SELECT count(*) FROM "${t}") AS d1, ${conteos[t]} AS origen, (SELECT count(*) FROM "${t}") = ${conteos[t]} AS ok;`,
     ),
+    // Sumas por tabla: montos (centavos) y puntos tienen que coincidir exactamente con origen.
+    ...Object.entries(sumas).map(([clave, origen]) => {
+      const [t, c] = clave.split(".");
+      return `SELECT 'suma:${clave}' AS chequeo, (SELECT COALESCE(SUM(${c}), 0) FROM "${t}") AS d1, ${origen} AS origen, (SELECT COALESCE(SUM(${c}), 0) FROM "${t}") = ${origen} AS ok;`;
+    }),
     "PRAGMA foreign_key_check;",
     "SELECT 'puntos_inconsistentes' AS chequeo, count(*) AS n FROM clients c WHERE c.total_points < 0;",
     // Condición del auditor: el saldo de cada cliente = suma de su ledger (si no, listar).
     "SELECT 'saldo_distinto_del_ledger' AS chequeo, c.id, c.total_points, COALESCE(SUM(l.delta), 0) AS suma_ledger FROM clients c LEFT JOIN points_ledger l ON l.client_id = c.id GROUP BY c.id HAVING c.total_points <> MAX(0, COALESCE(SUM(l.delta), 0));",
+    // Ningún usuario copiado tiene contraseña (D3): entran con "olvidé mi contraseña".
+    `SELECT 'cuentas_con_password' AS chequeo, count(*) AS n FROM "account" WHERE password IS NOT NULL;`,
   ];
+  return { lineas, verificar, conteos, sumas };
+}
+
+async function main() {
+  const { out, tablas, borrar } = args();
+  const url = env("SUPABASE_URL").replace(/\/$/, "");
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  // La salida contiene datos personales (y pin_hash/pin_encrypted de repartidores): solo legible por el dueño.
+  await mkdir(out, { recursive: true, mode: 0o700 });
+
+  const usuarios = await exportarUsuarios(url, key);
+  const filasPorTabla = [];
+  for (const tabla of tablas) {
+    const filas = await exportarTabla(url, key, tabla);
+    filasPorTabla.push([tabla, filas]);
+    console.log(`${tabla.padEnd(22)} ${String(filas.length).padStart(6)} filas`);
+  }
+  const { lineas, verificar, conteos, sumas } = construir(usuarios, filasPorTabla, { borrar });
 
   const privado = { mode: 0o600 };
   await writeFile(join(out, "datos.sql"), lineas.join("\n") + "\n", privado);
   await writeFile(join(out, "verificar.sql"), verificar.join("\n") + "\n", privado);
-  await writeFile(join(out, "conteos.json"), JSON.stringify({ generado: new Date().toISOString(), conteos }, null, 2), privado);
-  console.log(`\nListo: ${join(out, "datos.sql")} (${lineas.length} sentencias). Verificar con verificar.sql.`);
+  await writeFile(join(out, "conteos.json"), JSON.stringify({ generado: new Date().toISOString(), conteos, sumas }, null, 2), privado);
+  console.log(`\nListo: ${join(out, "datos.sql")} (${lineas.length} sentencias). Verificar con verificar.sql. Borrar la carpeta después de importar.`);
 }
 
-main().catch((err) => {
-  console.error(`Error: ${err.message}`);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  });
+}
+
