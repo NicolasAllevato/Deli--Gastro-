@@ -45,12 +45,15 @@ describe("consultas parametrizadas", () => {
     // Se permiten solo interpolaciones de constantes de la capa (COLS, where,
     // COURIER_SCOPE, sets de lista blanca, table de lista blanca).
     const ALLOWED = /^\$\{(COLS|PRODUCT_COLS|CATEGORY_COLS|CLIENT_ORDER_COLS|where|COURIER_SCOPE|table|sets\.join\(", "\))\}$/;
+    // Solo mirror.ts arma la lista de columnas desde sus constantes (cols filtradas de una lista blanca).
+    const MIRROR_ONLY = /^\$\{(cols\.join\(", "\)|cols\.map\(\(\) => "\?"\)\.join\(", "\))\}$/;
     const offenders: string[] = [];
     for (const f of inside) {
       const src = readFileSync(f, "utf8");
       for (const m of src.matchAll(/prepare\(\s*`([\s\S]*?)`/g)) {
         for (const expr of m[1].match(/\$\{[^}]*\}/g) ?? []) {
-          if (!ALLOWED.test(expr)) offenders.push(`${relative(ROOT, f)}: ${expr}`);
+          const mirrorOk = f.endsWith(`${sep}mirror.ts`) && MIRROR_ONLY.test(expr);
+          if (!ALLOWED.test(expr) && !mirrorOk) offenders.push(`${relative(ROOT, f)}: ${expr}`);
         }
       }
       if (/prepare\([^)`"']*\+/.test(src)) offenders.push(`${relative(ROOT, f)}: concatenación`);

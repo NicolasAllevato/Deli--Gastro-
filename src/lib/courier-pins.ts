@@ -3,6 +3,7 @@ import { z } from "zod";
 import { cleanEnv } from "@/lib/clean-env";
 import type { createAdminClient } from "@/utils/supabase/admin";
 import { decryptPin, encryptPin, pinKeyB64 } from "@/lib/courier-pin-crypto";
+import { mirrorCourier } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -48,6 +49,19 @@ export function pinSecret(env: NodeJS.ProcessEnv = process.env): string {
   throw new Error("Falta COURIER_PIN_SECRET o SUPABASE_SERVICE_ROLE_KEY para los PIN de repartidores.");
 }
 
+/**
+ * Claves anteriores con las que pueden estar los hashes guardados. Hoy, si se define
+ * COURIER_PIN_SECRET, los PIN hechos con la service role (la clave por defecto de antes)
+ * siguen entrando y se re-hashean con la clave nueva en el próximo ingreso. Así se puede
+ * pasar a una clave propia (necesario para el corte a D1, donde no habrá service role)
+ * sin regenerar los PIN de nadie.
+ */
+export function legacyPinSecrets(env: NodeJS.ProcessEnv = process.env): string[] {
+  const current = pinSecret(env);
+  const legacy = cleanEnv(env.SUPABASE_SERVICE_ROLE_KEY);
+  return legacy && legacy !== current ? [legacy] : [];
+}
+
 export function hashPin(pin: string, secret: string = pinSecret()): string {
   return createHmac("sha256", secret).update(`courier-pin:${pin}`).digest("hex");
 }
@@ -74,18 +88,24 @@ export async function listCouriers(db: Db): Promise<Courier[]> {
   return ((data ?? []) as CourierRow[]).map(toCourier);
 }
 
-async function pinTaken(db: Db, pinHash: string, exceptUserId?: string): Promise<boolean> {
-  const { data, error } = await db.from("couriers").select("user_id").eq("pin_hash", pinHash);
+/** Todos los hashes con que puede estar guardado un PIN: el de la clave actual y los de claves anteriores. */
+function pinHashes(pin: string): string[] {
+  return [hashPin(pin), ...legacyPinSecrets().map((secret) => hashPin(pin, secret))];
+}
+
+/** ¿Algún otro repartidor usa ese PIN? Mira también los hashes viejos, que todavía no se migraron. */
+async function pinTaken(db: Db, pin: string, exceptUserId?: string): Promise<boolean> {
+  const { data, error } = await db.from("couriers").select("user_id").in("pin_hash", pinHashes(pin));
   if (error) throw new Error(`No se pudo verificar el PIN: ${error.message}`);
   return ((data ?? []) as { user_id: string }[]).some((r) => r.user_id !== exceptUserId);
 }
 
 /** PIN pedido por el admin, o uno al azar que no esté en uso. */
 async function choosePin(db: Db, requested: string | undefined, exceptUserId?: string): Promise<string | null> {
-  if (requested) return (await pinTaken(db, hashPin(requested), exceptUserId)) ? null : requested;
+  if (requested) return (await pinTaken(db, requested, exceptUserId)) ? null : requested;
   for (let i = 0; i < 50; i++) {
     const pin = generatePin();
-    if (!(await pinTaken(db, hashPin(pin), exceptUserId))) return pin;
+    if (!(await pinTaken(db, pin, exceptUserId))) return pin;
   }
   return null;
 }
@@ -124,6 +144,7 @@ export async function createCourier(
       ? { ok: false, status: 409, error: PIN_TAKEN }
       : { ok: false, status: 500, error: "No se pudo guardar el repartidor." };
   }
+  await mirrorCourier("couriers.create", db, created.id);
   return { ok: true, courier: toCourier(data as CourierRow), pin };
 }
 
@@ -144,6 +165,7 @@ export async function changeCourierPin(db: Db, userId: string, requested?: strin
   if (isUniqueViolation(error)) return { ok: false, status: 409, error: PIN_TAKEN };
   if (error) return { ok: false, status: 500, error: "No se pudo cambiar el PIN." };
   if (!data) return { ok: false, status: 404, error: "Repartidor no encontrado." };
+  await mirrorCourier("couriers.pin", db, userId);
   return { ok: true, courier: toCourier(data as CourierRow), pin };
 }
 
@@ -162,21 +184,41 @@ export async function setCourierActive(
   if (error) return { ok: false, status: 500, error: "No se pudo actualizar el repartidor." };
   if (!data) return { ok: false, status: 404, error: "Repartidor no encontrado." };
 
+  await mirrorCourier("couriers.active", db, userId);
   const blockError = await auth.setBlocked(userId, !active);
   if (blockError) return { ok: false, status: 502, error: blockError };
   return { ok: true, courier: toCourier(data as CourierRow) };
 }
 
-/** Repartidor activo con ese PIN, o null. */
+/**
+ * Repartidor activo con ese PIN, o null. Si el PIN estaba guardado con una clave anterior,
+ * se re-hashea con la actual (solo si nadie lo cambió en el medio).
+ */
 export async function findCourierByPin(db: Db, pin: string): Promise<Courier | null> {
-  const { data, error } = await db
-    .from("couriers")
-    .select(COLUMNS)
-    .eq("pin_hash", hashPin(pin))
-    .eq("active", true)
-    .maybeSingle();
-  if (error) throw new Error(`No se pudo verificar el PIN: ${error.message}`);
-  return data ? toCourier(data as CourierRow) : null;
+  const current = hashPin(pin);
+  for (const candidate of pinHashes(pin)) {
+    const { data, error } = await db
+      .from("couriers")
+      .select(COLUMNS)
+      .eq("pin_hash", candidate)
+      .eq("active", true)
+      .maybeSingle();
+    if (error) throw new Error(`No se pudo verificar el PIN: ${error.message}`);
+    if (!data) continue;
+    const courier = toCourier(data as CourierRow);
+    if (candidate !== current) {
+      const upgrade = await db
+        .from("couriers")
+        .update({ pin_hash: current })
+        .eq("user_id", courier.userId)
+        .eq("pin_hash", candidate);
+      // Si falla, el ingreso sigue: se reintenta en el próximo.
+      if (upgrade.error) console.error("[couriers] migrando el hash del PIN", upgrade.error.message);
+      else await mirrorCourier("couriers.pin-upgrade", db, courier.userId);
+    }
+    return courier;
+  }
+  return null;
 }
 
 export async function renameCourier(
@@ -192,6 +234,7 @@ export async function renameCourier(
     .maybeSingle();
   if (error) return { ok: false, status: 500, error: "No se pudo actualizar el repartidor." };
   if (!data) return { ok: false, status: 404, error: "Repartidor no encontrado." };
+  await mirrorCourier("couriers.rename", db, userId);
   return { ok: true, courier: toCourier(data as CourierRow) };
 }
 
