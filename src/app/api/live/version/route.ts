@@ -10,6 +10,10 @@ import { rateLimit, getClientIp } from "@/utils/rate-limit";
  */
 export async function GET(req: NextRequest) {
   if (dataBackend() !== "d1") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  // Tope solo por IP antes de leer la sesión: frena el martilleo anónimo sin cortar al local.
+  if (!(await rateLimit(`live-ip:${getClientIp(req)}`, 600, 60_000))) {
+    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+  }
   const auth = await requireAuth(req);
   if (isAuthorizationError(auth)) return auth.error;
   // Clave IP + usuario: varias tablets del local detrás del mismo NAT no se cortan entre sí.
