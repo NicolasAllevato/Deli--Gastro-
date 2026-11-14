@@ -8,6 +8,7 @@ import {
 import { RESTAURANT_LOCATION, SAMPLE_ADDRESSES } from "@/lib/restaurant";
 import { DEMO_ACCOUNTS } from "@/lib/demo/users";
 import { DEMO_COURIER_PIN, DEMO_PIN_SECRET, hashPin } from "@/lib/courier-pins";
+import { startOfDayAR } from "@/lib/time-ar";
 
 export type Row = Record<string, unknown>;
 export type TableName =
@@ -326,6 +327,17 @@ function buildExtraOrders(
  * Pedidos importados de Fudo, con los mismos huecos que los reales: PedidosYa y Rappi no informan dirección
  * ni repartidor; los de delivery del local traen la dirección del cliente. Sin `rand` para no alterar el resto del seed.
  */
+/**
+ * Los pedidos "de hoy" del demo tienen que caer en el día ARGENTINO del seed: el mapa y el tablero filtran
+ * por día argentino (time-ar.ts). Con horas relativas ("hace 55 min"), un seed hecho poco después de la
+ * medianoche AR dejaba esos pedidos en el día anterior y el E2E del mapa fallaba según la hora del CI.
+ * Si un momento cae antes de la medianoche AR de `base`, se lo lleva a esa medianoche + `slot` segundos.
+ */
+export function keepInArgentinaDay(iso: string, base: number, slot: number): string {
+  const dayStart = startOfDayAR(base).getTime();
+  return new Date(iso).getTime() >= dayStart ? iso : new Date(dayStart + slot * 1000).toISOString();
+}
+
 function buildFudoOrders(base: number, firstIndex: number): Row[] {
   const ago = (minutes: number) => new Date(base - minutes * 60_000).toISOString();
   const specs: ReadonlyArray<readonly [string, string, string, number, number, string]> = [
@@ -368,12 +380,13 @@ function buildFudoOrders(base: number, firstIndex: number): Row[] {
       fudo_payment: payment,
       fudo_payments: names.map((name, n) => ({ name, amount: n === 0 ? total - Math.round(total * 0.4) * (names.length - 1) : Math.round(total * 0.4) })),
       customer_name: customer,
-      created_at: ago(createdAgo),
+      // Todos son ventas de hoy: siempre dentro del día argentino del seed (ver keepInArgentinaDay).
+      created_at: keepInArgentinaDay(ago(createdAgo), base, 2 * i + 1),
       accepted_at: null,
       ready_at: null,
       picked_up_at: null,
-      delivered_at: ago(Math.max(1, createdAgo - closedAfter)),
-      updated_at: ago(Math.max(1, createdAgo - closedAfter)),
+      delivered_at: keepInArgentinaDay(ago(Math.max(1, createdAgo - closedAfter)), base, 2 * i + 2),
+      updated_at: keepInArgentinaDay(ago(Math.max(1, createdAgo - closedAfter)), base, 2 * i + 2),
     };
   });
 }
@@ -400,7 +413,9 @@ function buildDeliveredHistory(base: number, firstIndex: number): Row[] {
     const [minLat, maxLat, minLng, maxLng] = zone.box;
     const share = (i + 1) / (specs.length + 1);
     const createdAgo = spec.days * DAY + 90;
-    const closed = ago(createdAgo - 45);
+    // Los de "hoy" (days: 0) se quedan en el día argentino del seed; los de días anteriores no cambian.
+    const today = (iso: string, slot: number) => (spec.days === 0 ? keepInArgentinaDay(iso, base, 100 + 2 * i + slot) : iso);
+    const closed = today(ago(createdAgo - 45), 2);
     const payment = spec.source ? ({ morfy: "Morfy", pedidosya: "Online Pedidos Ya", rappi: "Online Rappi" } as Record<string, string>)[spec.source] ?? "Efectivo" : null;
     return {
       id: demoId(G.order, firstIndex + i),
@@ -423,7 +438,7 @@ function buildDeliveredHistory(base: number, firstIndex: number): Row[] {
       fudo_payment: payment,
       fudo_payments: payment ? [{ name: payment, amount: 15_000 + i * 700 }] : null,
       customer_name: spec.customer,
-      created_at: ago(createdAgo),
+      created_at: today(ago(createdAgo), 1),
       accepted_at: null,
       ready_at: null,
       picked_up_at: null,
