@@ -23,6 +23,7 @@ import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
 import * as restricted from "./restricted.ts";
 import * as mirror from "./mirror.ts";
+import * as live from "./live.ts";
 import * as session from "./session.ts";
 import { executeD1Plan, type Plan, type PlanResult } from "./plan-sql.ts";
 import { systemActor as sysActor } from "./actor.ts";
@@ -120,8 +121,13 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       rows: bind(mirror.mirrorRows, db, actor),
       authUsers: bind(mirror.mirrorAuthUsers, db, actor),
     },
+    // Etapa 4: versión por topic en lugar de Realtime (sin datos, autorizada por actor).
+    liveVersions: bind(live.liveVersions, db, actor),
+    purgeLiveVersions: bind(live.purgeLiveVersions, db, actor),
   };
 }
+
+export { parseTopics as parseLiveTopics } from "./live.ts";
 
 export type DataApi = ReturnType<typeof bindRepos>;
 

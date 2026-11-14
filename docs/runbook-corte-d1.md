@@ -18,13 +18,13 @@ Hoy el modo `d1` todavía depende de Supabase: muchas rutas escriben en Supabase
 1. Portar a la capa `src/lib/data` las escrituras con su lógica de negocio (transiciones, asignación, habilitación, aprobación de pagos con `version`, canje de puntos con `idempotency_key`), con tests de autorización como hasta ahora.
 2. Workers: pasar de PostgREST/Hyperdrive a escribir directo en D1.
 3. ~~Activar Better Auth~~ (etapa 3): con `DATA_BACKEND=d1`, `/api/auth/*` es Better Auth (con Supabase responde 404), el proxy, `requireAuth` y las páginas leen su sesión, el ingreso y la salida van por `/api/auth`, y los repartidores abren sesión por un endpoint SERVER_ONLY tras validar el PIN. Alta pública cerrada; los usuarios copiados entran por `/recuperar` (link de un uso, 15 min, cierra las otras sesiones). Sin OAuth ni link mágico.
-4. Quitar Realtime de Supabase (polling, D4).
+4. ~~Quitar Realtime~~ (etapa 4): con `NEXT_PUBLIC_DATA_BACKEND=d1` las pantallas en vivo consultan `/api/live/version` cada 5 s (pestaña oculta: en pausa). Las versiones las suman triggers de D1 (migración 0006) en orders, courier_shifts, wa_conversations, wa_messages y wa_campaigns, así que cubren también a los Workers. La versión no trae datos y se autoriza por topic (cliente: solo sus pedidos; repartidor: orders y courier_shifts; admin: todo).
 
 Hasta completar 1–4, el corte llega a `d1` **con Supabase vivo**.
 
 ## 0. Preparación (una vez)
 
-- [ ] Migración 031 aplicada en Supabase (hoy **no** lo está) y D1 al día: `d1/schema/0001_inicial.sql` + `d1/migrations/0002`…`0005` (0004 = `user.phone`, 0005 = `user.legal_version`).
+- [ ] Migración 031 aplicada en Supabase (hoy **no** lo está) y D1 al día: `d1/schema/0001_inicial.sql` + `d1/migrations/0002`…`0006` (0004 = `user.phone`, 0005 = `user.legal_version`, 0006 = `live_versions` + triggers).
 - [ ] `wrangler whoami` en la cuenta e7351. Desde `~`, siempre con `env -u CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID=e7351dd776e005da826ba6f2a5aae4c1`.
 - [ ] Workers desplegados con `--config <ruta absoluta>/wrangler.toml`, comprobando `Uploaded <worker>`.
 - [ ] Secretos como Worker secrets (nunca en D1): `COURIER_PIN_SECRET` (PIN; los hashes viejos migran solos al próximo ingreso), `BETTER_AUTH_SECRET` (≥ 32), los de `integration_secrets`.
