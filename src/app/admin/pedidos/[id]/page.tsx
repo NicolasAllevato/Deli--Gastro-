@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/lib/buttonClasses";
 import OrderTrace from "./OrderTrace";
 import { detailLines } from "./detail-lines";
+import { formatDateTimeAR, formatTimeAR } from "@/lib/time-ar";
 
 const ESTADO_TONE: Record<string, "green" | "red" | "yellow" | "blue" | "orange"> = {
   Finalizados:      "green",
@@ -88,7 +89,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
         <div>
           <h1 className="font-headline font-black text-xl text-gray-800 tracking-tight">Pedido {formatOrderId(pedido.id)}</h1>
           <p className="text-gray-500 text-xs mt-0.5">
-            {new Date(pedido.created_at).toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })}
+            {formatDateTimeAR(pedido.created_at, { dateStyle: "medium", timeStyle: "short" })}
           </p>
         </div>
         <div className="ml-auto">
@@ -212,7 +213,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
             {events.map((e, i) => (
               <li key={`${e.created_at}-${i}`} className="flex gap-3">
                 <time dateTime={e.created_at} className="font-bold text-gray-500 w-14 shrink-0">
-                  {new Date(e.created_at).toLocaleTimeString("es-AR", { timeStyle: "short" })}
+                  {formatTimeAR(e.created_at, { timeStyle: "short" })}
                 </time>
                 <span>
                   {EVENT_LABELS[e.event] ?? e.event}

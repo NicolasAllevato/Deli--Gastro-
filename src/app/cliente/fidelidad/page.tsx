@@ -6,9 +6,10 @@ import { requireClientPage } from "@/lib/auth/clientPage";
 import { REWARDS } from "@/lib/orders";
 import { RedeemButton } from "./RedeemButton";
 import { clientLedger, orFallback } from "@/lib/client-reads";
+import { formatDateAR } from "@/lib/time-ar";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("es-AR", {
+  return formatDateAR(iso, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

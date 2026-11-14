@@ -6,6 +6,7 @@ import { requireClientPage } from "@/lib/auth/clientPage";
 import { formatOrderId, pointsForTotal } from "@/lib/orders";
 import { numberConfig, readConfig } from "@/lib/orders-server";
 import { clientEarnedByOrder, clientOrders, clientReviewedOrderIds, orFallback } from "@/lib/client-reads";
+import { formatDateAR } from "@/lib/time-ar";
 
 const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> = {
   Finalizados:      { icon: <CheckCircle size={12} />, classes: "badge-green" },
@@ -16,7 +17,7 @@ const ESTADO_CONFIG: Record<string, { icon: React.ReactNode; classes: string }> 
 };
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("es-AR", {
+  return formatDateAR(iso, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

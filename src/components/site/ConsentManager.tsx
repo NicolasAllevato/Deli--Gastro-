@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { CONSENT_VERSION, acceptAll, essentialOnly, type Consent } from "@/lib/consent/consentCore";
 import { useConsent } from "@/lib/consent/useConsent";
+import { formatDateAR } from "@/lib/time-ar";
 
 interface Category {
   key: "essential" | "preferences" | "analytics";
@@ -40,7 +41,7 @@ export function ConsentManager() {
     <div className="flex flex-col gap-4">
       <p className="text-xs text-gray-500" aria-live="polite">
         {consent
-          ? `Tu elección actual se guardó el ${new Date(consent.decidedAt).toLocaleDateString("es-AR")}.`
+          ? `Tu elección actual se guardó el ${formatDateAR(consent.decidedAt)}.`
           : "Todavía no elegiste. Mientras tanto solo usamos las esenciales."}
       </p>
 

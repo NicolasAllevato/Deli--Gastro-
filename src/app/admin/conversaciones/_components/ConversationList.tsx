@@ -10,6 +10,7 @@ import {
   type ConversationFilter,
   type ConversationItem,
 } from "./conversation-utils";
+import { formatDateAR, formatTimeAR } from "@/lib/time-ar";
 
 interface ConversationListProps {
   list: ConversationItem[];
@@ -22,8 +23,8 @@ interface ConversationListProps {
 const shortTime = (iso: string, now: number) => {
   const d = new Date(iso);
   return now - d.getTime() < 24 * 3_600_000
-    ? d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+    ? formatTimeAR(d, { hour: "2-digit", minute: "2-digit" })
+    : formatDateAR(d, { day: "2-digit", month: "2-digit" });
 };
 
 export function ConversationList({ list, loaded, selected, now, onSelect }: ConversationListProps) {

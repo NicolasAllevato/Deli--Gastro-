@@ -14,6 +14,7 @@ import { loadReportData } from "@/lib/reports/data";
 import { createDemoReportsLlm } from "@/lib/reports/demoLlm";
 import { RANGE_KEYS, RANGE_LABELS, rangeBounds, type RangeKey } from "@/lib/reports/range";
 import { buildReportTools, buildReportsPrompt } from "@/lib/reports/tools";
+import { formatDateAR } from "@/lib/time-ar";
 
 const rangeSchema = z.enum(RANGE_KEYS as [RangeKey, ...RangeKey[]]);
 const TOP = 5;
@@ -73,8 +74,8 @@ export async function POST(req: NextRequest) {
   if (!llm) return NextResponse.json({ error: "Cargá la clave de OpenAI en Agente IA para usar el analista." }, { status: 400 });
 
   try {
-    const today = new Date().toLocaleDateString("es-AR", {
-      dateStyle: "full", timeZone: "America/Argentina/Buenos_Aires",
+    const today = formatDateAR(new Date(), {
+      dateStyle: "full",
     });
     const result = await runAgent({
       llm,

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, Check, CheckCheck, CircleAlert, Mic } from "lucide-react";
 import { FormattedText } from "./FormattedText";
 import { dayLabel, groupByDay, type ThreadMessage } from "./conversation-utils";
+import { formatTimeAR } from "@/lib/time-ar";
 
 /** Distancia al fondo (px) dentro de la cual el hilo sigue pegado a los mensajes nuevos. */
 const STICK_THRESHOLD_PX = 80;
@@ -18,7 +19,7 @@ function StatusIcon({ status }: { status: string | null }) {
 
 function Bubble({ m }: { m: ThreadMessage }) {
   const out = m.direction === "out";
-  const time = new Date(m.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  const time = formatTimeAR(m.created_at, { hour: "2-digit", minute: "2-digit" });
   return (
     <div className={`max-w-[85%] ${out ? "ml-auto" : ""}`}>
       <div className={`text-sm px-3 py-2 rounded-xl whitespace-pre-wrap break-words ${out ? "bg-brand-orange text-white rounded-br-sm" : "neumorphic text-gray-700 rounded-bl-sm"}`}>

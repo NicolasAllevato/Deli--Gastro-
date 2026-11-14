@@ -1,4 +1,5 @@
 import { deliveredPoint } from "./delivery-metrics.ts";
+import { startOfDayAR, startOfDayKeyAR } from "./time-ar.ts";
 
 /** Vista de pedidos entregados del mapa: filtros, conteos y agrupación de marcadores. Sin I/O. */
 
@@ -112,23 +113,20 @@ export function effectiveDeliveredAt(o: Pick<DeliveredRow, "delivered_at" | "cre
   return o.delivered_at ?? o.created_at;
 }
 
-function startOfLocalDay(d: Date, offsetDays = 0): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + offsetDays);
-}
-
-/** Rango [from, to) en hora local del navegador; `null` si el personalizado está incompleto o es inválido. */
+/**
+ * Rango [from, to) de días argentinos (antes: hora local del navegador, que
+ * fallaba fuera de Argentina); `null` si el personalizado está incompleto o es inválido.
+ */
 export function rangeForPreset(preset: DeliveredPreset, now: Date, custom: { from: string; to: string } = { from: "", to: "" }): { from: string; to: string } | null {
-  const tomorrow = startOfLocalDay(now, 1).toISOString();
-  if (preset === "hoy") return { from: startOfLocalDay(now).toISOString(), to: tomorrow };
-  if (preset === "7d") return { from: startOfLocalDay(now, -6).toISOString(), to: tomorrow };
-  if (preset === "30d") return { from: startOfLocalDay(now, -29).toISOString(), to: tomorrow };
-  const match = (v: string) => /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-  const a = match(custom.from);
-  const b = match(custom.to);
-  if (!a || !b) return null;
-  const from = new Date(Number(a[1]), Number(a[2]) - 1, Number(a[3]));
-  const to = new Date(Number(b[1]), Number(b[2]) - 1, Number(b[3]) + 1);
-  return isValidRange(from.toISOString(), to.toISOString()) ? { from: from.toISOString(), to: to.toISOString() } : null;
+  const tomorrow = startOfDayAR(now, 1).toISOString();
+  if (preset === "hoy") return { from: startOfDayAR(now).toISOString(), to: tomorrow };
+  if (preset === "7d") return { from: startOfDayAR(now, -6).toISOString(), to: tomorrow };
+  if (preset === "30d") return { from: startOfDayAR(now, -29).toISOString(), to: tomorrow };
+  const valid = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime());
+  if (!valid(custom.from) || !valid(custom.to)) return null;
+  const from = startOfDayKeyAR(custom.from).toISOString();
+  const to = startOfDayKeyAR(custom.to, 1).toISOString();
+  return isValidRange(from, to) ? { from, to } : null;
 }
 
 export function isValidRange(from: string, to: string): boolean {

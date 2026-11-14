@@ -73,15 +73,20 @@ describe("canal", () => {
 });
 
 describe("rangos", () => {
-  const now = new Date(2026, 10, 9, 15, 30);
+  // Fechas esperadas en hora argentina (UTC-3), no en la zona de la máquina: el CI corre en UTC.
+  const now = new Date("2026-11-09T15:30:00-03:00");
   it("hoy va de medianoche a medianoche", () => {
-    assert.deepEqual(rangeForPreset("hoy", now), { from: new Date(2026, 10, 9).toISOString(), to: new Date(2026, 10, 10).toISOString() });
+    assert.deepEqual(rangeForPreset("hoy", now), { from: "2026-11-09T03:00:00.000Z", to: "2026-11-10T03:00:00.000Z" });
+  });
+  it("hoy argentino aunque en UTC ya sea mañana", () => {
+    // 22:30 del 9 en Argentina = 01:30Z del 10.
+    assert.equal(rangeForPreset("hoy", new Date("2026-11-09T22:30:00-03:00"))?.from, "2026-11-09T03:00:00.000Z");
   });
   it("30 días incluye hoy", () => {
-    assert.equal(rangeForPreset("30d", now)?.from, new Date(2026, 9, 11).toISOString());
+    assert.equal(rangeForPreset("30d", now)?.from, "2026-10-11T03:00:00.000Z");
   });
   it("personalizado incluye el día final y rechaza lo incompleto, invertido o largo", () => {
-    assert.equal(rangeForPreset("custom", now, { from: "2026-11-01", to: "2026-11-02" })?.to, new Date(2026, 10, 3).toISOString());
+    assert.equal(rangeForPreset("custom", now, { from: "2026-11-01", to: "2026-11-02" })?.to, "2026-11-03T03:00:00.000Z");
     assert.equal(rangeForPreset("custom", now, { from: "2026-11-01", to: "" }), null);
     assert.equal(rangeForPreset("custom", now, { from: "2026-11-05", to: "2026-11-01" }), null);
     assert.equal(rangeForPreset("custom", now, { from: "2026-01-01", to: "2026-11-01" }), null);

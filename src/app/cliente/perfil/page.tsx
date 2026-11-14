@@ -5,6 +5,7 @@ import { User, Phone, MapPin, Star, ShoppingBag, LogOut, ChevronRight, Bell } fr
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import { formatDateAR } from "@/lib/time-ar";
 
 interface PerfilData {
   nombre: string;
@@ -27,7 +28,7 @@ const PLACEHOLDER: PerfilData = {
 };
 
 function formatMes(iso: string) {
-  return new Date(iso).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  return formatDateAR(iso, { month: "long", year: "numeric" });
 }
 
 export default function PerfilPage() {

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import { LEGAL_DOCUMENTS, safeRedirect, type LegalDocumentId, type LegalStatus } from "@/lib/legal/documents";
+import { formatDateTimeAR } from "@/lib/time-ar";
 
 type Phase = "loading" | "ready" | "error";
 
@@ -111,7 +112,7 @@ export function AcceptTermsClient() {
                     </div>
                     {acceptedAt ? (
                       <p className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-green-700">
-                        <CheckCircle2 size={16} aria-hidden /> Aceptado el {new Date(acceptedAt).toLocaleString("es-AR")}
+                        <CheckCircle2 size={16} aria-hidden /> Aceptado el {formatDateTimeAR(acceptedAt)}
                       </p>
                     ) : (
                       <button
