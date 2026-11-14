@@ -1,3 +1,5 @@
+// Única puerta con privilegio de sistema sobre D1: un import desde "use client" falla en el build.
+import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { createFakeClient, type DemoTransport } from "@/lib/demo/fake-client";
