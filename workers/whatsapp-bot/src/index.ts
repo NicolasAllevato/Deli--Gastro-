@@ -14,6 +14,8 @@ import type { BufferedMessage } from "./batching.ts";
 import type { ConversationBuffer, InboundTurn } from "./conversation-buffer.ts";
 import { mirrorBotRepo, mirrorInboundRepo } from "./repo/d1-mirror.ts";
 import { sqlMirrorReader } from "./repo/d1-mirror-sql.ts";
+import { d1BotRepo, d1InboundRepo } from "./repo/d1.ts";
+import type { SqlDatabase } from "../../../src/lib/data/sql.ts";
 
 export { ConversationBuffer } from "./conversation-buffer.ts";
 
@@ -29,6 +31,11 @@ export interface Env {
   DATA_BACKEND?: string;
   /** Base D1 `deli-gastro` (el binding DB es Hyperdrive). */
   D1?: D1Database;
+  /** Con DATA_BACKEND=d1, los secretos de Meta salen de Worker secrets (no de Supabase). */
+  WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_VERIFY_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
   /** Secret (wrangler secret put BOT_INTERNAL_SECRET, >= 32 caracteres, igual al de Vercel). Sin él los pedidos quedan apagados. */
   BOT_INTERNAL_SECRET?: string;
 }
@@ -69,8 +76,52 @@ async function loadSecrets(sql: postgres.Sql): Promise<BotSecrets> {
   return value;
 }
 
-/** Salud: confirma que llega a la base por Hyperdrive y cuánto tarda (sin datos sensibles). */
+/**
+ * Etapa 2 del corte: con DATA_BACKEND=d1 el bot usa D1 (binding D1) y toma los secretos de Meta de
+ * Worker secrets (WHATSAPP_*), sin Hyperdrive ni la vista bot_secrets de Supabase.
+ */
+function isD1(env: Env): env is Env & { D1: D1Database } {
+  return env.DATA_BACKEND?.trim().toLowerCase() === "d1";
+}
+
+function d1Db(env: Env): SqlDatabase {
+  if (!env.D1) throw new Error("DATA_BACKEND=d1 sin binding D1");
+  return env.D1 as unknown as SqlDatabase;
+}
+
+function secretsFromEnv(env: Env): BotSecrets {
+  const v = (x: string | undefined) => (x && x.trim() ? x.trim() : null);
+  return {
+    appSecret: v(env.WHATSAPP_APP_SECRET),
+    verifyToken: v(env.WHATSAPP_VERIFY_TOKEN),
+    phoneNumberId: v(env.WHATSAPP_PHONE_NUMBER_ID),
+    accessToken: v(env.WHATSAPP_ACCESS_TOKEN),
+  };
+}
+
+/** Secretos del bot: Worker secrets en d1; la vista de Supabase en los otros modos. */
+async function botSecrets(env: Env): Promise<BotSecrets> {
+  if (isD1(env)) return secretsFromEnv(env);
+  const sql = connect(env);
+  try {
+    return await loadSecrets(sql);
+  } finally {
+    await sql.end({ timeout: 1 });
+  }
+}
+
+/** Salud: confirma que llega a la base y cuánto tarda (sin datos sensibles). */
 async function health(env: Env): Promise<Response> {
+  if (isD1(env)) {
+    const started = Date.now();
+    try {
+      await d1Db(env).prepare("SELECT bot_paused_until FROM wa_conversations LIMIT 0").all();
+      return Response.json({ ok: true, schema: true, dbMs: Date.now() - started, backend: "d1" });
+    } catch (error: unknown) {
+      console.error("[whatsapp-bot] health d1", error instanceof Error ? error.message : error);
+      return Response.json({ ok: false }, { status: 503 });
+    }
+  }
   const sql = connect(env);
   const started = Date.now();
   try {
@@ -93,13 +144,8 @@ async function health(env: Env): Promise<Response> {
 }
 
 async function verifyWebhook(url: URL, env: Env): Promise<Response> {
-  const sql = connect(env);
-  try {
-    const challenge = verifyChallenge(url.searchParams, (await loadSecrets(sql)).verifyToken);
-    return challenge === null ? new Response("Forbidden", { status: 403 }) : new Response(challenge);
-  } finally {
-    await sql.end({ timeout: 1 });
-  }
+  const challenge = verifyChallenge(url.searchParams, (await botSecrets(env)).verifyToken);
+  return challenge === null ? new Response("Forbidden", { status: 403 }) : new Response(challenge);
 }
 
 /** Procesa en segundo plano lo que ya respondimos con 200 (Meta no espera). */
@@ -107,6 +153,16 @@ async function processEvents(rawBody: string, phoneNumberId: string | null, env:
   const payload = JSON.parse(rawBody) as unknown;
   const events = [...parseCoexistence(payload), ...parseWebhook(payload)];
   if (events.length === 0) return;
+  const log = (message: string, detail?: unknown) => console.error(message, detail);
+  if (isD1(env)) {
+    await handleWebhookEvents(events, {
+      repo: d1InboundRepo(d1Db(env), log),
+      phoneNumberId,
+      buffer: (phone: string, message: BufferedMessage) => env.BUFFER.get(env.BUFFER.idFromName(phone)).add(phone, message),
+      log,
+    });
+    return;
+  }
   const sql = connect(env);
   try {
     await handleWebhookEvents(events, {
@@ -127,13 +183,7 @@ async function receiveWebhook(req: Request, env: Env, ctx: ExecutionContext): Pr
   const rawBody = await req.text();
   if (rawBody.length > MAX_BODY_BYTES) return new Response("Payload too large", { status: 413 });
 
-  const sql = connect(env);
-  let secrets: BotSecrets;
-  try {
-    secrets = await loadSecrets(sql);
-  } finally {
-    await sql.end({ timeout: 1 });
-  }
+  const secrets = await botSecrets(env);
   // Sin App Secret configurado se rechaza todo (falla cerrado).
   if (!verifySignature(rawBody, req.headers.get("x-hub-signature-256"), secrets.appSecret ?? "")) {
     return new Response("Unauthorized", { status: 401 });
@@ -156,9 +206,10 @@ function ordersClientFor(env: Env) {
 
 /** Consumidor de `wa-inbound` (fase 4): un turno agrupado → una respuesta. */
 async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
-  const sql = connect(env);
+  // d1: sin Hyperdrive (etapa 2 del corte).
+  const sql = isD1(env) ? null : connect(env);
   try {
-    const secrets = await loadSecrets(sql);
+    const secrets = sql ? await loadSecrets(sql) : secretsFromEnv(env);
     if (!secrets.accessToken || !secrets.phoneNumberId) {
       console.error("[whatsapp-bot] faltan el token o el phone number id: los turnos quedan para reintentar");
       batch.retryAll({ delaySeconds: 60 });
@@ -167,7 +218,9 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
     const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
     const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
     const deps = {
-      repo: mirrorBotRepo(sqlBotRepo(sql, (message, detail) => console.error(message, detail)), env, sqlMirrorReader(sql)),
+      repo: sql
+        ? mirrorBotRepo(sqlBotRepo(sql, (message, detail) => console.error(message, detail)), env, sqlMirrorReader(sql))
+        : d1BotRepo(d1Db(env), (message, detail) => console.error(message, detail)),
       run,
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),
@@ -187,7 +240,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       }
     }
   } finally {
-    await sql.end({ timeout: 1 });
+    if (sql) await sql.end({ timeout: 1 });
   }
 }
 
