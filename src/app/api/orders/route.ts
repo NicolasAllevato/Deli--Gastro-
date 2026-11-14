@@ -16,6 +16,7 @@ import { isCourierApproved } from "@/lib/courier-shifts";
 import { courierToVerify } from "@/lib/courier-gate";
 import { courierMayActOn, courierMaySelfAssign, needsAutoAssign } from "@/lib/courier-assign";
 import { autoPickCourier, getAssignMode } from "@/lib/courier-assign-server";
+import { mirrorOrder, mirrorOrderEvents } from "@/lib/d1-mirror";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await mirrorOrder("orders.create", data);
   return NextResponse.json(data, { status: 201 });
 }
 
@@ -232,6 +234,7 @@ export async function PATCH(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "El pedido cambió mientras lo editabas. Actualizá e intentá de nuevo." }, { status: 409 });
+  await mirrorOrder("orders.patch", data);
 
   // Bitácora: no debe tumbar el cambio de estado si falla.
   const events: Array<{ event: string; detail?: string }> = [];
@@ -241,9 +244,11 @@ export async function PATCH(req: NextRequest) {
     events.push({ event: "assigned", detail: patch.courier_name });
   }
   if (events.length > 0) {
-    await supabase
+    const { data: eventRows } = await supabase
       .from("order_events")
-      .insert(events.map((e) => ({ order_id: data.id, actor: auth.role, ...e })));
+      .insert(events.map((e) => ({ order_id: data.id, actor: auth.role, ...e })))
+      .select();
+    await mirrorOrderEvents("orders.events", eventRows ?? []);
   }
 
   // Un pedido nacido en Fudo ya lo gestiona el local allá: sin WhatsApp, puntos, reembolsos ni canjes.

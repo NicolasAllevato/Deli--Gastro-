@@ -1,6 +1,7 @@
 import type { createAdminClient } from "@/utils/supabase/admin";
 import { isDemoMode } from "@/lib/demo/mode";
 import { shiftDay, type ShiftStatus } from "@/lib/courier-shift-day";
+import { mirrorShift } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -53,11 +54,12 @@ export async function requestShift(db: Db, userId: string, courierName: string, 
   if (error) throw new Error(error.message);
   const { data, error: readError } = await db
     .from("courier_shifts")
-    .select("status")
+    .select("*")
     .eq("user_id", userId)
     .eq("shift_day", day)
     .maybeSingle();
   if (readError) throw new Error(readError.message);
+  if (data) await mirrorShift("shifts.request", data as Record<string, unknown>);
   return (data?.status as ShiftStatus | undefined) ?? "pending";
 }
 
@@ -107,5 +109,6 @@ export async function decideShift(
     .select(COLUMNS)
     .maybeSingle();
   if (error) throw new Error(error.message);
+  if (data) await mirrorShift("shifts.decide", data as unknown as Record<string, unknown>);
   return data ? toShift(data as ShiftRow) : null;
 }

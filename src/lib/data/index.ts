@@ -22,9 +22,10 @@ import * as payments from "./payments.ts";
 import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
 import * as restricted from "./restricted.ts";
+import * as mirror from "./mirror.ts";
 
 export { anon, systemActor, actorFromSession, ForbiddenError, type Actor } from "./actor.ts";
-export { shadowRead, dualWrite, type DiffLogger, type ShadowDiff } from "./shadow.ts";
+export { shadowRead, dualWrite, mirrorToD1, type DiffLogger, type ShadowDiff } from "./shadow.ts";
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
 export { toCents, fromCents } from "./money.ts";
@@ -92,6 +93,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
     couriers: {
       list: bind(couriers.listCouriers, db, actor),
       byPinHash: bind(couriers.findCourierByPinHash, db, actor),
+      byPinHashes: bind(couriers.findCourierByPinHashes, db, actor),
       upsertOwnLocation: bind(couriers.upsertOwnLocation, db, actor),
       locations: bind(couriers.listLocations, db, actor),
       requestOwnShift: bind(couriers.requestOwnShift, db, actor),
@@ -104,6 +106,14 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       clear: bind(pins.clearPinFailures, db, actor),
     },
     staffTable: bind(restricted.listStaffTable, db, actor),
+    mirror: {
+      order: bind(mirror.mirrorOrderRow, db, actor),
+      orderEvents: bind(mirror.mirrorOrderEvents, db, actor),
+      courier: bind(mirror.mirrorCourierRow, db, actor),
+      shift: bind(mirror.mirrorShiftRow, db, actor),
+      location: bind(mirror.mirrorLocationRow, db, actor),
+      locationDelete: bind(mirror.mirrorLocationDelete, db, actor),
+    },
   };
 }
 

@@ -93,6 +93,22 @@ export async function dualWrite<R>(
   return result;
 }
 
+/**
+ * Espejo de una escritura que ya se hizo en Supabase (rutas que todavía no
+ * pasaron por la capa). supabase: no hace nada. dual/d1: copia a D1; si falla,
+ * se registra (sin PII) y la petición sigue: Supabase es la fuente de verdad
+ * hasta el corte, y la copia completa reconcilia lo que falte.
+ */
+export async function mirrorToD1(op: string, write: () => Promise<unknown>, opts: { backend?: DataBackend; log?: DiffLogger } = {}): Promise<void> {
+  const backend = opts.backend ?? dataBackend();
+  if (backend === "supabase") return;
+  try {
+    await write();
+  } catch (err) {
+    (opts.log ?? defaultLogger)({ kind: "mirror_error", op, error: errorName(err) });
+  }
+}
+
 /** Solo el tipo/código del error: los mensajes de SQL pueden traer valores. */
 function errorName(err: unknown): string {
   if (err instanceof Error) {

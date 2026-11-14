@@ -6,7 +6,7 @@ process.env.COURIER_PIN_SECRET = "test-secret";
 
 const {
   createCourier, changeCourierPin, setCourierActive, findCourierByPin, listCouriers, hashPin, generatePin, pinSchema,
-  pinSecret, DEMO_COURIER_PIN, DEMO_PIN_SECRET,
+  pinSecret, legacyPinSecrets, DEMO_COURIER_PIN, DEMO_PIN_SECRET,
 } = await import("../src/lib/courier-pins.ts");
 
 import type { CourierAuth } from "../src/lib/courier-pins.ts";
@@ -86,6 +86,49 @@ describe("PIN de repartidores", () => {
     assert.ok(names.includes("Diego Rojas"));
     const { store } = createDemoDb();
     assert.equal(store.couriers[0]?.pin_hash, hashPin(DEMO_COURIER_PIN, DEMO_PIN_SECRET));
+  });
+
+  it("PIN guardado con la clave vieja (service role): entra y se re-hashea con la nueva", async () => {
+    const prev = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "clave-vieja";
+    try {
+      const { db, store } = createDemoDb();
+      const { auth } = fakeAuth();
+      const res = await createCourier(db, auth, { name: "Legado", pin: "7310" });
+      assert.ok(res.ok);
+      const row = store.couriers.find((r) => r.name === "Legado")!;
+      row.pin_hash = hashPin("7310", "clave-vieja"); // como quedó antes de definir COURIER_PIN_SECRET
+
+      assert.equal((await findCourierByPin(db, "7310"))?.name, "Legado");
+      assert.equal(row.pin_hash, hashPin("7310"), "migrado a la clave actual");
+      assert.equal((await findCourierByPin(db, "7310"))?.name, "Legado", "sigue entrando ya migrado");
+      assert.equal(await findCourierByPin(db, "0000"), null);
+    } finally {
+      if (prev === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = prev;
+    }
+  });
+
+  it("un PIN con hash viejo cuenta como ocupado para otro repartidor", async () => {
+    const prev = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "clave-vieja";
+    try {
+      const { db, store } = createDemoDb();
+      const { auth } = fakeAuth();
+      assert.ok((await createCourier(db, auth, { name: "Uno", pin: "5555" })).ok);
+      store.couriers.find((r) => r.name === "Uno")!.pin_hash = hashPin("5555", "clave-vieja");
+      const dup = await createCourier(db, auth, { name: "Dos", pin: "5555" });
+      assert.equal(dup.ok, false);
+    } finally {
+      if (prev === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = prev;
+    }
+  });
+
+  it("sin clave propia no hay claves viejas que probar", () => {
+    assert.deepEqual(legacyPinSecrets({ SUPABASE_SERVICE_ROLE_KEY: "b" } as unknown as NodeJS.ProcessEnv), []);
+    assert.deepEqual(legacyPinSecrets({ COURIER_PIN_SECRET: "a", SUPABASE_SERVICE_ROLE_KEY: "b" } as unknown as NodeJS.ProcessEnv), ["b"]);
+    assert.deepEqual(legacyPinSecrets({ COURIER_PIN_SECRET: "a", SUPABASE_SERVICE_ROLE_KEY: "a" } as unknown as NodeJS.ProcessEnv), []);
   });
 
   it("la clave sale del entorno y no hay clave por defecto fuera de la demo", () => {

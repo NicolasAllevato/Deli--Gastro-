@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { createAdminClient } from "@/utils/supabase/admin";
+import { mirrorLocation, mirrorLocationDelete } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -27,25 +28,25 @@ export interface CourierLocation {
 }
 
 export async function saveCourierLocation(db: Db, userId: string, courierName: string, input: LocationInput): Promise<string | null> {
-  const { error } = await db.from("courier_locations").upsert(
-    {
-      user_id: userId,
-      courier_name: courierName,
-      lat: input.lat,
-      lng: input.lng,
-      accuracy_m: input.accuracy ?? null,
-      heading: input.heading ?? null,
-      speed_mps: input.speed ?? null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
+  const row = {
+    user_id: userId,
+    courier_name: courierName,
+    lat: input.lat,
+    lng: input.lng,
+    accuracy_m: input.accuracy ?? null,
+    heading: input.heading ?? null,
+    speed_mps: input.speed ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await db.from("courier_locations").upsert(row, { onConflict: "user_id" });
+  if (!error) await mirrorLocation("location.save", row);
   return error?.message ?? null;
 }
 
 /** Sin entregas en curso no hay por qué seguir guardando dónde está la persona. */
 export async function clearCourierLocation(db: Db, userId: string): Promise<void> {
   await db.from("courier_locations").delete().eq("user_id", userId);
+  await mirrorLocationDelete("location.clear", userId);
 }
 
 export async function listCourierLocations(db: Db, now: Date = new Date()): Promise<CourierLocation[]> {

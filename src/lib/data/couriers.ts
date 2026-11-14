@@ -55,3 +55,26 @@ export async function findCourierByPinHash(db: SqlDatabase, actor: Actor, pinHas
   requireStaff(actor); // lo llama el login de PIN como `system`
   return db.prepare("SELECT user_id, name FROM couriers WHERE pin_hash = ? AND active = 1").bind(pinHash).first<{ user_id: string; name: string }>();
 }
+
+/**
+ * Login por PIN en D1 con migración de clave: `hashes[0]` es el de la clave actual y
+ * los siguientes, de claves anteriores. Si entra con uno viejo, se re-hashea con el
+ * actual (solo si el hash no cambió en el medio). Igual que courier-pins.findCourierByPin.
+ */
+export async function findCourierByPinHashes(db: SqlDatabase, actor: Actor, hashes: readonly string[]) {
+  requireStaff(actor);
+  const [current] = hashes;
+  if (!current) return null;
+  for (const candidate of hashes) {
+    const row = await findCourierByPinHash(db, actor, candidate);
+    if (!row) continue;
+    if (candidate !== current) {
+      await db
+        .prepare("UPDATE couriers SET pin_hash = ?, updated_at = ? WHERE user_id = ? AND pin_hash = ?")
+        .bind(current, new Date().toISOString(), row.user_id, candidate)
+        .run();
+    }
+    return row;
+  }
+  return null;
+}
