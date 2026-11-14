@@ -117,6 +117,40 @@ describe("seguridad del motor", () => {
     assert.ok(badOr.error);
     assert.equal((db.raw.prepare("SELECT count(*) n FROM orders").get() as { n: number }).n, 4);
   });
+  it("UPDATE y DELETE sin filtros se rechazan (como pg_safeupdate de PostgREST)", async () => {
+    for (const table of ["orders", "clients", "points_ledger"]) {
+      const upd = await run({ table, action: "update", payload: { description: "x", name: "x", status: "Cancelado" } });
+      assert.equal(upd.error?.code, "21000", `update ${table}`);
+      const del = await run({ table, action: "delete" });
+      assert.equal(del.error?.code, "21000", `delete ${table}`);
+    }
+    assert.equal((db.raw.prepare("SELECT count(*) n FROM orders").get() as { n: number }).n, 4);
+    assert.equal((db.raw.prepare("SELECT count(*) n FROM orders WHERE status = 'Cancelado'").get() as { n: number }).n, 0);
+  });
+
+  it("neq y not tienen la semántica de NULL de Postgres (excluyen NULL)", async () => {
+    // courier_name: NULL en o-ana-1 y o-libre.
+    const neq = await run({ table: "orders", columns: "id", filters: [{ op: "neq", column: "courier_name", value: "Rep Uno" }], order: [{ column: "id", ascending: true }] });
+    assert.deepEqual((neq.data as Record<string, unknown>[]).map((x) => x.id), ["o-beto-1"]);
+    const notEq = await run({ table: "orders", columns: "id", filters: [{ op: "not", column: "courier_name", value: { op: "eq", value: "Rep Uno" } }] });
+    assert.deepEqual((notEq.data as Record<string, unknown>[]).map((x) => x.id), ["o-beto-1"]);
+    const notIn = await run({ table: "orders", columns: "id", filters: [{ op: "not", column: "courier_name", value: { op: "in", value: ["Rep Uno"] } }] });
+    assert.deepEqual((notIn.data as Record<string, unknown>[]).map((x) => x.id), ["o-beto-1"]);
+    const notNull = await run({ table: "orders", columns: "id", filters: [{ op: "not", column: "courier_name", value: { op: "is", value: null } }], order: [{ column: "id", ascending: true }] });
+    assert.deepEqual((notNull.data as Record<string, unknown>[]).map((x) => x.id), ["o-ana-2", "o-beto-1"]);
+  });
+
+  it("in() con más valores que el tope de D1 da un error claro; los embebidos van en lotes", async () => {
+    const big = Array.from({ length: 150 }, (_, i) => `x-${i}`);
+    assert.equal((await run({ table: "orders", filters: [{ op: "in", column: "id", value: big }] })).error?.code, "54000");
+    const ins = db.raw.prepare("INSERT INTO order_items (id, order_id, name, qty, unit_price_cents) VALUES (?, 'o-ana-2', 'x', 1, 100)");
+    for (let i = 0; i < 120; i++) ins.run(`it-${i}`);
+    for (let i = 0; i < 110; i++) db.raw.prepare("INSERT INTO orders (id, client_id, items_desc) VALUES (?, 'c-ana', 'x')").run(`o-x-${i}`);
+    const r = await run({ table: "orders", columns: "id, order_items(id)" });
+    assert.equal(r.error, null);
+    assert.equal((r.data as Record<string, unknown>[]).length, 114);
+  });
+
   it("integration_secrets: leer devuelve vacío (manda el entorno) y escribir falla", async () => {
     assert.deepEqual((await run({ table: "integration_secrets", columns: "key, value" })).data, []);
     assert.equal((await run({ table: "integration_secrets", action: "upsert", payload: { key: "k", value: "v" } })).error?.code, "D5");

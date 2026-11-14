@@ -81,6 +81,8 @@ const JSON_COLS: Record<string, Set<string>> = {
 };
 
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
+/** D1 acepta como máximo 100 parámetros ligados por sentencia: in() y embebidos se limitan/parten. */
+const MAX_IN = 90;
 const fail = (message: string, code: string): PlanResult => ({ data: null, error: { message, code }, count: null });
 
 /** Columnas reales de cada tabla (cacheadas por base). */
@@ -161,13 +163,15 @@ function filterToSql(table: string, cols: Set<string>, f: PlanFilter): Where {
   const val = (v: unknown) => toD1Value(table, f.column, v);
   switch (f.op) {
     case "eq": return { sql: `${col} = ?`, params: [val(f.value)] };
-    case "neq": return { sql: `(${col} <> ? OR ${col} IS NULL)`, params: [val(f.value)] };
+    // Igual que Postgres/PostgREST: `col <> x` excluye las filas con NULL.
+    case "neq": return { sql: `${col} <> ?`, params: [val(f.value)] };
     case "gt": return { sql: `${col} > ?`, params: [val(f.value)] };
     case "gte": return { sql: `${col} >= ?`, params: [val(f.value)] };
     case "lt": return { sql: `${col} < ?`, params: [val(f.value)] };
     case "lte": return { sql: `${col} <= ?`, params: [val(f.value)] };
     case "in": {
       const list = Array.isArray(f.value) ? f.value : [];
+      if (list.length > MAX_IN) throw new PlanError(`in() con más de ${MAX_IN} valores`, "54000");
       if (list.length === 0) return { sql: "0", params: [] };
       return { sql: `${col} IN (${list.map(() => "?").join(", ")})`, params: list.map(val) };
     }
@@ -227,6 +231,17 @@ function project(row: Row, plain: string[]): Row {
   return Object.fromEntries(plain.filter((c) => c in row).map((c) => [c, row[c]]));
 }
 
+/** SELECT … WHERE col IN (…) en lotes de MAX_IN (tope de parámetros de D1). `col` ya validada contra el esquema. */
+async function selectIn(db: SqlDatabase, table: string, col: string, ids: SqlValue[]): Promise<Row[]> {
+  const out: Row[] = [];
+  for (let i = 0; i < ids.length; i += MAX_IN) {
+    const batch = ids.slice(i, i + MAX_IN);
+    const { results } = await db.prepare(`SELECT * FROM ${ident(table)} WHERE ${ident(col)} IN (${batch.map(() => "?").join(", ")})`).bind(...batch).all<Row>();
+    out.push(...results);
+  }
+  return out;
+}
+
 async function attachEmbeds(db: SqlDatabase, table: string, rows: Row[], embeds: Embed[]): Promise<void> {
   for (const e of embeds) {
     if (!APP_TABLES.has(e.table)) throw new PlanError(`tabla desconocida ${e.table}`, "42P01");
@@ -238,18 +253,14 @@ async function attachEmbeds(db: SqlDatabase, table: string, rows: Row[], embeds:
     if (relCols.has(childFk)) {
       // Hijos: order_items(*) desde orders → arreglo.
       const ids = rows.map((r) => r[PK[table] ?? "id"]).filter((v) => v !== null && v !== undefined) as SqlValue[];
-      const children = ids.length
-        ? (await db.prepare(`SELECT * FROM ${ident(e.table)} WHERE ${ident(childFk)} IN (${ids.map(() => "?").join(", ")})`).bind(...ids).all<Row>()).results
-        : [];
+      const children = await selectIn(db, e.table, childFk, ids);
       for (const r of rows) {
         r[e.table] = children.filter((c) => c[childFk] === r[PK[table] ?? "id"]).map((c) => project(fromD1Row(e.table, c), plain));
       }
     } else if (mainCols.has(parentFk)) {
       // Padre: categories(name) desde products → objeto o null.
       const ids = [...new Set(rows.map((r) => r[parentFk]).filter((v) => v !== null && v !== undefined))] as SqlValue[];
-      const parents = ids.length
-        ? (await db.prepare(`SELECT * FROM ${ident(e.table)} WHERE ${ident(PK[e.table] ?? "id")} IN (${ids.map(() => "?").join(", ")})`).bind(...ids).all<Row>()).results
-        : [];
+      const parents = await selectIn(db, e.table, PK[e.table] ?? "id", ids);
       for (const r of rows) {
         const p = parents.find((x) => x[PK[e.table] ?? "id"] === r[parentFk]);
         r[e.table] = p ? project(fromD1Row(e.table, p), plain) : null;
@@ -349,6 +360,8 @@ export async function executeD1Plan(db: SqlDatabase, actor: Actor, plan: Plan): 
     }
 
     const where = whereOf(plan.table, cols, plan.filters);
+    // Como PostgREST (pg_safeupdate): nunca UPDATE ni DELETE sobre toda la tabla por un filtro que faltó.
+    if (!where.sql) return fail(`${plan.action === "update" ? "UPDATE" : "DELETE"} requires a WHERE clause`, "21000");
     if (plan.action === "update") {
       const { names, values } = rowValues(plan.table, cols, (plan.payload ?? {}) as Row);
       if (cols.has("updated_at") && !names.includes("updated_at")) {
