@@ -1,6 +1,7 @@
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
 import { geocodeNewOrders } from "./geocode.ts";
+import { loadCatalogIndex } from "./catalog-index.ts";
 import { shiftDay, soleCourier } from "../../../src/lib/courier-shift-day.ts";
 import { COURIER_ASSIGN_MODE_KEY, buildCandidates, courierPicker, parseAssignMode } from "../../../src/lib/courier-assign.ts";
 import { listPublicResource, type FudoEnv } from "./fudo";
@@ -113,12 +114,15 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
 
     const paymentLinesBySale = new Map(sales.map((s) => [s.id, salePaymentLines(s.paymentIds, paymentRows, methodNames)]));
 
-    const [productMap, clients] = await Promise.all([
+    const needsLines = itemsBySale.size > 0;
+    const [productMap, clients, catalog] = await Promise.all([
       rest<Array<{ fudo_product_id: number; product_id: string; products: { name: string } | null }>>(
         env,
         "fudo_product_map?select=fudo_product_id,product_id,products(name)",
       ),
       rest<Array<{ id: string; phone: string | null; address: string | null; fudo_customer_id: number | null }>>(env, "clients?select=id,phone,address,fudo_customer_id"),
+      // Solo hace falta para ventas nuevas: el catálogo da nombres, genéricos y opciones.
+      needsLines ? loadCatalogIndex(env) : Promise.resolve(undefined),
     ]);
     const clientsByPhone = new Map<string, string>();
     for (const c of clients) {
@@ -151,6 +155,7 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
       sales,
       itemsBySale,
       productsByFudoId: new Map(productMap.map((m) => [m.fudo_product_id, { id: m.product_id, name: m.products?.name ?? `Producto Fudo #${m.fudo_product_id}` }])),
+      catalog,
       existing,
       clientsByFudoId: new Map(clients.filter((c) => c.fudo_customer_id !== null).map((c) => [c.fudo_customer_id as number, c.id])),
       clientsByPhone,

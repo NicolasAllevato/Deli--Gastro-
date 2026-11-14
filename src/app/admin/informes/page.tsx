@@ -5,7 +5,7 @@ import { BarChart3, Download, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatMoney } from "@/lib/orders";
 import type {
-  DeliveryTimes, NewVsReturning, RecurringCustomer, ReviewsSummary, SalesGroup, SalesSummary, TopProduct,
+  DeliveryTimes, NewVsReturning, RecurringCustomer, ReviewsSummary, SalesGroup, SalesSummary, SalesRow,
 } from "@/lib/reports/analytics";
 import { RANGE_KEYS, RANGE_LABELS, type RangeKey } from "@/lib/reports/range";
 
@@ -14,7 +14,8 @@ interface Snapshot {
   label: string;
   sales: SalesSummary;
   channels: SalesGroup[];
-  topProducts: TopProduct[];
+  topCombos?: SalesRow[];
+  topProducts: SalesRow[];
   recurring: RecurringCustomer[];
   customers: NewVsReturning;
   times: DeliveryTimes;
@@ -169,6 +170,16 @@ export default function InformesPage() {
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card title="Combos más vendidos">
+              {!snap.topCombos?.length ? <Empty text="Sin combos en este período." /> : (
+                <ol className="space-y-1.5 text-sm text-gray-700">
+                  {snap.topCombos.map((p) => (
+                    <li key={p.name} className="flex justify-between gap-2"><span className="truncate">{p.name}</span><span className="font-bold shrink-0">{p.units} u. · {formatMoney(p.revenue)}</span></li>
+                  ))}
+                </ol>
+              )}
+            </Card>
+
             <Card title="Productos más vendidos">
               {snap.topProducts.length === 0 ? <Empty text="Sin datos." /> : (
                 <ol className="space-y-1.5 text-sm text-gray-700">

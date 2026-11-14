@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { ReportOrder } from "./analytics.ts";
+import { buildComboRules, type ComboRules } from "./product-sales.ts";
 import type { ExportClient } from "./clientExport.ts";
 import { fetchAllExact, PAGE_SIZE, type Page } from "./paginate.ts";
 
@@ -59,14 +60,28 @@ export interface ReportData {
   orders: ReportOrder[];
   clients: Array<{ id: string; name: string }>;
   priceByName: Map<string, number>;
+  /** Productos de la app de categoría combo/promo (tabla "Combos"). */
+  comboRules: ComboRules;
   reviews: Array<{ rating: number; created_at: string }>;
+}
+
+/** Precio actual por nombre (para estimar pedidos sin líneas guardadas) y reglas de combos por categoría. */
+export async function loadProductCatalog(db: Db): Promise<{ priceByName: Map<string, number>; comboRules: ComboRules }> {
+  const { data } = await db.from("products").select("id, name, price, categories(name)");
+  const rows = (data ?? []) as unknown as Array<{ id: string; name: string; price: number | string; categories: { name: string } | null }>;
+  return {
+    priceByName: new Map(rows.map((p) => [p.name, Number(p.price)])),
+    comboRules: buildComboRules(rows.map((p) => ({ id: p.id, name: p.name, category: p.categories?.name ?? null }))),
+  };
 }
 
 /** Todo lo que necesitan los informes, leído una sola vez. Solo lectura. */
 export async function loadReportData(db: Db): Promise<ReportData> {
   const [orders, clients, reviews, products] = await Promise.all([
     fetchAll((before) => {
-      let query = db.from("orders").select(ORDER_COLUMNS);
+      // Con las líneas guardadas, las ventas por producto agrupan por product_id (ver productSalesKey).
+      // `order_items(*)`: las columnas de Fudo (migración 031) aparecen solas cuando están; sin ellas igual funciona.
+      let query = db.from("orders").select(`${ORDER_COLUMNS}, order_items(*)`);
       if (before) query = query.lt("created_at", before);
       return query.order("created_at", { ascending: false }).limit(PAGE_SIZE) as unknown as PromiseLike<{ data: Array<ReportOrder> | null; error: { message: string } | null }>;
     }),
@@ -80,13 +95,13 @@ export async function loadReportData(db: Db): Promise<ReportData> {
       if (before) query = query.lt("created_at", before);
       return query.order("created_at", { ascending: false }).limit(PAGE_SIZE);
     }),
-    db.from("products").select("name, price"),
+    loadProductCatalog(db),
   ]);
 
   return {
     orders: orders.map((o) => ({ ...o, total: Number(o.total), delivery_fee: Number(o.delivery_fee) })),
     clients: clients.map((c) => ({ id: c.id, name: c.name })),
-    priceByName: new Map((products.data ?? []).map((p) => [p.name, Number(p.price)])),
+    ...products,
     reviews,
   };
 }

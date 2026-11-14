@@ -97,9 +97,10 @@ describe("planSalesImport", () => {
     assert.equal(o.items_desc, "2x Pizza Margarita · 1x Producto Fudo #999");
     assert.equal(o.delivery_address, "Av. Siempre Viva 742, CABA");
     assert.equal(o.client_id, null);
-    assert.deepEqual(o.lines, [
-      { product_id: "p-margarita", name: "Pizza Margarita", qty: 2, unit_price: 5000 },
-      { product_id: null, name: "Producto Fudo #999", qty: 1, unit_price: 14990 },
+    // Sin catálogo de Fudo, el producto sin mapear conserva el id como nombre de respaldo.
+    assert.deepEqual(o.lines.map(({ product_id, name, qty, unit_price, fudo_product_id }) => ({ product_id, name, qty, unit_price, fudo_product_id })), [
+      { product_id: "p-margarita", name: "Pizza Margarita", qty: 2, unit_price: 5000, fudo_product_id: 104 },
+      { product_id: null, name: "Producto Fudo #999", qty: 1, unit_price: 14990, fudo_product_id: 999 },
     ]);
   });
 

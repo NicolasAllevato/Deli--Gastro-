@@ -18,6 +18,7 @@ import {
   type DailySummarySettings,
   type LastSend,
 } from "./settings.ts";
+import { loadProductCatalog } from "@/lib/reports/data";
 import { buildDailySummary, renderEmail, whatsappParams } from "./summary.ts";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -69,7 +70,7 @@ async function loadConfig(db: Db) {
 async function loadDayOrders(db: Db, bounds: Bounds): Promise<ReportOrder[]> {
   const { data, error } = await db
     .from("orders")
-    .select(ORDER_COLUMNS)
+    .select(`${ORDER_COLUMNS}, order_items(*)`)
     .gte("created_at", bounds.from)
     .lt("created_at", bounds.to)
     .limit(MAX_ORDERS);
@@ -90,7 +91,8 @@ async function deliver(
   deps: SendDeps,
 ): Promise<SendReport> {
   const date = localClock(now).date;
-  const summary = buildDailySummary(await loadDayOrders(db, dayBounds(now)), dayBounds(now), date);
+  const [orders, catalog] = await Promise.all([loadDayOrders(db, dayBounds(now)), loadProductCatalog(db)]);
+  const summary = buildDailySummary(orders, dayBounds(now), date, catalog);
   const recipients = settings.destinatarios.filter(hasContact);
 
   const mail =

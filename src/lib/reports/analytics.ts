@@ -1,4 +1,4 @@
-import { parseItems } from "../orders.ts";
+import type { ReportLine } from "./product-sales.ts";
 import { computeDurations } from "../tracking.ts";
 import { inBounds, localDateKey, type Bounds } from "./range.ts";
 
@@ -20,6 +20,8 @@ export interface ReportOrder {
   /** Detalle de pagos de Fudo por medio y monto. */
   fudo_payments?: ReadonlyArray<{ name: string; amount: number }> | null;
   items_desc: string;
+  /** Líneas guardadas (`order_items`). Si vienen, las ventas por producto se cuentan con ellas. */
+  order_items?: ReadonlyArray<ReportLine> | null;
   created_at: string;
   accepted_at: string | null;
   ready_at: string | null;
@@ -100,30 +102,8 @@ export function salesSummary(orders: readonly ReportOrder[], bounds: Bounds, gro
   };
 }
 
-export interface TopProduct {
-  name: string;
-  units: number;
-  /** Unidades × precio actual: los pedidos guardan el texto, no el precio de cada línea. */
-  estimatedRevenue: number;
-}
-
-export function topProducts(
-  orders: readonly ReportOrder[],
-  bounds: Bounds,
-  priceByName: ReadonlyMap<string, number>,
-  limit: number,
-): TopProduct[] {
-  const units = new Map<string, number>();
-  for (const o of orders) {
-    if (isCancelled(o) || !inBounds(o.created_at, bounds)) continue;
-    for (const line of parseItems(o.items_desc)) units.set(line.name, (units.get(line.name) ?? 0) + line.qty);
-  }
-
-  return [...units.entries()]
-    .map(([name, qty]) => ({ name, units: qty, estimatedRevenue: qty * (priceByName.get(name) ?? 0) }))
-    .sort((a, b) => b.units - a.units || a.name.localeCompare(b.name))
-    .slice(0, limit);
-}
+export type { ProductSales, SalesRow, ComboRules } from "./product-sales.ts";
+export { productSales, productSalesKey, buildComboRules, isComboCategory } from "./product-sales.ts";
 
 export interface RecurringCustomer {
   name: string;

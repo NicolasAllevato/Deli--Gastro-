@@ -56,7 +56,7 @@ const BOOL = new Set([
   "is_active", "wa_marketing_opt_in", "is_anonymous", "delivered_in_app", "active",
   "ok", "human_takeover",
 ]);
-const JSON_COLS = new Set(["fudo_payments", "snapshot", "shape", "value_json", "state", "segment"]);
+const JSON_COLS = new Set(["fudo_payments", "fudo_options", "snapshot", "shape", "value_json", "state", "segment"]);
 const JSON_BY_TABLE = { global_config: new Set(["value"]) };
 const DATE_ONLY = new Set(["shift_day", "report_date"]);
 

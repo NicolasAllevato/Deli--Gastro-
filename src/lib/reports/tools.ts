@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AgentTool } from "../agent/loop.ts";
 import {
-  deliveryTimes, newVsReturning, recurringCustomers, reviewsSummary, salesSummary, topProducts, type GroupBy,
+  deliveryTimes, newVsReturning, recurringCustomers, reviewsSummary, salesSummary, productSales, type GroupBy,
 } from "./analytics.ts";
 import type { ReportData } from "./data.ts";
 import { RANGE_KEYS, RANGE_LABELS, rangeBounds, type RangeKey } from "./range.ts";
@@ -59,11 +59,12 @@ export function buildReportTools(data: ReportData, now: Date = new Date()): Agen
 
     tool({
       name: "get_top_products",
-      description: "Productos más vendidos del período, con unidades e ingreso estimado (a precio actual).",
+      description:
+        "Más vendidos del período en dos tablas: combos (unidades y monto) y productos (sueltos más los que vinieron dentro de combos; estos suman unidades pero $0, porque el precio está en el combo).",
       properties: { range: RANGE_PARAM, limit: { type: "integer", minimum: 1, maximum: 20 } },
       required: ["range"],
       schema: z.object({ range: rangeSchema, limit: z.number().int().min(1).max(20).default(5) }),
-      run: ({ range, limit }) => ({ ...header(range), products: topProducts(data.orders, bounds(range), data.priceByName, limit) }),
+      run: ({ range, limit }) => ({ ...header(range), ...productSales(data.orders, bounds(range), data.priceByName, limit, data.comboRules) }),
     }),
 
     tool({

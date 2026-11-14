@@ -8,7 +8,7 @@ import { createOpenAI } from "@/lib/agent/openai";
 import { loadAgentSettings, loadOpenAIKey } from "@/lib/agent/settings";
 import type { ChatMessage, LLM } from "@/lib/agent/types";
 import {
-  deliveryTimes, newVsReturning, recurringCustomers, reviewsSummary, salesSummary, topProducts,
+  deliveryTimes, newVsReturning, recurringCustomers, reviewsSummary, salesSummary, productSales,
 } from "@/lib/reports/analytics";
 import { loadReportData } from "@/lib/reports/data";
 import { createDemoReportsLlm } from "@/lib/reports/demoLlm";
@@ -50,7 +50,8 @@ export async function GET(req: NextRequest) {
     label: RANGE_LABELS[range.data],
     sales: salesSummary(data.orders, bounds, "day"),
     channels: salesSummary(data.orders, bounds, "channel").groups,
-    topProducts: topProducts(data.orders, bounds, data.priceByName, TOP),
+    // Dos tablas: combos (con su monto) y productos (sueltos + lo que vino dentro de combos, esto último a $0).
+    ...(({ combos, products }) => ({ topCombos: combos, topProducts: products }))(productSales(data.orders, bounds, data.priceByName, TOP, data.comboRules)),
     recurring: recurringCustomers(data.orders, bounds, data.clients, 2).slice(0, TOP),
     customers: newVsReturning(data.orders, bounds),
     times: deliveryTimes(data.orders, bounds),
