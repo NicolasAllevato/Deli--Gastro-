@@ -1,5 +1,6 @@
 import type { FudoMaps, OrderForFudo } from "./payload";
 import { mirrorEnabled, mirroredTable, mirrorWrite, withRepresentation, type MirrorEnv } from "./d1-mirror.ts";
+import { restD1 } from "./d1-rest.ts";
 
 /** Acceso a Supabase por PostgREST con la service role (igual que pedidos-webhook). */
 export interface DbEnv extends MirrorEnv {
@@ -8,6 +9,11 @@ export interface DbEnv extends MirrorEnv {
 }
 
 export async function rest<T>(env: DbEnv, path: string, init: RequestInit = {}): Promise<T> {
+  // Etapa 2 del corte: con DATA_BACKEND=d1 el gateway no toca Supabase.
+  if (env.DATA_BACKEND?.trim().toLowerCase() === "d1") {
+    if (!env.DB) throw new Error("DATA_BACKEND=d1 sin binding DB");
+    return restD1<T>(env.DB, path, init);
+  }
   const method = (init.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     "content-type": "application/json",

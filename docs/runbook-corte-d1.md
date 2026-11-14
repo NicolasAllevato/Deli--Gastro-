@@ -29,6 +29,7 @@ Hasta completar 1–4, el corte llega a `d1` **con Supabase vivo**.
 - [ ] Workers desplegados con `--config <ruta absoluta>/wrangler.toml`, comprobando `Uploaded <worker>`.
 - [ ] Secretos como Worker secrets (nunca en D1): `COURIER_PIN_SECRET` (PIN; los hashes viejos migran solos al próximo ingreso), `BETTER_AUTH_SECRET` (≥ 32), los de `integration_secrets`.
 - [ ] Repartidores con PIN de 4 dígitos reseteados (vencen el 1/1/2027).
+- [ ] Para `DATA_BACKEND="d1"` en whatsapp-bot: Worker secrets `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_ACCESS_TOKEN` (en d1 no se leen de Supabase).
 - [ ] `npm run typecheck` en `workers/whatsapp-bot` y `workers/fudo-gateway`, CI verde.
 
 ## 1. Copia completa (idempotente)
