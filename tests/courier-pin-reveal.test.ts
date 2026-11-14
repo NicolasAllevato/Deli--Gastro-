@@ -56,7 +56,10 @@ describe("ver, resetear y editar repartidores", () => {
     assert.equal(typeof row.pin_encrypted, "string");
     assert.ok(!String(row.pin_encrypted).includes("4821"));
     assert.deepEqual(await revealCourierPin(db, res.courier.userId), { ok: true, pin: "4821" });
-    assert.ok(!JSON.stringify(await listCouriers(db)).includes("pin"));
+    const listed = JSON.stringify(await listCouriers(db));
+    for (const secret of ["pin_hash", "pin_encrypted", "4821"]) assert.ok(!listed.includes(secret), secret);
+    // El listado solo dice cuántos dígitos tiene (para marcar los de 4 a resetear).
+    assert.equal((await listCouriers(db)).find((c) => c.name === "Ana")?.pinDigits, 4);
   });
 
   it("resetear genera un PIN nuevo, actualiza hash y cifrado, y mantiene la unicidad", async () => {
@@ -68,7 +71,8 @@ describe("ver, resetear y editar repartidores", () => {
 
     const reset = await changeCourierPin(db, ana.courier.userId);
     assert.ok(reset.ok);
-    assert.match(reset.pin, /^\d{4}$/);
+    assert.match(reset.pin, /^\d{6}$/, "el reseteo siempre genera 6 dígitos");
+    assert.equal((await listCouriers(db)).find((c) => c.name === "Ana")?.pinDigits, 6);
     assert.notEqual(reset.pin, "2222");
     assert.deepEqual(await revealCourierPin(db, ana.courier.userId), { ok: true, pin: reset.pin });
     assert.equal((await findCourierByPin(db, reset.pin))?.name, "Ana");

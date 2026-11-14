@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bike, KeyRound, Loader2, Pencil, Plus, Power, Shuffle } from "lucide-react";
+import { AlertTriangle, Bike, KeyRound, Loader2, Pencil, Plus, Power, Shuffle } from "lucide-react";
 import type { Courier } from "@/lib/courier-pins";
 import { CourierShiftsToday } from "../_components/CourierShifts";
 import { EditCourierModal, PinReveal } from "./CourierRowTools";
@@ -83,9 +83,9 @@ function NewCourierForm({ onCreated }: { onCreated: (c: Courier, pin: string) =>
         <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">PIN (opcional)</span>
         <input
           value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
           inputMode="numeric"
-          pattern="\d{4}"
+          pattern="\d{6}"
           placeholder="Al azar"
           aria-describedby="pin-help"
           className="w-full px-4 py-3 rounded-xl neumorphic-inset text-sm text-gray-700 tracking-widest outline-none focus:ring-2 focus:ring-brand-orange/40"
@@ -93,13 +93,13 @@ function NewCourierForm({ onCreated }: { onCreated: (c: Courier, pin: string) =>
       </label>
       <button
         type="submit"
-        disabled={busy || name.trim().length < 2 || (pin.length > 0 && pin.length !== 4)}
+        disabled={busy || name.trim().length < 2 || (pin.length > 0 && pin.length !== 6)}
         className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl btn-glow text-white font-black text-sm disabled:opacity-50"
       >
         {busy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Plus size={16} aria-hidden />} Dar de alta
       </button>
       <p id="pin-help" className="text-xs text-gray-500 sm:col-span-3">
-        Cada repartidor entra a la app solo con su PIN de 4 números. Si no elegís uno, se genera al azar.
+        Cada repartidor entra a la app solo con su PIN de 6 números. Si no elegís uno, se genera al azar.
       </p>
       {error && <p role="alert" className="text-xs font-bold text-red-600 sm:col-span-3">{error}</p>}
     </form>
@@ -182,6 +182,11 @@ export default function CouriersAdminPage() {
                     : <span className="badge-red px-2 py-0.5 rounded-full font-bold">Desactivado</span>}
                   <span className="ml-2">Actualizado el {fmt(c.updatedAt)}</span>
                 </p>
+                {c.pinDigits === 4 && (
+                  <p className="mt-1 inline-flex items-center gap-1.5 badge-orange px-2 py-0.5 rounded-full text-xs font-bold">
+                    <AlertTriangle size={12} aria-hidden /> PIN de 4 dígitos, resetear
+                  </p>
+                )}
                 <PinReveal courier={c} revision={c.updatedAt} />
               </div>
               <div className="flex gap-2">

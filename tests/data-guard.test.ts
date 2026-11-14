@@ -52,7 +52,7 @@ describe("consultas parametrizadas", () => {
       const src = readFileSync(f, "utf8");
       for (const m of src.matchAll(/prepare\(\s*`([\s\S]*?)`/g)) {
         for (const expr of m[1].match(/\$\{[^}]*\}/g) ?? []) {
-          const mirrorOk = f.endsWith(`${sep}mirror.ts`) && MIRROR_ONLY.test(expr);
+          const mirrorOk = f === join(DATA, "mirror.ts") && MIRROR_ONLY.test(expr);
           if (!ALLOWED.test(expr) && !mirrorOk) offenders.push(`${relative(ROOT, f)}: ${expr}`);
         }
       }

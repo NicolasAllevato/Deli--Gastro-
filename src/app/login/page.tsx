@@ -157,7 +157,7 @@ function LoginContent() {
             <div>
               <h2 className="font-headline font-black text-xl text-gray-800">Ingresá con tu PIN</h2>
               <p className="text-gray-500 text-xs mt-1">
-                {isDemoMode() ? "Modo demostración: el PIN del repartidor de ejemplo es 1234." : "Solo para repartidores del local"}
+                {isDemoMode() ? "Modo demostración: el PIN del repartidor de ejemplo es 123456." : "Solo para repartidores del local"}
               </p>
             </div>
             <CourierPinLogin />
