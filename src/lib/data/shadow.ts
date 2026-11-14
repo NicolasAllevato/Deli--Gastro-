@@ -101,7 +101,8 @@ export async function dualWrite<R>(
  */
 export async function mirrorToD1(op: string, write: () => Promise<unknown>, opts: { backend?: DataBackend; log?: DiffLogger } = {}): Promise<void> {
   const backend = opts.backend ?? dataBackend();
-  if (backend === "supabase") return;
+  // Solo en dual: con d1 la escritura ya fue a D1 (createAdminClient usa el motor de D1) y copiarla de nuevo sobra.
+  if (backend !== "dual") return;
   try {
     await write();
   } catch (err) {
