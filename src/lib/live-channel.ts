@@ -1,6 +1,18 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
+import { createVersionPollers, fetchLiveVersion } from "@/lib/live-poll";
+
+/** NEXT_PUBLIC_DATA_BACKEND se fija en el build e iguala a DATA_BACKEND (runbook del corte). */
+function usesVersionPolling(): boolean {
+  return process.env.NEXT_PUBLIC_DATA_BACKEND?.trim().toLowerCase() === "d1";
+}
+
+let pollers: ReturnType<typeof createVersionPollers> | null = null;
+function versionPollers() {
+  pollers ??= createVersionPollers({ fetchVersion: fetchLiveVersion, paused: () => document.hidden });
+  return pollers;
+}
 
 type Channel = ReturnType<ReturnType<typeof createClient>["channel"]>;
 
@@ -58,6 +70,8 @@ function close(topic: string, entry: Entry): void {
  * dejaba a la segunda sin avisos.
  */
 export function subscribeToTopic(topic: string, onPing: () => void, onReconnect: () => void): () => void {
+  // Etapa 4 del corte: con D1 no hay Realtime; se consulta la versión del topic cada 5 s.
+  if (usesVersionPolling()) return versionPollers().subscribe(topic, onPing, onReconnect);
   let cancelled = false;
   let entry: Entry | undefined;
 

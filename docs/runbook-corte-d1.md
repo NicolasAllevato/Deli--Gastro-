@@ -18,13 +18,13 @@ Hoy el modo `d1` todavía depende de Supabase: muchas rutas escriben en Supabase
 1. Portar a la capa `src/lib/data` las escrituras con su lógica de negocio (transiciones, asignación, habilitación, aprobación de pagos con `version`, canje de puntos con `idempotency_key`), con tests de autorización como hasta ahora.
 2. Workers: pasar de PostgREST/Hyperdrive a escribir directo en D1.
 3. Activar Better Auth (PR propio) y cambiar el login, el proxy y `requireRole` a sus sesiones. Condiciones del auditor: sign-up con email existente indistinguible y sin cuenta (test ya hecho), acceso de usuarios copiados solo por "olvidé mi contraseña", sin fusión de cuentas por OAuth; si se agrega link mágico: 3 intentos cada 5 min, vence en ≤ 15 min, uso único.
-4. Quitar Realtime de Supabase (polling, D4).
+4. ~~Quitar Realtime~~ (etapa 4): con `NEXT_PUBLIC_DATA_BACKEND=d1` las pantallas en vivo consultan `/api/live/version` cada 5 s (pestaña oculta: en pausa). Las versiones las suman triggers de D1 (migración 0006) en orders, courier_shifts, wa_conversations, wa_messages y wa_campaigns, así que cubren también a los Workers. La versión no trae datos y se autoriza por topic (cliente: solo sus pedidos; repartidor: orders y courier_shifts; admin: todo).
 
 Hasta completar 1–4, el corte llega a `d1` **con Supabase vivo**.
 
 ## 0. Preparación (una vez)
 
-- [ ] Migración 031 aplicada en Supabase (hoy **no** lo está) y D1 al día: `d1/schema/0001_inicial.sql` + `d1/migrations/0002`…`0004` (0004 = `user.phone`).
+- [ ] Migración 031 aplicada en Supabase (hoy **no** lo está) y D1 al día: `d1/schema/0001_inicial.sql` + `d1/migrations/0002`…`0004` (0004 = `user.phone`, 0006 = `live_versions` + triggers).
 - [ ] `wrangler whoami` en la cuenta e7351. Desde `~`, siempre con `env -u CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID=e7351dd776e005da826ba6f2a5aae4c1`.
 - [ ] Workers desplegados con `--config <ruta absoluta>/wrangler.toml`, comprobando `Uploaded <worker>`.
 - [ ] Secretos como Worker secrets (nunca en D1): `COURIER_PIN_SECRET` (PIN; los hashes viejos migran solos al próximo ingreso), `BETTER_AUTH_SECRET` (≥ 32), los de `integration_secrets`.
