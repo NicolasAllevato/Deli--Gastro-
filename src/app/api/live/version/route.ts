@@ -10,12 +10,13 @@ import { rateLimit, getClientIp } from "@/utils/rate-limit";
  */
 export async function GET(req: NextRequest) {
   if (dataBackend() !== "d1") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  // Una pantalla con 2 topics a 5 s son 24/min; 120 deja margen para varias pestañas.
-  if (!(await rateLimit(getClientIp(req), 120, 60_000))) {
-    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
-  }
   const auth = await requireAuth(req);
   if (isAuthorizationError(auth)) return auth.error;
+  // Clave IP + usuario: varias tablets del local detrás del mismo NAT no se cortan entre sí.
+  // Una pantalla con 2 topics a 5 s son 24/min; 120 deja margen para varias pestañas.
+  if (!(await rateLimit(`live:${getClientIp(req)}:${auth.user.id}`, 120, 60_000))) {
+    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+  }
 
   const topics = parseLiveTopics(req.nextUrl.searchParams.get("topics"));
   if (!topics) return NextResponse.json({ error: "Topics inválidos." }, { status: 400 });

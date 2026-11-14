@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { isCronAuthorized } from "@/lib/whatsapp/cron-auth";
 import { runDailySummaryIfDue } from "@/lib/daily-summary/send";
+import { dataBackend, dataFor, systemActor } from "@/lib/data";
 
 export const maxDuration = 60;
 
@@ -13,6 +14,12 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   if (!isCronAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+  if (dataBackend() === "d1") {
+    // Etapa 4: limpieza de versiones viejas de pantallas en vivo. Un fallo no frena el resumen.
+    await dataFor(systemActor("cron-live-purge"))
+      .then((d) => d.purgeLiveVersions())
+      .catch((e: unknown) => console.error("[cron] purga live_versions", e instanceof Error ? e.message : e));
   }
   try {
     return NextResponse.json(await runDailySummaryIfDue(createAdminClient()));

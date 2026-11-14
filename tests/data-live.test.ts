@@ -78,6 +78,18 @@ describe("liveVersions: autorización por topic", () => {
   });
 });
 
+describe("purgeLiveVersions", () => {
+  it("borra topics por pedido de más de 30 días, deja los globales; solo staff", async () => {
+    const db = setup();
+    db.raw.prepare("UPDATE live_versions SET updated_at = '2020-01-01T00:00:00.000Z'").run();
+    const { purgeLiveVersions } = await import("../src/lib/data/live.ts");
+    await assert.rejects(() => purgeLiveVersions(db, actors.ana));
+    assert.ok((await purgeLiveVersions(db, actors.system)) >= 2);
+    assert.equal(version(db, `order:${ANA_ORDER}`), 0);
+    assert.ok(version(db, "orders") >= 1);
+  });
+});
+
 describe("parseTopics", () => {
   it("acepta solo topics conocidos, sin duplicados y con tope", () => {
     assert.deepEqual(parseTopics(`orders,orders,order:${ANA_ORDER}`), ["orders", `order:${ANA_ORDER}`]);

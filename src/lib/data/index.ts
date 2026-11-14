@@ -122,6 +122,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
     },
     // Etapa 4: versión por topic en lugar de Realtime (sin datos, autorizada por actor).
     liveVersions: bind(live.liveVersions, db, actor),
+    purgeLiveVersions: bind(live.purgeLiveVersions, db, actor),
   };
 }
 

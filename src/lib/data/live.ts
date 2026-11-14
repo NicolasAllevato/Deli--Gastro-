@@ -7,7 +7,7 @@
  * - anon: ninguno.
  * Un topic no permitido o inexistente responde versión 0: no revela si el pedido existe.
  */
-import type { Actor } from "./actor.ts";
+import { requireStaff, type Actor } from "./actor.ts";
 import type { SqlDatabase } from "./sql.ts";
 
 export const MAX_TOPICS = 10;
@@ -32,6 +32,23 @@ async function allowedFor(db: SqlDatabase, actor: Actor, topics: string[]): Prom
     .bind(actor.userId, JSON.stringify(ids))
     .all<{ id: string }>();
   return new Set(results.map((r) => `order:${r.id}`));
+}
+
+export const LIVE_RETENTION_DAYS = 30;
+
+/**
+ * Purga topics por pedido o conversación sin cambios hace más de 30 días (los globales
+ * quedan). Solo staff/sistema (cron). Una pantalla abierta de algo tan viejo vuelve a 0 y
+ * a lo sumo refresca una vez.
+ */
+export async function purgeLiveVersions(db: SqlDatabase, actor: Actor, now: Date = new Date()): Promise<number> {
+  requireStaff(actor);
+  const cutoff = new Date(now.getTime() - LIVE_RETENTION_DAYS * 86_400_000).toISOString();
+  const r = await db
+    .prepare(`DELETE FROM live_versions WHERE (topic LIKE 'order:%' OR topic LIKE 'wa_conversation:%') AND updated_at < ?`)
+    .bind(cutoff)
+    .run();
+  return r.meta?.changes ?? 0;
 }
 
 /** Versión de cada topic pedido (0 si no está permitido o todavía no tuvo cambios). */
