@@ -79,6 +79,15 @@ describe("copia completa a D1", () => {
     assert.deepEqual({ ...item, fudo_options: JSON.parse(String(item.fudo_options)) }, { fudo_options: [{ qty: 1, name: "Extra" }], is_combo: 0, unit_price_cents: 1250050 });
   });
 
+  it("descarta (y avisa) columnas que D1 no tiene, en vez de romper la carga", () => {
+    const db = createTestDb();
+    const conExtra: [string, Record<string, unknown>[]][] = [["categories", [{ id: U(10), name: "Pizzas", columna_nueva_en_supabase: "x" }]]];
+    const { lineas, descartadas } = construir([], conExtra);
+    assert.deepEqual(descartadas, ["categories.columna_nueva_en_supabase"]);
+    assert.doesNotThrow(() => cargar(db, lineas));
+    assert.ok(lineas.some((l: string) => l.startsWith('INSERT INTO "categories" ("id", "name")')), "identificadores entre comillas");
+  });
+
   it("nunca copia tablas de recetas ni secretos", () => {
     const script = fileURLToPath(new URL("../scripts/migrar-datos-d1.mjs", import.meta.url));
     const recetas = spawnSync(process.execPath, ["--no-warnings", script, "--tablas", "recetas"], { encoding: "utf8", env: { ...process.env, SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" } });

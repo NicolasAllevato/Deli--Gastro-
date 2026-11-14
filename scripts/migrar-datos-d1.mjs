@@ -25,6 +25,8 @@
  * origen NO se borran en destino (usar --borrar para emitir DELETE previos).
  */
 import { mkdir, writeFile } from "node:fs/promises";
+import { readdirSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -168,14 +170,35 @@ function literal(v) {
  * Upsert por clave primaria. NO se usa INSERT OR REPLACE: en SQLite el REPLACE
  * borra la fila vieja y dispara los ON DELETE CASCADE (borraría order_items, etc.).
  */
-function insertSql(tabla, filas) {
+/** Identificador SQL entre comillas dobles (las comillas internas se duplican). */
+const ident = (name) => `"${String(name).replace(/"/g, '""')}"`;
+
+/**
+ * Columnas reales de cada tabla en D1, leídas del esquema del repo (0001 + migraciones) con node:sqlite.
+ * Lo que venga de Supabase y no exista en D1 se descarta (y se avisa), en vez de romper la carga a mitad.
+ */
+export function columnasD1() {
+  const raiz = new URL("../d1/", import.meta.url);
+  const migraciones = readdirSync(new URL("migrations/", raiz)).filter((f) => f.endsWith(".sql")).sort();
+  const db = new DatabaseSync(":memory:");
+  db.exec(readFileSync(new URL("schema/0001_inicial.sql", raiz), "utf8"));
+  for (const m of migraciones) db.exec(readFileSync(new URL(`migrations/${m}`, raiz), "utf8"));
+  const tablas = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name);
+  return new Map(tablas.map((t) => [t, new Set(db.prepare(`PRAGMA table_info(${ident(t)})`).all().map((c) => c.name))]));
+}
+
+function insertSql(tabla, filas, columnas, descartadas) {
   const pk = PK[tabla] ?? "id";
-  const nombre = tabla === "user" ? '"user"' : tabla;
+  const validas = columnas?.get(tabla);
   return filas.map((f) => {
-    const cols = Object.keys(f);
-    const set = cols.filter((c) => c !== pk).map((c) => `${c} = excluded.${c}`).join(", ");
-    return `INSERT INTO ${nombre} (${cols.join(", ")}) VALUES (${cols.map((c) => literal(f[c])).join(", ")})` +
-      (set ? ` ON CONFLICT(${pk}) DO UPDATE SET ${set};` : ` ON CONFLICT(${pk}) DO NOTHING;`);
+    const cols = Object.keys(f).filter((c) => {
+      if (!validas || validas.has(c)) return true;
+      descartadas?.add(`${tabla}.${c}`);
+      return false;
+    });
+    const set = cols.filter((c) => c !== pk).map((c) => `${ident(c)} = excluded.${ident(c)}`).join(", ");
+    return `INSERT INTO ${ident(tabla)} (${cols.map(ident).join(", ")}) VALUES (${cols.map((c) => literal(f[c])).join(", ")})` +
+      (set ? ` ON CONFLICT(${ident(pk)}) DO UPDATE SET ${set};` : ` ON CONFLICT(${ident(pk)}) DO NOTHING;`);
   });
 }
 
@@ -183,7 +206,9 @@ function insertSql(tabla, filas) {
  * Arma el SQL de la copia completa a partir de lo exportado de Supabase (sin red ni disco: testeable).
  * Devuelve las sentencias de carga, las de verificación y los conteos y sumas de control de origen.
  */
-export function construir(usuarios, filasPorTabla, { borrar = false } = {}) {
+export function construir(usuarios, filasPorTabla, { borrar = false, columnas = columnasD1() } = {}) {
+  /** Columnas de Supabase que D1 no tiene: se descartan y se informan (solo nombres, nunca datos). */
+  const descartadas = new Set();
   // D1 no admite BEGIN/COMMIT en archivos: `wrangler d1 execute --file` ya corre el lote.
   // Se desactivan FKs durante la carga para tolerar el orden; verificar.sql corre foreign_key_check.
   const lineas = ["PRAGMA defer_foreign_keys = on;"];
@@ -194,7 +219,7 @@ export function construir(usuarios, filasPorTabla, { borrar = false } = {}) {
 
   conteos.user = usuarios.length;
   if (borrar) lineas.push('DELETE FROM "user";');
-  lineas.push(...insertSql("user", usuarios.map((u) => authUserRow(u))));
+  lineas.push(...insertSql("user", usuarios.map((u) => authUserRow(u)), columnas, descartadas));
   // El ledger se importa sin el trigger (el orden de carga podría dejar saldos
   // negativos transitorios); total_points se re-escribe desde origen al final.
   lineas.push("DROP TRIGGER IF EXISTS points_ledger_after_insert;");
@@ -210,7 +235,7 @@ export function construir(usuarios, filasPorTabla, { borrar = false } = {}) {
     if (tabla === "points_ledger") sumas["points_ledger.delta"] = filas.reduce((acc, f) => acc + Number(f.delta || 0), 0);
     if (tabla === "clients") sumas["clients.total_points"] = filas.reduce((acc, f) => acc + Number(f.total_points || 0), 0);
     if (borrar) lineas.push(`DELETE FROM ${tabla};`);
-    lineas.push(...insertSql(tabla, filas.map((f) => transformar(tabla, f))));
+    lineas.push(...insertSql(tabla, filas.map((f) => transformar(tabla, f)), columnas, descartadas));
     lineas.push(`INSERT OR REPLACE INTO _migracion (tabla, filas_origen) VALUES ('${tabla}', ${filas.length});`);
   }
   lineas.push(`INSERT OR REPLACE INTO _migracion (tabla, filas_origen) VALUES ('user', ${usuarios.length});`);
@@ -244,7 +269,7 @@ export function construir(usuarios, filasPorTabla, { borrar = false } = {}) {
     // Ningún usuario copiado tiene contraseña (D3): entran con "olvidé mi contraseña".
     `SELECT 'cuentas_con_password' AS chequeo, count(*) AS n FROM "account" WHERE password IS NOT NULL;`,
   ];
-  return { lineas, verificar, conteos, sumas };
+  return { lineas, verificar, conteos, sumas, descartadas: [...descartadas].sort() };
 }
 
 async function main() {
@@ -261,7 +286,8 @@ async function main() {
     filasPorTabla.push([tabla, filas]);
     console.log(`${tabla.padEnd(22)} ${String(filas.length).padStart(6)} filas`);
   }
-  const { lineas, verificar, conteos, sumas } = construir(usuarios, filasPorTabla, { borrar });
+  const { lineas, verificar, conteos, sumas, descartadas } = construir(usuarios, filasPorTabla, { borrar });
+  for (const c of descartadas) console.warn(`AVISO: columna de Supabase sin lugar en D1, no se copia: ${c}`);
 
   const privado = { mode: 0o600 };
   await writeFile(join(out, "datos.sql"), lineas.join("\n") + "\n", privado);
