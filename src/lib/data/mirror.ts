@@ -25,10 +25,11 @@ function sqlValue(v: unknown): SqlValue {
   return JSON.stringify(v);
 }
 
-function upsertStatement(db: SqlDatabase, table: string, key: string[], cols: string[], values: SqlValue[]) {
+export function upsertStatement(db: SqlDatabase, table: string, key: string[], cols: string[], values: SqlValue[]) {
   const updates = cols.filter((c) => !key.includes(c)).map((c) => `${c} = excluded.${c}`);
   // table, key y cols salen de listas blancas de este archivo, nunca del input.
-  const sql = `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ON CONFLICT (${key.join(", ")}) DO UPDATE SET ${updates.join(", ")}`;
+  const onConflict = updates.length > 0 ? `DO UPDATE SET ${updates.join(", ")}` : "DO NOTHING";
+  const sql = `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ON CONFLICT (${key.join(", ")}) ${onConflict}`;
   return db.prepare(sql).bind(...values);
 }
 

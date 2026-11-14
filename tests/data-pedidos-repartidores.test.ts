@@ -93,6 +93,17 @@ describe("espejo de repartidores, habilitaciones y ubicación", () => {
   });
 });
 
+describe("upsertStatement", () => {
+  it("una fila con solo la clave no genera SQL inválido (DO NOTHING)", async () => {
+    await mirror.upsertStatement(db, "courier_locations", ["user_id"], ["user_id"], ["u-rep1"]).run().catch((e: Error) => {
+      // Falla por NOT NULL de otras columnas, nunca por sintaxis.
+      assert.doesNotMatch(e.message, /syntax/i);
+    });
+    const sql = (mirror.upsertStatement(db, "couriers", ["user_id"], ["user_id"], ["u-rep1"]) as unknown as { sql: string }).sql;
+    assert.match(sql, /ON CONFLICT \(user_id\) DO NOTHING$/);
+  });
+});
+
 describe("mirrorToD1", () => {
   it("supabase: no escribe; dual: escribe y un fallo no rompe", async () => {
     let wrote = false;
