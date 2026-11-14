@@ -4,6 +4,7 @@ import { cancelOrderBySystem, placeOrder, prepareDeliveryOrder, type NewDelivery
 import { formatMoney } from "@/lib/orders";
 import type { PaymentGateway } from "./gateway.ts";
 import { classifyPaymentStatus, paymentMatchesIntent, PAYMENT_WINDOW_MINUTES, type MpPayment } from "./mercadopago.ts";
+import { mirrorRowById, mirrorTableRows } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
@@ -48,6 +49,7 @@ export async function startOnlinePayment(
     .select()
     .single();
   if (error) return fail(500, error.message);
+  await mirrorTableRows("payments.create", "payment_intents", [intent]);
 
   try {
     const checkout = await gateway.createCheckout({
@@ -58,9 +60,11 @@ export async function startOnlinePayment(
       expiresAt,
     });
     await db.from("payment_intents").update({ mp_preference_id: checkout.preferenceId, checkout_url: checkout.url }).eq("id", intent.id);
+    await mirrorRowById("payments.checkout", db, "payment_intents", intent.id);
     return { ok: true, value: { intentId: intent.id, url: checkout.url, total: snapshot.total, expiresAt: expiresAt.toISOString() } };
   } catch {
     await db.from("payment_intents").update({ status: "cancelled" }).eq("id", intent.id).eq("status", "pending");
+    await mirrorRowById("payments.cancel", db, "payment_intents", intent.id);
     return fail(502, "No pudimos abrir el pago con Mercado Pago. Probá de nuevo o elegí otra forma de pago.");
   }
 }
@@ -102,9 +106,11 @@ async function settleApproved(db: Db, gateway: PaymentGateway, intent: IntentRow
     try {
       await gateway.refund(paymentId, `refund-late-${intent.id}`);
       await db.from("payment_intents").update({ status: "refunded", mp_payment_id: paymentId }).eq("id", intent.id);
+      await mirrorRowById("payments.refund-late", db, "payment_intents", intent.id);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "No se pudo reembolsar.";
       await db.from("payment_intents").update({ mp_payment_id: paymentId, refund_error: message }).eq("id", intent.id);
+      await mirrorRowById("payments.refund-error", db, "payment_intents", intent.id);
       return fail(502, message);
     }
     return { ok: true, value: { kind: "refunded_late" } };
@@ -119,16 +125,23 @@ async function settleApproved(db: Db, gateway: PaymentGateway, intent: IntentRow
     .select("id")
     .maybeSingle();
   if (!claimed) return { ok: true, value: { kind: "already_settled", orderId: null } };
+  await mirrorRowById("payments.approve", db, "payment_intents", intent.id);
 
   const placed = await placeOrder(db, intent.snapshot as unknown as OrderSnapshot, "Recibidos");
   if (!placed.ok) {
     // Sin pedido no hay nada cobrado "en firme": se reabre la intención para que el reintento de Mercado Pago lo cree.
     await db.from("payment_intents").update({ status: "pending", mp_payment_id: null }).eq("id", intent.id);
+    await mirrorRowById("payments.reopen", db, "payment_intents", intent.id);
     return placed;
   }
 
   await db.from("payment_intents").update({ order_id: placed.value.id }).eq("id", intent.id);
-  await db.from("order_events").insert({ order_id: placed.value.id, event: "pago_aprobado", actor: "mercadopago" });
+  await mirrorRowById("payments.order", db, "payment_intents", intent.id);
+  const { data: paidEvent } = await db
+    .from("order_events")
+    .insert({ order_id: placed.value.id, event: "pago_aprobado", actor: "mercadopago" })
+    .select();
+  await mirrorTableRows("payments.event", "order_events", paidEvent ?? []);
   return { ok: true, value: { kind: "order_created", order: placed.value } };
 }
 
@@ -136,6 +149,7 @@ async function settleApproved(db: Db, gateway: PaymentGateway, intent: IntentRow
 async function settleReversed(db: Db, intent: IntentRow): Promise<Outcome<SettleResult>> {
   if (intent.status !== "approved" || !intent.order_id) return { ok: true, value: { kind: "no_change" } };
   await db.from("payment_intents").update({ status: "refunded" }).eq("id", intent.id);
+  await mirrorRowById("payments.reversed", db, "payment_intents", intent.id);
   const cancelled = await cancelOrderBySystem(db, intent.order_id, "mercadopago");
   return { ok: true, value: cancelled ? { kind: "order_cancelled" } : { kind: "no_change" } };
 }

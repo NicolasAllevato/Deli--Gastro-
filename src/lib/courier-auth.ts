@@ -5,6 +5,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
 import type { CourierAuth } from "@/lib/courier-pins";
+import { mirrorAuthUser } from "@/lib/d1-mirror";
 
 /** Dominio de los emails internos de los repartidores: nunca se les manda correo, entran con PIN. */
 const COURIER_EMAIL_DOMAIN = "repartidores.dely.opsyn.app";
@@ -35,14 +36,17 @@ export function courierAuth(): CourierAuth {
         console.error("[couriers] alta en Auth", error?.message);
         return { error: "No se pudo crear el usuario del repartidor." };
       }
+      // D1 (modo dual): el usuario antes que el repartidor (FK couriers → "user").
+      await mirrorAuthUser("couriers.auth-user", data.user);
       return { id: data.user.id };
     },
     async setBlocked(userId, blocked) {
-      const { error } = await admin.auth.admin.updateUserById(userId, { ban_duration: blocked ? BLOCKED_FOR : "none" });
+      const { data, error } = await admin.auth.admin.updateUserById(userId, { ban_duration: blocked ? BLOCKED_FOR : "none" });
       if (error) {
         console.error("[couriers] bloqueo en Auth", error.message);
         return "No se pudo actualizar el acceso del repartidor.";
       }
+      if (data.user) await mirrorAuthUser("couriers.auth-block", data.user);
       return null;
     },
   };

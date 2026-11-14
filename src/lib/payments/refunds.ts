@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { PaymentGateway } from "./gateway.ts";
+import { mirrorRowById } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -30,9 +31,11 @@ export async function refundPaymentForOrder(db: Db, gateway: PaymentGateway | nu
   } catch (e: unknown) {
     const error = e instanceof Error ? e.message : "No se pudo reembolsar.";
     await db.from("payment_intents").update({ refund_error: error }).eq("id", intent.id);
+    await mirrorRowById("refunds.error", db, "payment_intents", intent.id);
     return { refunded: false, error };
   }
 
   await db.from("payment_intents").update({ status: "refunded", refund_error: null }).eq("id", intent.id);
+  await mirrorRowById("refunds.done", db, "payment_intents", intent.id);
   return { refunded: true };
 }

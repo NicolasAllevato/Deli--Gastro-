@@ -2,6 +2,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import type { OrderChannel, OrderStatus } from "@/types/database";
 import { pointsForTotal, tierForPoints, type TierRule } from "@/lib/orders";
 import { REFUND_PREFIX } from "@/lib/rewards";
+import { mirrorRowById, mirrorTableRows } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -190,16 +191,22 @@ export async function applyPointsDelta(
   const config = await readConfig(db);
   const nextTotal = Math.max(0, client.total_points + delta);
 
-  await db.from("points_ledger").insert({
-    client_id: clientId,
-    order_id: orderId,
-    delta,
-    description,
-  });
+  const { data: ledgerRows } = await db
+    .from("points_ledger")
+    .insert({
+      client_id: clientId,
+      order_id: orderId,
+      delta,
+      description,
+    })
+    .select();
   await db
     .from("clients")
     .update({ total_points: nextTotal, tier: tierForPoints(nextTotal, tiersFromConfig(config)) })
     .eq("id", clientId);
+  // D1 (modo dual): primero el asiento y después el cliente con el saldo absoluto de Supabase.
+  await mirrorTableRows("points.ledger", "points_ledger", ledgerRows ?? []);
+  await mirrorRowById("points.client", db, "clients", clientId);
 
   return nextTotal;
 }
