@@ -4,14 +4,16 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { startCourierSession } from "@/lib/courier-auth";
-import { findCourierByPin, pinSchema } from "@/lib/courier-pins";
+import { findCourierByPin, loginPinSchema } from "@/lib/courier-pins";
 
-// Ingreso del repartidor solo con su PIN de 4 dígitos.
-// Son 10.000 combinaciones: los límites cortan la prueba de PIN por fuerza bruta.
+// Ingreso del repartidor solo con su PIN de 6 dígitos (o de 4, durante la transición).
+// Los límites cortan la prueba de PIN por fuerza bruta: por IP, por dispositivo y global.
 const PER_IP = { max: 5, windowMs: 15 * 60_000 };
+const PER_DEVICE = { max: 5, windowMs: 15 * 60_000 };
 const GLOBAL = { max: 60, windowMs: 15 * 60_000 };
 
-const bodySchema = z.object({ pin: pinSchema });
+const bodySchema = z.object({ pin: loginPinSchema });
+const deviceSchema = z.string().uuid();
 
 export async function POST(req: NextRequest) {
   const crossOrigin = rejectCrossOrigin(req);
@@ -22,10 +24,12 @@ export async function POST(req: NextRequest) {
     { status: 429 },
   );
   if (!(await rateLimit(`courier-pin:${getClientIp(req)}`, PER_IP.max, PER_IP.windowMs))) return tooMany;
+  const device = deviceSchema.safeParse(req.headers.get("x-device-id"));
+  if (device.success && !(await rateLimit(`courier-pin:dev:${device.data}`, PER_DEVICE.max, PER_DEVICE.windowMs))) return tooMany;
   if (!(await rateLimit("courier-pin:global", GLOBAL.max, GLOBAL.windowMs))) return tooMany;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "El PIN tiene que tener 4 números." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "El PIN tiene que tener 6 números." }, { status: 400 });
 
   try {
     const courier = await findCourierByPin(createAdminClient(), parsed.data.pin);

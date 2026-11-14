@@ -34,7 +34,7 @@ export type TableName =
 
 export type Tables = Record<TableName, Row[]>;
 
-/** El repartidor de ejemplo, dado de alta con su PIN (1234) como si lo hubiera cargado el admin. */
+/** El repartidor de ejemplo, dado de alta con su PIN (123456) como si lo hubiera cargado el admin. */
 function demoCouriers(): Row[] {
   const courier = DEMO_ACCOUNTS.find((a) => a.role === "repartidor");
   if (!courier) return [];

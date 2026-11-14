@@ -8,19 +8,39 @@ import { mirrorCourier } from "@/lib/d1-mirror";
 type Db = ReturnType<typeof createAdminClient>;
 
 /**
- * Repartidores con ingreso por PIN de 4 dígitos (migración 020).
+ * Repartidores con ingreso por PIN de 6 dígitos (antes 4; migración 020).
  * El PIN identifica al repartidor, así que es único. Se guarda solo su HMAC con una clave del
  * servidor: sin la clave, la tabla no alcanza para probar los 10.000 PIN posibles.
  */
 
-export const PIN_LENGTH = 4;
-export const pinSchema = z.string().regex(/^\d{4}$/, "El PIN tiene que tener 4 números.");
+/**
+ * PIN de 6 dígitos (decisión del usuario, 2026-11). Los de 4 que ya existen siguen
+ * entrando hasta que el admin los resetee o hasta LEGACY_PIN_UNTIL, lo que pase primero.
+ */
+export const PIN_LENGTH = 6;
+export const LEGACY_PIN_LENGTH = 4;
+/** PIN nuevos (alta y reseteo): siempre 6 números. */
+export const pinSchema = z.string().regex(/^\d{6}$/, "El PIN tiene que tener 6 números.");
+/** Ingreso durante la transición: 6 números, o 4 si todavía no venció el plazo. */
+export const loginPinSchema = z.string().regex(/^(\d{6}|\d{4})$/, "El PIN tiene que tener 6 números.");
+
+/** Hasta cuándo se aceptan PIN de 4 dígitos (medianoche argentina del 1/1/2027). Se puede adelantar con COURIER_PIN4_UNTIL. */
+export const LEGACY_PIN_UNTIL_DEFAULT = "2027-01-01T03:00:00.000Z";
+
+export function legacyPinAllowed(now: Date = new Date(), env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = cleanEnv(env.COURIER_PIN4_UNTIL);
+  const until = new Date(raw || LEGACY_PIN_UNTIL_DEFAULT);
+  const deadline = Number.isNaN(until.getTime()) ? new Date(LEGACY_PIN_UNTIL_DEFAULT) : until;
+  return now.getTime() < Math.min(deadline.getTime(), new Date(LEGACY_PIN_UNTIL_DEFAULT).getTime());
+}
 export const courierNameSchema = z.string().trim().min(2, "Poné el nombre del repartidor.").max(60);
 
 export interface Courier {
   userId: string;
   name: string;
   active: boolean;
+  /** Dígitos del PIN actual si hay copia cifrada (4 = viejo, hay que resetearlo); null si no se sabe. */
+  pinDigits?: 4 | 6 | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +57,7 @@ export type CourierResult = { ok: true; courier: Courier; pin: string } | { ok: 
 
 /** Clave fija del modo demo (sin service role). El repartidor de ejemplo entra con DEMO_COURIER_PIN. */
 export const DEMO_PIN_SECRET = "demo-courier-pin";
-export const DEMO_COURIER_PIN = "1234";
+export const DEMO_COURIER_PIN = "123456";
 
 const PIN_TAKEN = "Ese PIN ya lo usa otro repartidor. Elegí otro o generá uno.";
 
@@ -82,10 +102,21 @@ const toCourier = (r: CourierRow): Courier => ({
 
 const COLUMNS = "user_id, name, active, created_at, updated_at";
 
+/**
+ * Lista para el admin. `pinDigits` sale de descifrar la copia del PIN (nunca se devuelve el PIN):
+ * así el panel marca los de 4 dígitos para resetear.
+ */
 export async function listCouriers(db: Db): Promise<Courier[]> {
-  const { data, error } = await db.from("couriers").select(COLUMNS).order("name", { ascending: true });
+  const { data, error } = await db.from("couriers").select(`${COLUMNS}, pin_encrypted`).order("name", { ascending: true });
   if (error) throw new Error(`No se pudieron leer los repartidores: ${error.message}`);
-  return ((data ?? []) as CourierRow[]).map(toCourier);
+  const key = pinKeyB64();
+  return Promise.all(
+    ((data ?? []) as Array<CourierRow & { pin_encrypted: string | null }>).map(async (r) => {
+      const pin = key && r.pin_encrypted ? await decryptPin(r.pin_encrypted, r.user_id, key) : null;
+      const digits = pin?.length === PIN_LENGTH ? 6 : pin?.length === LEGACY_PIN_LENGTH ? 4 : null;
+      return { ...toCourier(r), pinDigits: digits };
+    }),
+  );
 }
 
 /** Todos los hashes con que puede estar guardado un PIN: el de la clave actual y los de claves anteriores. */
@@ -194,7 +225,10 @@ export async function setCourierActive(
  * Repartidor activo con ese PIN, o null. Si el PIN estaba guardado con una clave anterior,
  * se re-hashea con la actual (solo si nadie lo cambió en el medio).
  */
-export async function findCourierByPin(db: Db, pin: string): Promise<Courier | null> {
+export async function findCourierByPin(db: Db, pin: string, now: Date = new Date()): Promise<Courier | null> {
+  // PIN de 4 dígitos: solo durante la transición.
+  if (pin.length === LEGACY_PIN_LENGTH && !legacyPinAllowed(now)) return null;
+  if (!loginPinSchema.safeParse(pin).success) return null;
   const current = hashPin(pin);
   for (const candidate of pinHashes(pin)) {
     const { data, error } = await db

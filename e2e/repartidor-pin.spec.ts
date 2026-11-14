@@ -12,15 +12,15 @@ test.describe("repartidores con PIN", () => {
       await expect(admin.page.getByRole("listitem").filter({ hasText: "Diego Rojas" })).toBeVisible({ timeout: COLD_ROUTE_TIMEOUT_MS });
 
       await admin.page.getByLabel("Nombre").fill("Prueba E2E");
-      await admin.page.getByLabel("PIN (opcional)").fill("5678");
+      await admin.page.getByLabel("PIN (opcional)").fill("567890");
       await admin.page.getByRole("button", { name: "Dar de alta" }).click();
 
-      await expect(admin.page.getByRole("status").filter({ hasText: "Prueba E2E" })).toContainText("5678", { timeout: COLD_ROUTE_TIMEOUT_MS });
+      await expect(admin.page.getByRole("status").filter({ hasText: "Prueba E2E" })).toContainText("567890", { timeout: COLD_ROUTE_TIMEOUT_MS });
       await expect(admin.page.getByRole("listitem").filter({ hasText: "Prueba E2E" })).toContainText("Activo");
 
       // El mismo PIN no se puede repetir.
       await admin.page.getByLabel("Nombre").fill("Otro");
-      await admin.page.getByLabel("PIN (opcional)").fill("5678");
+      await admin.page.getByLabel("PIN (opcional)").fill("567890");
       await admin.page.getByRole("button", { name: "Dar de alta" }).click();
       await expect(admin.page.getByText("Ese PIN ya lo usa otro repartidor")).toBeVisible();
     } finally {
@@ -37,10 +37,10 @@ test.describe("repartidores con PIN", () => {
       await expect(page.getByRole("tab", { name: "Repartidor" })).toHaveAttribute("aria-selected", "true");
 
       const pin = page.getByLabel("PIN de repartidor");
-      await pin.fill("0000");
+      await pin.fill("000000");
       await expect(page.getByText("PIN incorrecto.")).toBeVisible({ timeout: COLD_ROUTE_TIMEOUT_MS });
 
-      await pin.fill("1234");
+      await pin.fill("123456");
       await expect(page).toHaveURL(/\/(repartidor|aceptar-terminos)/, { timeout: COLD_ROUTE_TIMEOUT_MS });
       if (page.url().includes("aceptar-terminos")) {
         // Espera a que cargue el estado (en la demo puede venir ya aceptado de otro test).

@@ -87,10 +87,19 @@ v1.0, versionCode 1, firmada con esquema v2, en `public/descargas/`), gateway Fu
    `FUDO_INTEGRATOR_TOKEN`, `FUDO_GATEWAY_SECRET`, `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`. La
    pantalla de mapeo `/admin/fudo` ya está en producción. Cargar `FUDO_GATEWAY_URL`/`FUDO_GATEWAY_SECRET`
    en Vercel **al final**, porque desde ahí cada pedido intenta sincronizar.
-5. **PIN de repartidores:** son 4 dígitos con tope de 5 intentos por IP y 60 globales cada 15 min.
-   Decidir: 6 dígitos, o PIN más identificador, o atar el PIN a dispositivos. Definir
-   `COURIER_PIN_SECRET` propio obliga a regenerar todos los PIN, y rotar `SUPABASE_SERVICE_ROLE_KEY`
-   sin definirlo también los invalida (hoy el hash cae a esa clave).
+5. **PIN de repartidores: 6 dígitos (decidido por el usuario, 2026-11-13).**
+   - Alta, reseteo y validaciones exigen y generan 6 dígitos. La APK usa la misma pantalla web.
+   - **Transición:** los PIN de 4 que ya existen siguen entrando hasta que el admin los resetee, como
+     máximo hasta el **1/1/2027 00:00 (hora AR)**. `COURIER_PIN4_UNTIL` (ISO) adelanta ese plazo, nunca lo
+     extiende. El panel `/admin/repartidores` los marca con "PIN de 4 dígitos, resetear". Para saberlo
+     descifra la copia del PIN, así que los repartidores sin copia cifrada (anteriores a la 030) no se marcan:
+     conviene resetearlos igual. El reseteo genera uno de 6, cifrado y visible como antes.
+   - **Límite de intentos:** 5 por IP, 5 por dispositivo (id aleatorio del navegador, header `x-device-id`)
+     y 60 globales cada 15 min.
+   - **Clave del hash:** con `COURIER_PIN_SECRET` propio, los hashes hechos con `SUPABASE_SERVICE_ROLE_KEY`
+     migran solos en el próximo ingreso (PR #71). **Antes del corte a D1:** cargar `COURIER_PIN_SECRET` como
+     Worker secret, esperar a que todos entren o se reseteen, y después quitar el fallback a la service role.
+   - **Acción para el admin:** resetear el PIN de cada repartidor antes del 1/1/2027 y pasárselo.
 6. **Meta / bot de WhatsApp (al final):** webhook de Meta a `bot-dely.opsyn.app/webhook`, fase 5
    (tomador de pedidos), publicar la app, número real con coexistencia, rotar los secretos que
    pasaron por el chat (`deli_bot`, Meta, Cloudflare) y las claves de Supabase de `datos.txt`.
