@@ -48,6 +48,8 @@ export function createAuth(env: AuthEnv) {
     user: {
       additionalFields: {
         role: { type: "string", required: false, defaultValue: "cliente", input: false },
+        // Copiado de Supabase Auth (scripts/copiar-usuarios-d1.mjs); el usuario no lo escribe por la API.
+        phone: { type: "string", required: false, input: false },
       },
     },
     session: {

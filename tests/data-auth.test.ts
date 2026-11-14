@@ -86,6 +86,22 @@ describe("Better Auth sobre D1", () => {
     assert.equal(statuses.at(-1), 429);
   });
 
+  it("sign-up con el email de un admin copiado: respuesta indistinguible, sin cuenta y sin tocar el rol", async () => {
+    const { db, auth } = setup();
+    // Usuario copiado de Supabase Auth (scripts/copiar-usuarios-d1.mjs): fila en "user", sin cuenta con contraseña.
+    db.raw.prepare(`INSERT INTO "user" (id, email, role, emailVerified, createdAt, updatedAt) VALUES ('u-adm', 'admin@x.test', 'admin', 1, 'x', 'x')`).run();
+    const existente = await post(auth, "/sign-up/email", { email: "admin@x.test", password: "clave-segura-123", name: "Intruso" }, "4.4.4.4");
+    const nuevo = await post(auth, "/sign-up/email", { email: "otro@x.test", password: "clave-segura-123", name: "Intruso" }, "5.5.5.5");
+    assert.equal(existente.status, nuevo.status, "mismo código: no revela si el email existe");
+    const shape = (j: { user?: Record<string, unknown> }) => Object.keys(j.user ?? {}).sort();
+    assert.deepEqual(shape(await existente.json()), shape(await nuevo.json()));
+    const cuentas = db.raw.prepare(`SELECT count(*) n FROM "account" WHERE userId = 'u-adm'`).get() as { n: number };
+    assert.equal(cuentas.n, 0, "no se crea ni se vincula una contraseña sobre el usuario copiado");
+    const adm = db.raw.prepare(`SELECT role, name FROM "user" WHERE id = 'u-adm'`).get() as { role: string; name: string };
+    assert.equal(adm.role, "admin");
+    assert.notEqual(adm.name, "Intruso");
+  });
+
   it("rechaza orígenes no confiables (CSRF)", async () => {
     const { auth } = setup();
     const res = await auth.handler(
