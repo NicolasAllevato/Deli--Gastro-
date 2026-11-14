@@ -1,3 +1,5 @@
+import { hasComboWord, isAdditionalPromo, stripPromoMarks } from "../../../src/lib/promo-names.ts";
+
 /**
  * Líneas legibles de una venta de Fudo. Sin I/O.
  *
@@ -7,10 +9,11 @@
  *  - ítems a precio 0 de la categoría "Opciones" (gustos de empanada) y "Opcional Genérico" a precio 0 (nombre en el
  *    comentario, p. ej. "Pizza muzzarella (8 porciones)"): son productos que vinieron DENTRO del ítem anterior.
  *
- * Qué es un combo (`is_combo`):
+ * Qué es un combo (`is_combo`), ver src/lib/promo-names.ts:
  *  - un "Producto Genérico" que terminó con opciones colgadas, o
- *  - un producto cuya categoría en Fudo tiene "combo" o "promo" en el nombre (sin tildes ni mayúsculas).
- * Los informes además tratan como combo a los productos de la app con categoría combo/promo (ver product-sales.ts).
+ *  - un producto cuyo nombre o categoría en Fudo tiene "combo" o "promo" y se vendió a precio > $0.
+ * Lo que tiene "combo"/"promo" a $0 es un COMPONENTE ("EMPANADA CARNE PROMO LIBRE"): línea normal a $0, con el
+ * nombre limpio y, si hay un único candidato, el producto real ("Empanada de carne"). "(Adicional Promo)" es normal.
  *
  * Los gustos se normalizan con el producto real del catálogo cuando hay un único candidato claro
  * ("Carne" → "Empanada de carne"); si no, queda el nombre de Fudo. Siempre se conserva el id de Fudo y el comentario.
@@ -69,12 +72,8 @@ const PRODUCT_GENERIC = "producto generico";
 const OPTIONAL_GENERIC = "opcional generico";
 const OPTION_CATEGORY_NAMES: readonly string[] = ["opciones"];
 
-/** Categoría de combos: el nombre contiene "combo" o "promo" (Combos, Promociones, Promos del día…). */
-export function isComboCategoryName(name: string | null | undefined): boolean {
-  if (!name) return false;
-  const n = normalizeName(name);
-  return n.includes("combo") || n.includes("promo");
-}
+/** Categoría de combos: el nombre contiene "combo" o "promo" (Combos, Promos, Promociones…). */
+export const isComboCategoryName = (name: string | null | undefined): boolean => hasComboWord(name);
 
 export function isGenericName(name: string | null | undefined): boolean {
   if (!name) return false;
@@ -104,22 +103,26 @@ const STOPWORDS = new Set(["de", "del", "y", "con", "la", "el", "los", "las", "a
 const tokens = (name: string): Set<string> => new Set(normalizeName(name).split(/[^a-z0-9]+/).filter((t) => t && !STOPWORDS.has(t)));
 
 /**
- * Producto real de un gusto: un producto del catálogo (fuera de Opciones, genéricos y combos) que tiene todas las
- * palabras del gusto más UNA sola palabra extra ("Carne" → "Empanada de carne"; "Cebolla y queso" → "Empanada de
- * queso y cebolla"). Si hay cero o más de un candidato, no se adivina: `null`.
+ * Producto real de un gusto o componente: un producto del catálogo (fuera de Opciones, genéricos, combos y nombres con
+ * combo/promo) con las mismas palabras o con todas más UNA extra ("Carne" → "Empanada de carne"; "EMPANADA CARNE" →
+ * "Empanada de carne"; "Cebolla y queso" → "Empanada de queso y cebolla"). Gana el único igual; si no hay, el único
+ * con una palabra extra. Cero o varios candidatos: `null` (no se adivina).
  */
 export function resolveOptionProduct(optionName: string, catalog: FudoCatalogIndex): { id: number; name: string } | null {
   const want = tokens(optionName);
   if (want.size === 0) return null;
-  const found: Array<{ id: number; name: string }> = [];
+  const exact: Array<{ id: number; name: string }> = [];
+  const plusOne: Array<{ id: number; name: string }> = [];
   for (const [id, e] of catalog.products) {
-    if (isGenericName(e.name)) continue;
+    if (isGenericName(e.name) || hasComboWord(e.name)) continue;
     if (e.categoryId != null && (catalog.optionCategoryIds.has(e.categoryId) || catalog.comboCategoryIds.has(e.categoryId))) continue;
     const have = tokens(e.name);
-    if (have.size !== want.size + 1) continue;
-    if ([...want].every((t) => have.has(t))) found.push({ id, name: e.name });
+    if (![...want].every((t) => have.has(t))) continue;
+    if (have.size === want.size) exact.push({ id, name: e.name });
+    else if (have.size === want.size + 1) plusOne.push({ id, name: e.name });
   }
-  return found.length === 1 ? found[0]! : null;
+  if (exact.length) return exact.length === 1 ? exact[0]! : null;
+  return plusOne.length === 1 ? plusOne[0]! : null;
 }
 
 function entryOf(item: SaleLineItem, catalog: FudoCatalogIndex): CatalogEntry | undefined {
@@ -180,15 +183,22 @@ export function buildSaleLines(
     }
     const generic = isGenericName(entry?.name);
     const product = item.productId === null || generic ? undefined : mapped.get(item.productId);
+    const name = lineName(item, product, entry);
+    const comboCategory = entry?.categoryId != null && catalog.comboCategoryIds.has(entry.categoryId);
+    const promoMarked = !generic && !isAdditionalPromo(name) && (hasComboWord(name) || hasComboWord(entry?.name) || comboCategory);
+    // Componente de promo a $0: producto normal con el nombre limpio y, si se puede, el producto real.
+    const real = promoMarked && item.price === 0 ? resolveOptionProduct(stripPromoMarks(entry?.name ?? name), catalog) : null;
+    const realApp = real ? mapped.get(real.id) : undefined;
     const line: OrderLineInsert = {
-      product_id: product?.id ?? null,
-      name: lineName(item, product, entry),
+      product_id: realApp?.id ?? product?.id ?? null,
+      name: promoMarked && item.price === 0 ? realApp?.name ?? real?.name ?? stripPromoMarks(name) : name,
       qty: item.quantity,
       unit_price: item.price,
+      // Se conserva el id de Fudo vendido; en los informes se suma al producto real por product_id o por nombre.
       fudo_product_id: item.productId,
       fudo_comment: item.comment ? item.comment.slice(0, COMMENT_MAX) : null,
       fudo_options: null,
-      is_combo: entry?.categoryId != null && catalog.comboCategoryIds.has(entry.categoryId),
+      is_combo: promoMarked && item.price > 0,
     };
     if (generic && normalizeName(entry!.name) === PRODUCT_GENERIC) genericLine.add(line);
     lines.push(line);

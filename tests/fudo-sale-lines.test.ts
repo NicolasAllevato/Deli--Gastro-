@@ -138,7 +138,7 @@ describe("líneas legibles de ventas de Fudo (venta 46635)", () => {
     const sales = productSales(
       [{ ...ORDER_BASE, items_desc: "1x La previa (Gde Muzza + 2 latas cerveza) · 2x Muzzarella" }],
       NOV,
-      new Map([["Muzzarella", 9000]]),
+      new Map([["Muzzarella", 9000], ["La previa (Gde Muzza + 2 latas cerveza)", 15000]]),
       10,
       rules,
     );
@@ -221,6 +221,65 @@ describe("líneas legibles de ventas de Fudo (venta 46635)", () => {
     assert.ok(back.optionCategoryIds.has(9));
     assert.ok(back.comboCategoryIds.has(11));
     assert.equal(catalogFromCache("basura"), null);
+  });
+});
+
+describe("regla de combos y promos (nombre o categoría con combo/promo y precio > 0)", () => {
+  const PROMOS = buildCatalogIndex(
+    parseFudoProducts({
+      data: [
+        prod(400, "La Rabona (Gde Muzza + 6 empanadas)", 20, 32000),
+        prod(401, "COMBO PIZZAS X 2", 21, 28000),
+        prod(402, "EMPANADA CARNE PROMO LIBRE", 20, 0),
+        prod(403, "Michelob Promo ($0)", 20, 0),
+        prod(404, "Jugo De Naranja (Adicional Promo)", 22, 2500),
+        prod(201, "Empanada de carne", 3, 1900),
+        prod(202, "Empanada de carne picante", 3, 1900),
+      ],
+    }),
+    parseFudoCategories({ data: [cat(20, "Promos"), cat(21, "Platos Principales"), cat(22, "Cafetería"), cat(3, "Empanadas")] }),
+  );
+  const line = (productId: number, price: number, qty = 1) =>
+    buildSaleLines([parseFudoItem(item(1, productId, price, null, qty))!], new Map([[201, { id: "u-emp-carne", name: "Empanada de Carne" }]]), PROMOS)[0]!;
+
+  it("'COMBO PIZZAS X 2' a precio > 0 es combo aunque su categoría no sea de promos", () => {
+    assert.equal(line(401, 28000).is_combo, true);
+  });
+
+  it("'La Rabona…' en la categoría Promos es combo", () => {
+    const l = line(400, 32000);
+    assert.equal(l.is_combo, true);
+    assert.equal(l.name, "La Rabona (Gde Muzza + 6 empanadas)");
+  });
+
+  it("'EMPANADA CARNE PROMO LIBRE' a $0 es el producto Empanada de carne, no combo", () => {
+    const l = line(402, 0, 2);
+    assert.deepEqual([l.is_combo, l.name, l.product_id, l.fudo_product_id], [false, "Empanada de Carne", "u-emp-carne", 402]);
+    const sales = productSales([{ ...ORDER_BASE, items_desc: "", order_items: [l] }], NOV, new Map(), 10);
+    assert.deepEqual(sales, { combos: [], products: [{ name: "Empanada de Carne", units: 2, revenue: 0 }] });
+  });
+
+  it("'Michelob Promo ($0)' es producto (nombre limpio), no combo", () => {
+    const l = line(403, 0);
+    assert.deepEqual([l.is_combo, l.name], [false, "Michelob"]);
+  });
+
+  it("'(Adicional Promo)' es un producto normal con su monto", () => {
+    const l = line(404, 2500);
+    assert.equal(l.is_combo, false);
+    const sales = productSales([{ ...ORDER_BASE, items_desc: "", order_items: [l] }], NOV, new Map(), 10);
+    assert.deepEqual(sales.products, [{ name: "Jugo De Naranja (Adicional Promo)", units: 1, revenue: 2500 }]);
+  });
+
+  it("en los informes, una promo de la app a $0 en el texto es componente con el nombre limpio", () => {
+    const sales = productSales(
+      [{ ...ORDER_BASE, items_desc: "1x COMBO PIZZAS X 2 · 2x EMPANADA CARNE PROMO LIBRE" }],
+      NOV,
+      new Map([["COMBO PIZZAS X 2", 28000]]),
+      10,
+    );
+    assert.deepEqual(sales.combos, [{ name: "COMBO PIZZAS X 2", units: 1, revenue: 28000 }]);
+    assert.deepEqual(sales.products, [{ name: "EMPANADA CARNE", units: 2, revenue: 0 }]);
   });
 });
 

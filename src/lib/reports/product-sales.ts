@@ -1,4 +1,5 @@
 import { parseItems } from "../orders.ts";
+import { hasComboWord, isAdditionalPromo, stripPromoMarks } from "../promo-names.ts";
 import { inBounds, type Bounds } from "./range.ts";
 
 /**
@@ -9,10 +10,14 @@ import { inBounds, type Bounds } from "./range.ts";
  *    (cantidad del gusto × cantidad del combo) pero $0, porque el precio ya está en el combo: así el ranking por
  *    unidades los cuenta y la facturación no se duplica.
  *
- * Qué es un combo (cualquiera de estas):
- *  - la línea tiene `is_combo` (lo marca el sync de Fudo: genérico con opciones o categoría combo/promo en Fudo);
- *  - la línea trae productos dentro (opciones);
- *  - el producto de la app es de una categoría con "combo" o "promo" en el nombre (`ComboRules`).
+ * Qué es un combo (cualquiera de estas; reglas en src/lib/promo-names.ts):
+ *  - la línea tiene `is_combo` (lo marca el sync de Fudo);
+ *  - la línea trae productos dentro (genérico de Fudo con gustos);
+ *  - el nombre del producto, o el nombre/categoría del producto de la app (`ComboRules`), tiene "combo" o "promo"
+ *    Y la línea se vendió a precio > $0.
+ * Con "combo"/"promo" pero a $0 es un COMPONENTE: va a Productos a $0 con el nombre sin las marcas de promo
+ * ("EMPANADA CARNE PROMO LIBRE" → "EMPANADA CARNE"; el sync de Fudo ya lo resuelve al producto real).
+ * "(Adicional Promo)" es un producto normal.
  *
  * Agrupación: por `product_id` si existe; si no, por id de Fudo + nombre; si no, por nombre. Para mostrar, las
  * claves con el mismo nombre se juntan (un pedido viejo sin líneas y uno nuevo con product_id).
@@ -44,7 +49,7 @@ export interface SalesOrder {
 }
 
 export interface ComboRules {
-  /** Productos de la app cuya categoría es de combos/promos. */
+  /** Productos de la app con "combo"/"promo" en el nombre o en la categoría (el precio se mira en cada venta). */
   comboProductIds: ReadonlySet<string>;
   /** Los mismos, por nombre normalizado (para pedidos viejos que solo tienen `items_desc`). */
   comboNames: ReadonlySet<string>;
@@ -67,16 +72,12 @@ export interface ProductSales {
 export const normalizeProductName = (s: string): string =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
-/** Categoría de combos: el nombre contiene "combo" o "promo" (Combos, Promociones, Promos del día…). */
-export function isComboCategory(name: string | null | undefined): boolean {
-  if (!name) return false;
-  const n = normalizeProductName(name);
-  return n.includes("combo") || n.includes("promo");
-}
+/** Categoría de combos: el nombre contiene "combo" o "promo" (Combos, Promos, Promociones…). */
+export const isComboCategory = (name: string | null | undefined): boolean => hasComboWord(name);
 
 /** Reglas de combos a partir de los productos de la app con el nombre de su categoría. */
 export function buildComboRules(products: ReadonlyArray<{ id: string; name: string; category: string | null }>): ComboRules {
-  const combos = products.filter((p) => isComboCategory(p.category));
+  const combos = products.filter((p) => !isAdditionalPromo(p.name) && (hasComboWord(p.name) || isComboCategory(p.category)));
   return { comboProductIds: new Set(combos.map((p) => p.id)), comboNames: new Set(combos.map((p) => normalizeProductName(p.name))) };
 }
 
@@ -97,29 +98,35 @@ interface NormalLine {
   options: SalesOption[];
 }
 
-function linesOf(o: SalesOrder, rules: ComboRules): NormalLine[] {
+function promoMarked(line: { product_id?: string | null; name: string }, rules: ComboRules): boolean {
+  if (isAdditionalPromo(line.name)) return false;
+  return hasComboWord(line.name) || (!!line.product_id && rules.comboProductIds.has(line.product_id)) || rules.comboNames.has(normalizeProductName(line.name));
+}
+
+function classify(
+  base: { product_id?: string | null; fudo_product_id?: number | null; name: string; qty: number },
+  unitPrice: number | null,
+  explicitCombo: boolean,
+  options: SalesOption[],
+  rules: ComboRules,
+  priceByName: ReadonlyMap<string, number>,
+): NormalLine {
+  const price = unitPrice ?? priceByName.get(base.name) ?? 0;
+  const marked = promoMarked(base, rules);
+  const combo = explicitCombo || options.length > 0 || (marked && price > 0);
+  // Componente de promo a $0: se cuenta como producto con el nombre limpio.
+  const name = !combo && marked && price === 0 ? stripPromoMarks(base.name) : base.name;
+  return { key: productSalesKey({ ...base, name }), name, qty: base.qty, unitPrice, combo, options };
+}
+
+function linesOf(o: SalesOrder, rules: ComboRules, priceByName: ReadonlyMap<string, number>): NormalLine[] {
   if (o.order_items?.length) {
     return o.order_items.map((l) => {
-      const options = [...(l.fudo_options ?? [])];
       const price = l.unit_price == null ? null : Number(l.unit_price);
-      return {
-        key: productSalesKey(l),
-        name: l.name,
-        qty: l.qty,
-        unitPrice: Number.isFinite(price) ? price : null,
-        combo: l.is_combo === true || options.length > 0 || (!!l.product_id && rules.comboProductIds.has(l.product_id)) || rules.comboNames.has(normalizeProductName(l.name)),
-        options,
-      };
+      return classify(l, Number.isFinite(price) ? price : null, l.is_combo === true, [...(l.fudo_options ?? [])], rules, priceByName);
     });
   }
-  return parseItems(o.items_desc).map((l) => ({
-    key: productSalesKey(l),
-    name: l.name,
-    qty: l.qty,
-    unitPrice: null,
-    combo: (l.options?.length ?? 0) > 0 || rules.comboNames.has(normalizeProductName(l.name)),
-    options: l.options ?? [],
-  }));
+  return parseItems(o.items_desc).map((l) => classify({ product_id: null, name: l.name, qty: l.qty }, null, false, l.options ?? [], rules, priceByName));
 }
 
 type Acc = Map<string, { name: string; units: number; revenue: number }>;
@@ -153,7 +160,7 @@ export function productSales(
   const products: Acc = new Map();
   for (const o of orders) {
     if (o.status === "Cancelado" || !inBounds(o.created_at, bounds)) continue;
-    for (const line of linesOf(o, rules)) {
+    for (const line of linesOf(o, rules, priceByName)) {
       const revenue = line.qty * (line.unitPrice ?? priceByName.get(line.name) ?? 0);
       if (line.combo) add(combos, line.key, line.name, line.qty, revenue);
       else add(products, line.key, line.name, line.qty, revenue);
