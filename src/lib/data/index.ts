@@ -25,6 +25,7 @@ import * as restricted from "./restricted.ts";
 import * as mirror from "./mirror.ts";
 
 export { anon, systemActor, actorFromSession, ForbiddenError, type Actor } from "./actor.ts";
+export { type SupabaseAuthUser, authUserRow } from "./mirror.ts";
 export { shadowRead, dualWrite, mirrorToD1, type DiffLogger, type ShadowDiff } from "./shadow.ts";
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
@@ -113,6 +114,8 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       shift: bind(mirror.mirrorShiftRow, db, actor),
       location: bind(mirror.mirrorLocationRow, db, actor),
       locationDelete: bind(mirror.mirrorLocationDelete, db, actor),
+      rows: bind(mirror.mirrorRows, db, actor),
+      authUsers: bind(mirror.mirrorAuthUsers, db, actor),
     },
   };
 }

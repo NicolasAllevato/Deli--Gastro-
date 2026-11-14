@@ -102,7 +102,7 @@ export async function mirrorLocationDelete(db: SqlDatabase, actor: Actor, userId
 }
 
 /**
- * Tablas que escriben los Workers (fudo-gateway, whatsapp-bot) y su forma en D1.
+ * Tablas que se copian a D1 desde Supabase (Workers fudo-gateway y whatsapp-bot, y la app) y su forma en D1.
  * `cols`: columnas permitidas con su nombre en Supabase; `money`: pesos → centavos;
  * `key`: columna(s) de conflicto. Lo que no esté acá no se copia.
  */
@@ -142,6 +142,15 @@ export const WORKER_TABLES: Record<string, TableSpec> = {
     cols: ["id", "client_phone", "client_id", "contact_name", "state", "human_takeover", "last_inbound_at", "created_at", "updated_at", "bot_paused_until"],
   },
   wa_messages: { key: ["id"], cols: ["id", "conversation_id", "wamid", "direction", "type", "body", "status", "tokens", "created_at"] },
+  // Tanda 3 (escritas por la app): pagos de Mercado Pago y movimientos de puntos.
+  payment_intents: {
+    key: ["id"],
+    cols: ["id", "client_id", "channel", "status", "total", "snapshot", "mp_preference_id", "checkout_url", "mp_payment_id", "order_id", "expires_at", "refund_error", "created_at", "updated_at"],
+    money: { total: "total_cents" },
+  },
+  // El trigger de D1 suma `delta` a clients.total_points al insertar; después se copia el cliente con su saldo
+  // absoluto de Supabase, que es el que vale. Re-copiar un asiento es un UPDATE (no vuelve a sumar).
+  points_ledger: { key: ["id"], cols: ["id", "client_id", "order_id", "delta", "description", "created_at"] },
 };
 
 /**
@@ -170,4 +179,56 @@ export async function mirrorRows(db: SqlDatabase, actor: Actor, table: string, r
     return upsertStatement(db, table, spec.key, cols, values);
   });
   await db.batch(statements);
+}
+
+/** Lo que se usa de un usuario de Supabase Auth (Admin API / getUser). */
+export interface SupabaseAuthUser {
+  id: string;
+  email?: string | null;
+  email_confirmed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  banned_until?: string | null;
+  app_metadata?: Record<string, unknown> | null;
+  user_metadata?: Record<string, unknown> | null;
+}
+
+const ROLES = new Set(["admin", "cliente", "repartidor"]);
+
+/**
+ * Usuario de Supabase Auth → tabla "user" de Better Auth (para el corte, D2/D3).
+ * El rol sale SOLO de app_metadata (lo escribe el servidor; G18); si no es uno de los tres,
+ * queda "cliente". No se copia ninguna contraseña: cada usuario la define al entrar (D3).
+ */
+export function authUserRow(u: SupabaseAuthUser, now: Date = new Date()): Row {
+  if (!u.id) throw new Error("mirror: usuario sin id");
+  const role = typeof u.app_metadata?.role === "string" && ROLES.has(u.app_metadata.role) ? u.app_metadata.role : "cliente";
+  const meta = u.user_metadata ?? {};
+  const name = typeof meta.name === "string" ? meta.name : typeof meta.full_name === "string" ? meta.full_name : "";
+  const banned = Boolean(u.banned_until && new Date(u.banned_until).getTime() > now.getTime());
+  return {
+    id: u.id,
+    name,
+    email: (u.email ?? `${u.id}@sin-email.invalid`).toLowerCase(),
+    emailVerified: u.email_confirmed_at ? 1 : 0,
+    role,
+    banned: banned ? 1 : 0,
+    banExpires: banned ? new Date(u.banned_until as string).toISOString() : null,
+    createdAt: u.created_at ? new Date(u.created_at).toISOString() : now.toISOString(),
+    updatedAt: u.updated_at ? new Date(u.updated_at).toISOString() : now.toISOString(),
+  };
+}
+
+const USER_COLS = ["id", "name", "email", "emailVerified", "role", "banned", "banExpires", "createdAt", "updatedAt"] as const;
+
+/** Copia usuarios de Supabase Auth a la tabla "user" de D1 (idempotente). Solo servidor. */
+export async function mirrorAuthUsers(db: SqlDatabase, actor: Actor, users: SupabaseAuthUser[]): Promise<void> {
+  requireStaff(actor);
+  if (users.length === 0) return;
+  await db.batch(
+    users.map((u) => {
+      const row = authUserRow(u);
+      return upsertStatement(db, '"user"', ["id"], [...USER_COLS], USER_COLS.map((c) => sqlValue(row[c])));
+    }),
+  );
 }

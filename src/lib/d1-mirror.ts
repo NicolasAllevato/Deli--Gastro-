@@ -1,5 +1,5 @@
 import type { createAdminClient } from "@/utils/supabase/admin";
-import { dataFor, mirrorToD1, systemActor } from "@/lib/data";
+import { dataFor, mirrorToD1, systemActor, type SupabaseAuthUser } from "@/lib/data";
 
 /**
  * Atajos para reflejar en D1 (modo dual) lo que las rutas de pedidos y
@@ -30,3 +30,19 @@ export const mirrorLocation = (op: string, row: Row) => mirrorToD1(op, async () 
 
 export const mirrorLocationDelete = (op: string, userId: string) =>
   mirrorToD1(op, async () => (await api(op)).mirror.locationDelete(userId));
+
+/** Copia filas ya devueltas por Supabase de una tabla permitida (ver WORKER_TABLES en la capa). */
+export const mirrorTableRows = (op: string, table: string, rows: Row[]) =>
+  mirrorToD1(op, async () => (await api(op)).mirror.rows(table, rows));
+
+/** Relee una fila por id en Supabase y la copia (para updates que no devuelven la fila). */
+export const mirrorRowById = (op: string, db: Db, table: "payment_intents" | "clients" | "points_ledger", id: string) =>
+  mirrorToD1(op, async () => {
+    const { data, error } = await db.from(table).select("*").eq("id", id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) await (await api(op)).mirror.rows(table, [data as Row]);
+  });
+
+/** Usuario de Supabase Auth → "user" de D1 (rol solo de app_metadata, sin contraseña). */
+export const mirrorAuthUser = (op: string, user: SupabaseAuthUser) =>
+  mirrorToD1(op, async () => (await api(op)).mirror.authUsers([user]));

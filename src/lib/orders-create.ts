@@ -8,6 +8,7 @@ import { refundPaymentForOrder } from "@/lib/payments/refunds";
 import { loadDeliverySettings } from "@/lib/zones-server";
 import { quoteDelivery } from "@/lib/zones";
 import { fudoGatewayConfig, requestFudoSync } from "@/lib/fudo/gateway";
+import { mirrorOrder, mirrorTableRows } from "@/lib/d1-mirror";
 
 type Db = ReturnType<typeof createAdminClient>;
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
@@ -259,12 +260,15 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
     .select()
     .single();
   if (error) return fail(500, error.message);
+  await mirrorOrder("orders.place", order);
 
   const lines = snapshot.lines ?? [];
   if (lines.length > 0) {
-    const { error: itemsError } = await db.from("order_items").insert(
-      lines.map((l) => ({ order_id: order.id, product_id: l.productId, name: l.name, qty: l.qty, unit_price: l.price })),
-    );
+    const { data: itemRows, error: itemsError } = await db
+      .from("order_items")
+      .insert(lines.map((l) => ({ order_id: order.id, product_id: l.productId, name: l.name, qty: l.qty, unit_price: l.price })))
+      .select();
+    if (!itemsError) await mirrorTableRows("orders.items", "order_items", itemRows ?? []);
     // Sin líneas no se puede mandar a Fudo: queda en la bitácora para cargarlo a mano.
     if (itemsError) {
       await db.from("order_events").insert({ order_id: order.id, event: "order_items_error", actor: "sistema", detail: itemsError.message.slice(0, 200) });
@@ -277,7 +281,8 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
   }
 
   // La bitácora no debe tumbar el pedido ya creado.
-  await db.from("order_events").insert({ order_id: order.id, event, actor: snapshot.actor });
+  const { data: placedEvent } = await db.from("order_events").insert({ order_id: order.id, event, actor: snapshot.actor }).select();
+  await mirrorTableRows("orders.placed-event", "order_events", placedEvent ?? []);
 
   // Fudo no debe demorar ni tumbar el pedido: si el Worker no responde, su cron lo reintenta.
   if (fudoSync) await requestFudoSync(order.id);
@@ -325,6 +330,7 @@ export async function cancelOrderForClient(db: Db, orderId: string, clientId: st
     .maybeSingle();
   if (error) return fail(500, error.message);
   if (!data) return fail(409, "El pedido ya cambió de estado y no se puede cancelar.");
+  await mirrorOrder("orders.client-cancel", data);
 
   await db.from("order_events").insert({ order_id: order.id, event: "Cancelado", actor });
   await settleCancellation(db, order.id);
