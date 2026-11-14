@@ -2,8 +2,8 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { headers } from "next/headers";
 import type { Database } from "@/types/database";
 import { createFakeClient, type DemoTransport } from "@/lib/demo/fake-client";
-import type { QueryPlan } from "@/lib/demo/query";
-import { executePlanInD1, sessionUser, type D1Plan } from "@/lib/data";
+import { sessionUser } from "@/lib/data";
+import { rejectTableAccess } from "@/lib/session-no-tables";
 
 /**
  * Cliente "de sesión" del servidor con DATA_BACKEND=d1 (etapa 3). `auth.getUser()` lee la
@@ -13,7 +13,8 @@ import { executePlanInD1, sessionUser, type D1Plan } from "@/lib/data";
  */
 export function createD1SessionClient(): SupabaseClient<Database> {
   const transport: DemoTransport = {
-    execute: (plan: QueryPlan) => executePlanInD1(plan as unknown as D1Plan),
+    // Sin RLS en D1: este cliente nunca ejecuta planes (ver session-no-tables.ts).
+    execute: rejectTableAccess,
     async getUser() {
       return (await sessionUser(await headers())) as unknown as User | null;
     },

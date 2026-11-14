@@ -1,11 +1,11 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { createFakeClient, type DemoTransport } from "@/lib/demo/fake-client";
+import { rejectTableAccess } from "@/lib/session-no-tables";
 
 /**
  * Cliente del navegador con DATA_BACKEND=d1 (etapa 3): solo sesión, contra Better Auth en
- * /api/auth. Los datos se piden a las rutas /api de la app (nunca hubo lecturas directas a
- * tablas desde el navegador). Lo que devuelve getUser es para mostrar: la autorización la
+ * /api/auth. Los datos se piden a las rutas /api de la app: no accede a tablas (sin RLS en D1). Lo que devuelve getUser es para mostrar: la autorización la
  * decide siempre el servidor.
  */
 export function createD1BrowserClient(): SupabaseClient<Database> {
@@ -18,9 +18,7 @@ export function createD1BrowserClient(): SupabaseClient<Database> {
     });
 
   const transport: DemoTransport = {
-    async execute() {
-      return { data: null, error: { message: "Con D1 el navegador no consulta tablas directo." } } as never;
-    },
+    execute: rejectTableAccess,
     async getUser() {
       const res = await fetch("/api/auth/get-session", { cache: "no-store", credentials: "same-origin" });
       if (!res.ok) return null;

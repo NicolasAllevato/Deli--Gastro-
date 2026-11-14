@@ -107,13 +107,20 @@ export function authBaseURL(env: Record<string, string | undefined> = process.en
   return (env.BETTER_AUTH_URL ?? env.NEXT_PUBLIC_SITE_URL ?? "https://opsyndely.la-gambeta.com").trim().replace(/\/$/, "");
 }
 
+/** El dominio principal y su variante www (la app se sirve en los dos). Nunca del Host del request. */
+export function trustedOriginsFor(baseURL: string): string[] {
+  const url = new URL(baseURL);
+  const host = url.hostname.startsWith("www.") ? url.hostname.slice(4) : url.hostname;
+  return [`${url.protocol}//${host}`, `${url.protocol}//www.${host}`];
+}
+
 export function runtimeAuth(db: SqlDatabase, sendResetPassword?: (to: string, url: string) => Promise<void>): Auth {
   const baseURL = authBaseURL();
   return createAuth({
     database: db,
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL,
-    trustedOrigins: [baseURL],
+    trustedOrigins: trustedOriginsFor(baseURL),
     sendResetPassword,
   });
 }

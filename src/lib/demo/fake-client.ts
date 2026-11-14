@@ -18,8 +18,11 @@ export interface DemoTransport {
 
 class DemoQueryBuilder implements PromiseLike<QueryResult> {
   private readonly plan: QueryPlan;
+  // Campo explícito (no parameter property): así el módulo corre en los tests de node.
+  private readonly transport: DemoTransport;
 
-  constructor(private readonly transport: DemoTransport, table: TableName) {
+  constructor(transport: DemoTransport, table: TableName) {
+    this.transport = transport;
     this.plan = {
       table,
       action: "select",
