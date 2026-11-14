@@ -20,7 +20,15 @@ id = "a5d6ac94d9144d949badfd510690ae5e"
 [triggers]
 crons = ["*/5 * * * *"]
 
+# Migración a D1 (docs/migracion-supabase-d1.md): base deli-gastro. Solo se usa si DATA_BACKEND es "dual" o "d1".
+[[d1_databases]]
+binding = "DB"
+database_name = "deli-gastro"
+database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
+
 [vars]
+# "supabase" (default): no copia nada a D1. Cambiar a "dual" solo con OK del usuario.
+DATA_BACKEND = "supabase"
 FUDO_API_URL = "https://integrations.fu.do/fudo"
 # API pública de Fudo (catálogo y ventas): token en FUDO_AUTH_URL, datos en FUDO_PUBLIC_API_URL.
 FUDO_AUTH_URL = "https://auth.fu.do/api"

@@ -12,6 +12,8 @@ import { sqlBotRepo } from "./repo/bot.ts";
 import type { RunModel } from "./ai/models.ts";
 import type { BufferedMessage } from "./batching.ts";
 import type { ConversationBuffer, InboundTurn } from "./conversation-buffer.ts";
+import { mirrorBotRepo, mirrorInboundRepo } from "./repo/d1-mirror.ts";
+import { sqlMirrorReader } from "./repo/d1-mirror-sql.ts";
 
 export { ConversationBuffer } from "./conversation-buffer.ts";
 
@@ -23,6 +25,10 @@ export interface Env {
   INBOUND: Queue<InboundTurn>;
   /** URL pública de la app (links permitidos en las respuestas del bot). */
   APP_URL: string;
+  /** Migración a D1: "dual" | "d1" copia a D1 lo que el bot escribe en Supabase (default: no copia). */
+  DATA_BACKEND?: string;
+  /** Base D1 `deli-gastro` (el binding DB es Hyperdrive). */
+  D1?: D1Database;
   /** Secret (wrangler secret put BOT_INTERNAL_SECRET, >= 32 caracteres, igual al de Vercel). Sin él los pedidos quedan apagados. */
   BOT_INTERNAL_SECRET?: string;
 }
@@ -104,7 +110,7 @@ async function processEvents(rawBody: string, phoneNumberId: string | null, env:
   const sql = connect(env);
   try {
     await handleWebhookEvents(events, {
-      repo: sqlInboundRepo(sql, (message, detail) => console.error(message, detail)),
+      repo: mirrorInboundRepo(sqlInboundRepo(sql, (message, detail) => console.error(message, detail)), env, sqlMirrorReader(sql)),
       phoneNumberId,
       buffer: (phone: string, message: BufferedMessage) => env.BUFFER.get(env.BUFFER.idFromName(phone)).add(phone, message),
       log: (message, detail) => console.error(message, detail),
@@ -161,7 +167,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
     const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
     const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
     const deps = {
-      repo: sqlBotRepo(sql, (message, detail) => console.error(message, detail)),
+      repo: mirrorBotRepo(sqlBotRepo(sql, (message, detail) => console.error(message, detail)), env, sqlMirrorReader(sql)),
       run,
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),

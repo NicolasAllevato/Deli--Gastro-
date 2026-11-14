@@ -1,26 +1,34 @@
 import type { FudoMaps, OrderForFudo } from "./payload";
+import { mirrorEnabled, mirroredTable, mirrorWrite, withRepresentation, type MirrorEnv } from "./d1-mirror.ts";
 
 /** Acceso a Supabase por PostgREST con la service role (igual que pedidos-webhook). */
-export interface DbEnv {
+export interface DbEnv extends MirrorEnv {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
 export async function rest<T>(env: DbEnv, path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${env.SUPABASE_URL.trim()}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY.trim(),
-      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY.trim()}`,
-      prefer: "return=representation",
-      ...init.headers,
-    },
-  });
+  const method = (init.method ?? "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY.trim(),
+    authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY.trim()}`,
+    prefer: "return=representation",
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  // Modo dual: la escritura tiene que devolver las filas para copiarlas a D1.
+  const table = method !== "GET" && mirrorEnabled(env) ? mirroredTable(path) : null;
+  const callerWantsBody = !/return=minimal/.test(headers.prefer ?? "");
+  if (table) headers.prefer = withRepresentation(headers.prefer);
+
+  const res = await fetch(`${env.SUPABASE_URL.trim()}/rest/v1/${path}`, { ...init, headers });
   if (!res.ok) throw new Error(`Supabase ${path.split("?")[0]} ${res.status}: ${(await res.text()).slice(0, 200)}`);
   // `Prefer: return=minimal` responde 201/204 sin cuerpo: no hay JSON que parsear.
   const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  const body = text ? JSON.parse(text) : undefined;
+  if (table && method !== "DELETE") await mirrorWrite(env, table, body);
+  // Quien pidió return=minimal recibe lo mismo que antes (nada), aunque se haya pedido el cuerpo para D1.
+  return (table && !callerWantsBody ? undefined : body) as T;
 }
 
 export const MAX_ATTEMPTS = 6;
