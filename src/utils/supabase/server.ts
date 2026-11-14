@@ -4,9 +4,13 @@ import type { Database } from "@/types/database";
 import { isDemoMode } from "@/lib/demo/mode";
 import { cleanEnv } from "@/lib/clean-env";
 import { createDemoServerClient } from "@/lib/demo/server-client";
+import { dataBackend } from "@/lib/data";
+import { createD1SessionClient } from "@/lib/d1-session-client";
 
 export async function createClient() {
   if (isDemoMode()) return createDemoServerClient();
+  // Etapa 3 del corte: sesión de Better Auth sobre D1.
+  if (dataBackend() === "d1") return createD1SessionClient();
 
   const cookieStore = await cookies();
 
