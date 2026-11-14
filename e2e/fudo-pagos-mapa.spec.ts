@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { loginAs, resetDemo } from "./helpers";
 
 test.describe("medios de pago de Fudo y entregas en el mapa (demo)", () => {
   test("la pantalla de Fudo ofrece los medios reales con su id", async ({ browser }) => {
@@ -20,6 +20,9 @@ test.describe("medios de pago de Fudo y entregas en el mapa (demo)", () => {
   });
 
   test("el mapa lista lo entregado hoy aunque no tenga repartidor", async ({ browser }) => {
+    // El seed se arma de nuevo ahora: "hoy" es el día argentino del momento del test, no el de cuando
+    // arrancó el servidor (si cruzó la medianoche AR en el medio, las ventas quedaban en "ayer").
+    await resetDemo(browser);
     const { context, page } = await loginAs(browser, "admin");
     try {
       await page.goto("/admin/mapa");
