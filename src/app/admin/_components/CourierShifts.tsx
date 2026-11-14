@@ -6,10 +6,11 @@ import type { CourierShift } from "@/lib/courier-shifts";
 import { freshPendingNotice } from "@/lib/courier-shift-notice";
 import { TOPIC_COURIER_SHIFTS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { formatTimeAR } from "@/lib/time-ar";
 
 const DEMO_POLL_MS = 15_000;
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+const time = (iso: string) => formatTimeAR(iso, { hour: "2-digit", minute: "2-digit" });
 
 const STATUS_LABEL: Record<CourierShift["status"], { text: string; className: string }> = {
   pending: { text: "Esperando", className: "badge-yellow" },

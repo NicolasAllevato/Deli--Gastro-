@@ -5,13 +5,14 @@ import { guardAdmin } from "@/lib/auth/adminGuard";
 import { inBounds, RANGE_KEYS, rangeBounds, type RangeKey } from "@/lib/reports/range";
 import { toCsv } from "@/lib/reports/csv";
 import { loadReportData } from "@/lib/reports/data";
+import { formatDateTimeAR } from "@/lib/time-ar";
 
 const rangeSchema = z.enum(RANGE_KEYS as [RangeKey, ...RangeKey[]]);
 
 const HEADERS = ["Fecha", "Pedido", "Cliente", "Estado", "Canal", "Pago", "Total", "Envío"];
 
 const localDateTime = (iso: string) =>
-  new Date(iso).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", dateStyle: "short", timeStyle: "short" });
+  formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" });
 
 /** Pedidos del período en CSV (para contabilidad o planillas). */
 export async function GET(req: NextRequest) {

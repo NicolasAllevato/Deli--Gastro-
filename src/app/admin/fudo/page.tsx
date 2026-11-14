@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui";
 import { suggestPaymentIds, type FudoCatalogItem, type MappingState, type PaymentUsage, type SaveInput, type SkippedSummary } from "@/lib/fudo/mapping";
+import { formatDateAR } from "@/lib/time-ar";
 
 interface MapResponse extends MappingState {
   catalog: FudoCatalogItem[];
@@ -23,7 +24,7 @@ function hasSkippedNotice(s: SkippedSummary | undefined): s is SkippedSummary {
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? iso : formatDateAR(d, { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 const inputClass =

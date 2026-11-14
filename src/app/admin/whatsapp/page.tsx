@@ -7,6 +7,7 @@ import { Field } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
 import type { ConnectedBySummary } from "@/lib/whatsapp/connected-by";
 import { EmbeddedSignup } from "./EmbeddedSignup";
+import { formatDateAR } from "@/lib/time-ar";
 
 interface State {
   phoneNumberId: string;
@@ -67,7 +68,7 @@ function describeConnectedBy(by: ConnectedBySummary): string {
   const parts = [
     by.adminEmail && `usuario del panel ${by.adminEmail}`,
     facebook && `Facebook (informado por el navegador): ${facebook}`,
-    by.connectedAt && new Date(by.connectedAt).toLocaleDateString("es-AR"),
+    by.connectedAt && formatDateAR(by.connectedAt),
   ].filter(Boolean);
   return parts.join(" · ");
 }

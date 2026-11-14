@@ -6,6 +6,7 @@ import { RANGE_KEYS, rangeBounds, type RangeKey } from "@/lib/reports/range";
 import { toCsv } from "@/lib/reports/csv";
 import { loadClientExportData } from "@/lib/reports/data";
 import { clientSummaries } from "@/lib/reports/clientExport";
+import { formatDateAR, formatDateTimeAR } from "@/lib/time-ar";
 
 const rangeSchema = z.enum(RANGE_KEYS as [RangeKey, ...RangeKey[]]);
 
@@ -15,10 +16,9 @@ const HEADERS = [
   "Días desde el último pedido", "Producto más pedido",
 ];
 
-const TZ = "America/Argentina/Buenos_Aires";
-const localDate = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { timeZone: TZ, dateStyle: "short" });
+const localDate = (iso: string) => formatDateAR(iso, { dateStyle: "short" });
 const localDateTime = (iso: string) =>
-  new Date(iso).toLocaleString("es-AR", { timeZone: TZ, dateStyle: "short", timeStyle: "short" });
+  formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" });
 
 /**
  * Lista de clientes con sus datos y métricas en CSV. `range` filtra qué pedidos cuentan;

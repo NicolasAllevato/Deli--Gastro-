@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { TOPIC_WA_CAMPAIGNS } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { formatDateTimeAR } from "@/lib/time-ar";
 
 type Kind = "all" | "inactive" | "frequent" | "tier";
 
@@ -214,7 +215,7 @@ export default function CampanasPage() {
               </div>
               <p className="text-xs text-gray-500 truncate">{c.message}</p>
               <p className="text-[11px] text-gray-500">
-                {new Date(c.created_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}
+                {formatDateTimeAR(c.created_at, { dateStyle: "short", timeStyle: "short" })}
                 {" · "}{c.sent} de {c.recipients} enviados{c.failed > 0 ? ` · ${c.failed} fallidos` : ""}
               </p>
             </div>

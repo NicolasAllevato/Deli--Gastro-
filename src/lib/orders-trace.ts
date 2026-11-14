@@ -4,6 +4,7 @@
  * tests/orders-trace.test.ts falla si aparece una columna que no está acá.
  */
 import { formatMoney } from "./orders.ts";
+import { formatDateTimeAR } from "./time-ar.ts";
 
 export type TraceKind = "text" | "money" | "date" | "bool" | "json" | "number" | "coord" | "meters" | "client" | "error";
 
@@ -113,7 +114,7 @@ export function formatTraceValue(v: unknown, kind: TraceKind): string {
       const d = new Date(String(v));
       return Number.isNaN(d.getTime())
         ? String(v)
-        : d.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", dateStyle: "short", timeStyle: "medium" });
+        : formatDateTimeAR(d, { dateStyle: "short", timeStyle: "medium" });
     }
     case "bool":
       return v === true || v === 1 || v === "true" ? "Sí" : "No";
