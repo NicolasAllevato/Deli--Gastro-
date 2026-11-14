@@ -107,6 +107,24 @@ describe("fudo-gateway: rest() copia a D1 en modo dual", () => {
   });
 });
 
+describe("whatsapp-bot: relectura acotada", () => {
+  it("teléfono sin 10 dígitos no relee clientes; las consultas por teléfono llevan LIMIT", async () => {
+    const { sqlMirrorReader } = await import("../workers/whatsapp-bot/src/repo/d1-mirror-sql.ts");
+    const queries: string[] = [];
+    const fakeSql = ((strings: TemplateStringsArray) => {
+      queries.push(strings.join("?"));
+      return Promise.resolve([]);
+    }) as never;
+    const reader = sqlMirrorReader(fakeSql);
+    assert.deepEqual(await reader.clientsByPhoneTail("12345"), []);
+    assert.deepEqual(await reader.clientsByPhoneTail(""), []);
+    assert.equal(queries.length, 0, "no consulta con un teléfono corto");
+    await reader.clientsByPhoneTail("+54 9 11 5555-4444");
+    await reader.conversationsSharingTail("00000000-0000-4000-8000-000000000901");
+    assert.ok(queries.every((q) => /limit \?/i.test(q)), "todas con LIMIT");
+  });
+});
+
 describe("whatsapp-bot: repos con espejo", () => {
   const conv = { id: "00000000-0000-4000-8000-000000000901", client_phone: "5491155554444", human_takeover: true };
   const msg = { id: "00000000-0000-4000-8000-000000000902", conversation_id: conv.id, wamid: "w9", direction: "out", type: "text", body: "hola" };
