@@ -6,6 +6,8 @@ import { createClient } from "@/utils/supabase/server";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
 import type { CourierAuth } from "@/lib/courier-pins";
 import { mirrorAuthUser } from "@/lib/d1-mirror";
+import { courierSessionCookies, createCourierUser, dataBackend, setCourierBlocked } from "@/lib/data";
+import { parseSetCookieHeader } from "better-auth/cookies";
 
 /** Dominio de los emails internos de los repartidores: nunca se les manda correo, entran con PIN. */
 const COURIER_EMAIL_DOMAIN = "repartidores.dely.opsyn.app";
@@ -20,6 +22,8 @@ export function courierAuth(): CourierAuth {
       async setBlocked() { return null; },
     };
   }
+
+  if (dataBackend() === "d1") return d1CourierAuth();
 
   const admin = createAdminClient();
   return {
@@ -52,6 +56,41 @@ export function courierAuth(): CourierAuth {
   };
 }
 
+/** Etapa 3 (DATA_BACKEND=d1): usuarios en la tabla "user" de D1, sin cuenta de contraseña. */
+function d1CourierAuth(): CourierAuth {
+  return {
+    async createUser(name) {
+      try {
+        return { id: await createCourierUser(name) };
+      } catch (e) {
+        console.error("[couriers] alta en D1", e instanceof Error ? e.message : "error");
+        return { error: "No se pudo crear el usuario del repartidor." };
+      }
+    },
+    async setBlocked(userId, blocked) {
+      const ok = await setCourierBlocked(userId, blocked).catch(() => false);
+      return ok ? null : "No se pudo actualizar el acceso del repartidor.";
+    },
+  };
+}
+
+/** Copia a este response las cookies que firmó Better Auth. */
+async function applyD1CourierSession(userId: string): Promise<string | null> {
+  const setCookies = await courierSessionCookies(userId);
+  if (!setCookies) return "No se pudo iniciar la sesión.";
+  const jar = await cookies();
+  for (const [name, attrs] of parseSetCookieHeader(setCookies.join(", "))) {
+    jar.set(name, attrs.value, {
+      httpOnly: attrs.httponly ?? true,
+      secure: attrs.secure ?? true,
+      sameSite: "lax",
+      path: attrs.path ?? "/",
+      ...(attrs["max-age"] !== undefined ? { maxAge: Number(attrs["max-age"]) } : {}),
+    });
+  }
+  return null;
+}
+
 /**
  * Abre la sesión del repartidor en este navegador (cookies de Supabase), sin contraseña:
  * el servidor ya validó el PIN. Genera un magic link sin mandarlo y lo canjea acá mismo.
@@ -62,6 +101,8 @@ export async function startCourierSession(userId: string): Promise<string | null
     (await cookies()).set(DEMO_COOKIE, "repartidor", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
     return null;
   }
+
+  if (dataBackend() === "d1") return applyD1CourierSession(userId);
 
   const admin = createAdminClient();
   const { data: found, error: findError } = await admin.auth.admin.getUserById(userId);

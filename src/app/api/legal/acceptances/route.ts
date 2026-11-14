@@ -5,6 +5,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { requireAuth, isAuthorizationError } from "@/lib/auth/requireRole";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { isDemoMode } from "@/lib/demo/mode";
+import { dataBackend, setLegalVersion } from "@/lib/data";
 import {
   DEMO_LEGAL_COOKIE,
   LEGAL_BUNDLE_VERSION,
@@ -33,6 +34,11 @@ async function statusFor(db: Db, userId: string): Promise<LegalStatus> {
 async function markComplete(res: NextResponse, db: Db, userId: string, appMetadata: Record<string, unknown>) {
   if (isDemoMode()) {
     res.cookies.set(DEMO_LEGAL_COOKIE, LEGAL_BUNDLE_VERSION, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+    return;
+  }
+  if (dataBackend() === "d1") {
+    // Etapa 3: columna legal_version de "user" (input:false; solo el servidor la escribe).
+    if (!(await setLegalVersion(userId, LEGAL_BUNDLE_VERSION))) throw new Error("No se pudo registrar la aceptación en la sesión");
     return;
   }
   const { error } = await db.auth.admin.updateUserById(userId, {

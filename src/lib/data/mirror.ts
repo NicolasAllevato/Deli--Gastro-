@@ -208,6 +208,7 @@ export function authUserRow(u: SupabaseAuthUser, now: Date = new Date()): Row {
   const role = typeof u.app_metadata?.role === "string" && ROLES.has(u.app_metadata.role) ? u.app_metadata.role : "cliente";
   const meta = u.user_metadata ?? {};
   const name = typeof meta.name === "string" ? meta.name : typeof meta.full_name === "string" ? meta.full_name : "";
+  const legal = typeof u.app_metadata?.legal_version === "string" ? u.app_metadata.legal_version : null;
   const banned = Boolean(u.banned_until && new Date(u.banned_until).getTime() > now.getTime());
   return {
     id: u.id,
@@ -218,12 +219,14 @@ export function authUserRow(u: SupabaseAuthUser, now: Date = new Date()): Row {
     role,
     banned: banned ? 1 : 0,
     banExpires: banned ? new Date(u.banned_until as string).toISOString() : null,
+    // Términos aceptados (etapa 3): así nadie tiene que volver a aceptarlos tras el corte.
+    legal_version: legal,
     createdAt: u.created_at ? new Date(u.created_at).toISOString() : now.toISOString(),
     updatedAt: u.updated_at ? new Date(u.updated_at).toISOString() : now.toISOString(),
   };
 }
 
-export const USER_COLS = ["id", "name", "email", "emailVerified", "phone", "role", "banned", "banExpires", "createdAt", "updatedAt"] as const;
+export const USER_COLS = ["id", "name", "email", "emailVerified", "phone", "role", "banned", "banExpires", "legal_version", "createdAt", "updatedAt"] as const;
 
 /** Copia usuarios de Supabase Auth a la tabla "user" de D1 (idempotente). Solo servidor. */
 export async function mirrorAuthUsers(db: SqlDatabase, actor: Actor, users: SupabaseAuthUser[]): Promise<void> {

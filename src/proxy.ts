@@ -1,10 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
+import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { getUserRole } from "@/lib/auth/roles";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
 import { cleanEnv } from "@/lib/clean-env";
 import { accountByRole } from "@/lib/demo/users";
 import { DEMO_LEGAL_COOKIE, LEGAL_BUNDLE_VERSION } from "@/lib/legal/documents";
+import { dataBackend, sessionUser } from "@/lib/data";
 
 const PORTAL_PREFIXES = ["/admin", "/cliente", "/repartidor"] as const;
 
@@ -80,8 +82,27 @@ async function supabaseProxy(req: NextRequest): Promise<NextResponse> {
   return res;
 }
 
+/** Mismas reglas que supabaseProxy, con el usuario que deja la sesión de Better Auth. */
+function guardPortal(req: NextRequest, user: Pick<User, "app_metadata"> | null, res: NextResponse): NextResponse {
+  if (!user) return toLogin(req);
+  const role = getUserRole(user);
+  const portal = portalOf(req.nextUrl.pathname);
+  if (portal && portal !== `/${role}`) {
+    return NextResponse.redirect(new URL(HOME_BY_ROLE[role], req.url));
+  }
+  if (user.app_metadata?.legal_version !== LEGAL_BUNDLE_VERSION) return toLegal(req);
+  return res;
+}
+
+// Etapa 3 del corte (DATA_BACKEND=d1): sesión de Better Auth en D1.
+async function d1Proxy(req: NextRequest): Promise<NextResponse> {
+  const user = await sessionUser(req.headers);
+  return guardPortal(req, user, NextResponse.next());
+}
+
 export async function proxy(req: NextRequest): Promise<NextResponse> {
-  return isDemoMode() ? demoProxy(req) : supabaseProxy(req);
+  if (isDemoMode()) return demoProxy(req);
+  return dataBackend() === "d1" ? d1Proxy(req) : supabaseProxy(req);
 }
 
 export const config = {

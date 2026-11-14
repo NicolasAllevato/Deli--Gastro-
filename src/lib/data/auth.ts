@@ -14,6 +14,7 @@
  *   chequeo CSRF existente de la app.
  */
 import { betterAuth } from "better-auth";
+import { courierSessionPlugin } from "./auth-courier.ts";
 
 export interface AuthEnv {
   /** Binding D1 o, en tests, una base node:sqlite (Better Auth detecta ambos). */
@@ -21,17 +22,26 @@ export interface AuthEnv {
   secret: string | undefined;
   baseURL: string;
   trustedOrigins?: string[];
+  /**
+   * Alta abierta por email. Default false: la app no tiene registro público (clientes y
+   * repartidores los crea el servidor; los 7 usuarios copiados entran por "olvidé mi contraseña").
+   */
+  allowSignUp?: boolean;
+  /** Envía el link de recuperación. Sin él, /request-password-reset responde igual pero no manda nada. */
+  sendResetPassword?: (to: string, url: string) => Promise<void>;
 }
 
 export const AUTH_COOKIE_PREFIX = "opsyn";
 export const SESSION_TTL_S = 7 * 24 * 60 * 60;
 export const SESSION_ROTATE_S = 24 * 60 * 60;
 export const MIN_PASSWORD = 10;
+export const RESET_TOKEN_TTL_S = 15 * 60;
 
 export function createAuth(env: AuthEnv) {
   if (!env.secret || env.secret.length < 32) {
     throw new Error("BETTER_AUTH_SECRET ausente o corto (>= 32 caracteres, como Worker secret)");
   }
+  const sendReset = env.sendResetPassword;
   return betterAuth({
     database: env.database as never,
     secret: env.secret,
@@ -42,6 +52,14 @@ export function createAuth(env: AuthEnv) {
       minPasswordLength: MIN_PASSWORD,
       maxPasswordLength: 128,
       autoSignIn: false,
+      disableSignUp: !env.allowSignUp,
+      // Link de un solo uso (Better Auth borra el token al canjearlo), vence a los 15 min y
+      // al cambiar la contraseña se cierran todas las sesiones abiertas.
+      resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_S,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url }) => {
+        if (sendReset) await sendReset(user.email, url);
+      },
       // Recuperación por email (Resend) se conecta en la fase 3; D3: los 7
       // usuarios actuales entran por "olvidé mi contraseña" en el corte.
     },
@@ -50,6 +68,10 @@ export function createAuth(env: AuthEnv) {
         role: { type: "string", required: false, defaultValue: "cliente", input: false },
         // Copiado de Supabase Auth (scripts/copiar-usuarios-d1.mjs); el usuario no lo escribe por la API.
         phone: { type: "string", required: false, input: false },
+        // Términos aceptados: lo escribe solo /api/legal/acceptances (antes app_metadata).
+        legal_version: { type: "string", required: false, input: false },
+        // Repartidor desactivado: sessionUser() lo rechaza aunque tenga una sesión vieja.
+        banned: { type: "boolean", required: false, defaultValue: false, input: false },
       },
     },
     session: {
@@ -76,6 +98,7 @@ export function createAuth(env: AuthEnv) {
       defaultCookieAttributes: { httpOnly: true, secure: true, sameSite: "lax", path: "/" },
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
     },
+    plugins: [courierSessionPlugin()],
     telemetry: { enabled: false },
   });
 }
