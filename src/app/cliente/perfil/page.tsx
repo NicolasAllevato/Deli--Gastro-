@@ -38,35 +38,28 @@ export default function PerfilPage() {
 
   useEffect(() => {
     async function loadPerfil() {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
+      // El servidor decide qué cliente es (sesión); el navegador no consulta tablas.
+      const res = await fetch("/api/client/profile", { cache: "no-store" }).catch(() => null);
+      const json = res?.ok
+        ? ((await res.json()) as {
+            email: string | null;
+            client: { name: string | null; phone: string | null; address: string | null; total_points: number | null; created_at: string | null };
+            ordersTotal: number;
+          })
+        : null;
+      if (!json) {
         setLoading(false);
         return;
       }
-
-      const { data: client } = await supabase
-        .from("clients")
-        .select("id, name, phone, address, total_points, created_at")
-        .eq("user_id", user.id)
-        .single();
-
-      const { count } = client
-        ? await supabase
-            .from("orders")
-            .select("id", { count: "exact", head: true })
-            .eq("client_id", client.id)
-        : { count: 0 };
-
+      const { client } = json;
       setPerfil({
-        nombre: client?.name ?? user.email?.split("@")[0] ?? "—",
-        email: user.email ?? "—",
-        telefono: client?.phone ?? "—",
-        direccion: client?.address ?? "—",
-        puntos: client?.total_points ?? 0,
-        pedidosTotal: count ?? 0,
-        miembroDesde: client?.created_at ? formatMes(client.created_at) : "—",
+        nombre: client.name ?? json.email?.split("@")[0] ?? "—",
+        email: json.email ?? "—",
+        telefono: client.phone ?? "—",
+        direccion: client.address ?? "—",
+        puntos: client.total_points ?? 0,
+        pedidosTotal: json.ordersTotal,
+        miembroDesde: client.created_at ? formatMes(client.created_at) : "—",
       });
       setLoading(false);
     }

@@ -23,6 +23,7 @@ import * as couriers from "./couriers.ts";
 import * as pins from "./pin-attempts.ts";
 import * as restricted from "./restricted.ts";
 import * as mirror from "./mirror.ts";
+import * as session from "./session.ts";
 import { executeD1Plan, type Plan, type PlanResult } from "./plan-sql.ts";
 import { systemActor as sysActor } from "./actor.ts";
 
@@ -137,3 +138,31 @@ export async function executePlanInD1(plan: Plan): Promise<PlanResult> {
   return executeD1Plan(await getDb(), sysActor("admin-client"), plan);
 }
 export type { Plan as D1Plan, PlanResult as D1PlanResult } from "./plan-sql.ts";
+
+// --- Etapa 3: sesiones de Better Auth (solo DATA_BACKEND=d1) -------------------------------
+export type { SessionUser } from "./session.ts";
+
+/** Better Auth sobre D1. `sendResetPassword` lo inyecta la ruta /api/auth (correo del local). */
+export async function getAuth(sendResetPassword?: (to: string, url: string) => Promise<void>) {
+  return session.runtimeAuth(await getDb(), sendResetPassword);
+}
+
+export async function sessionUser(headers: Headers): Promise<session.SessionUser | null> {
+  return session.sessionUserWith(await getAuth(), headers);
+}
+
+export async function setLegalVersion(userId: string, version: string): Promise<boolean> {
+  return session.setLegalVersionWith(await getDb(), userId, version);
+}
+
+export async function createCourierUser(name: string): Promise<string> {
+  return session.createCourierUserWith(await getDb(), name);
+}
+
+export async function setCourierBlocked(userId: string, blocked: boolean): Promise<boolean> {
+  return session.setCourierBlockedWith(await getDb(), userId, blocked);
+}
+
+export async function courierSessionCookies(userId: string): Promise<string[] | null> {
+  return session.courierSessionCookiesWith(await getAuth(), userId);
+}

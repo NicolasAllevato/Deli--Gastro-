@@ -111,6 +111,13 @@ function LoginContent() {
           : <><LogIn size={16} /> Ingresar</>
         }
       </button>
+
+      {/* Better Auth (corte a D1): cada usuario define su contraseña por este link la primera vez. */}
+      {process.env.NEXT_PUBLIC_DATA_BACKEND?.trim().toLowerCase() === "d1" ? (
+        <a href="/recuperar" className="block text-center text-xs font-bold text-gray-500 hover:text-brand-orange">
+          ¿Primera vez u olvidaste tu contraseña?
+        </a>
+      ) : null}
     </form>
   );
 

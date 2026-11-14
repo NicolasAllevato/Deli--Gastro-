@@ -13,7 +13,7 @@ const SECRET = crypto.randomUUID() + crypto.randomUUID();
 
 function setup() {
   const db = createTestDb();
-  const auth = createAuth({ database: db.raw, secret: SECRET, baseURL: BASE });
+  const auth = createAuth({ database: db.raw, secret: SECRET, baseURL: BASE, allowSignUp: true });
   return { db, auth };
 }
 
