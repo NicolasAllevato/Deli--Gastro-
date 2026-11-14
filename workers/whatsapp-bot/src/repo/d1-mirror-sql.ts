@@ -7,7 +7,8 @@ type Row = Record<string, unknown>;
  * Lo único que se usa de `postgres`: el template etiquetado (parametriza cada valor).
  * Sin importar el paquete, así el typecheck de la raíz y los tests no lo necesitan.
  */
-type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => PromiseLike<unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- el tag de postgres acepta cualquier valor parametrizable.
+type SqlTag = (strings: TemplateStringsArray, ...values: any[]) => unknown;
 
 /** Tope de filas por relectura por teléfono: es una copia, no un barrido (nota del auditor). */
 const TAIL_LIMIT = 5;
