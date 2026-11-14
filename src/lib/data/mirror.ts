@@ -185,6 +185,7 @@ export async function mirrorRows(db: SqlDatabase, actor: Actor, table: string, r
 export interface SupabaseAuthUser {
   id: string;
   email?: string | null;
+  phone?: string | null;
   email_confirmed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -193,7 +194,9 @@ export interface SupabaseAuthUser {
   user_metadata?: Record<string, unknown> | null;
 }
 
-const ROLES = new Set(["admin", "cliente", "repartidor"]);
+/** Roles de la app (src/lib/auth/roles.ts). No existe "staff": cualquier otro valor queda como cliente. */
+export const AUTH_ROLES = new Set(["admin", "cliente", "repartidor"]);
+const ROLES = AUTH_ROLES;
 
 /**
  * Usuario de Supabase Auth → tabla "user" de Better Auth (para el corte, D2/D3).
@@ -211,6 +214,7 @@ export function authUserRow(u: SupabaseAuthUser, now: Date = new Date()): Row {
     name,
     email: (u.email ?? `${u.id}@sin-email.invalid`).toLowerCase(),
     emailVerified: u.email_confirmed_at ? 1 : 0,
+    phone: u.phone ? u.phone : null,
     role,
     banned: banned ? 1 : 0,
     banExpires: banned ? new Date(u.banned_until as string).toISOString() : null,
@@ -219,7 +223,7 @@ export function authUserRow(u: SupabaseAuthUser, now: Date = new Date()): Row {
   };
 }
 
-const USER_COLS = ["id", "name", "email", "emailVerified", "role", "banned", "banExpires", "createdAt", "updatedAt"] as const;
+export const USER_COLS = ["id", "name", "email", "emailVerified", "phone", "role", "banned", "banExpires", "createdAt", "updatedAt"] as const;
 
 /** Copia usuarios de Supabase Auth a la tabla "user" de D1 (idempotente). Solo servidor. */
 export async function mirrorAuthUsers(db: SqlDatabase, actor: Actor, users: SupabaseAuthUser[]): Promise<void> {
