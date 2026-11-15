@@ -7,6 +7,7 @@ import { isAuthorizationError } from "@/lib/auth/requireRole";
 import { getGateway } from "@/lib/payments/gateway";
 import { cancelPendingIntent, getIntentForClient, reconcileIntent } from "@/lib/payments/intents";
 import { notifyOrderEvent } from "@/lib/whatsapp/notify";
+import { dataFor, usesD1 } from "@/lib/data";
 
 const idSchema = z.string().uuid();
 
@@ -54,7 +55,9 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return NextResponse.json({ error: "Pago inválido." }, { status: 400 });
 
-  const cancelled = await cancelPendingIntent(createAdminClient(), id.data, auth.client.id);
+  const cancelled = usesD1()
+    ? await (await dataFor({ kind: "cliente", userId: auth.user.id })).payments.cancelOwn(id.data)
+    : await cancelPendingIntent(createAdminClient(), id.data, auth.client.id);
   if (!cancelled) return NextResponse.json({ error: "Este pago ya no se puede cancelar." }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

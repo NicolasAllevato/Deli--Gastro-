@@ -63,6 +63,23 @@ export async function createOwnClient(
     .run();
 }
 
+export interface OwnProfile {
+  client: { id: string; name: string; phone: string | null; address: string | null; total_points: number; created_at: string };
+  ordersTotal: number;
+}
+
+/** Perfil del cliente de la sesión: su ficha y cuántos pedidos tiene. */
+export async function getOwnProfile(db: SqlDatabase, actor: Actor): Promise<OwnProfile | null> {
+  if (actor.kind !== "cliente") throw new ForbiddenError();
+  const client = await db
+    .prepare("SELECT id, name, phone, address, total_points, created_at FROM clients WHERE user_id = ?")
+    .bind(actor.userId)
+    .first<OwnProfile["client"]>();
+  if (!client) return null;
+  const n = await db.prepare("SELECT COUNT(*) AS n FROM orders WHERE client_id = ?").bind(client.id).first<{ n: number }>();
+  return { client: { ...client }, ordersTotal: Number(n?.n ?? 0) };
+}
+
 /** Columnas que un cliente puede editar de sí mismo (G3 / protect_client_columns). */
 export const CLIENT_EDITABLE = ["name", "phone", "address", "email"] as const;
 type ClientEditable = (typeof CLIENT_EDITABLE)[number];
