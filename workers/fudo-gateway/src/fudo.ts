@@ -11,7 +11,17 @@ export interface FudoEnv {
   FUDO_CLIENT_ID: string;
   FUDO_CLIENT_SECRET: string;
   FUDO_INTEGRATOR_TOKEN: string;
-  FUDO_KV: KVNamespace;
+  FUDO_KV: KvStore;
+}
+
+/**
+ * Lo que usamos del binding KV. Estructural (el KVNamespace de Cloudflare lo cumple) para que el
+ * typecheck de la app, que importa este módulo desde los tests, no necesite los tipos de Workers.
+ */
+export interface KvStore {
+  get(key: string): Promise<string | null>;
+  get(key: string, type: "json"): Promise<unknown>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 }
 
 const TOKEN_KEY = "fudo:token";
@@ -19,13 +29,14 @@ const TOKEN_KEY = "fudo:token";
 const TOKEN_TTL_SECONDS = 23 * 60 * 60;
 
 export class FudoError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    /** 4xx de validación: reintentar no sirve, hay que corregir el pedido o el mapeo. */
-    readonly permanent: boolean,
-  ) {
+  readonly status: number;
+  /** 4xx de validación: reintentar no sirve, hay que corregir el pedido o el mapeo. */
+  readonly permanent: boolean;
+  // Sin parameter properties: así los tests (node --test, strip-only) pueden importar este módulo.
+  constructor(message: string, status: number, permanent: boolean) {
     super(message);
+    this.status = status;
+    this.permanent = permanent;
   }
 }
 
@@ -113,6 +124,21 @@ async function getPublicToken(env: FudoEnv, fresh = false): Promise<string> {
 export async function publicGet(env: FudoEnv, path: string): Promise<Response> {
   const send = async (token: string) =>
     fetch(`${env.FUDO_PUBLIC_API_URL}/${path}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
+  const res = await send(await getPublicToken(env));
+  return res.status === 401 ? send(await getPublicToken(env, true)) : res;
+}
+
+/**
+ * POST/PATCH autenticado a la API pública. SIN reintentos (reintentar una escritura financiera puede
+ * duplicar dinero): la única excepción es un 401, donde Fudo rechazó el token sin procesar nada.
+ */
+export async function publicWrite(env: FudoEnv, method: "POST" | "PATCH", path: string, body: unknown): Promise<Response> {
+  const send = async (token: string) =>
+    fetch(`${env.FUDO_PUBLIC_API_URL}/${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
   const res = await send(await getPublicToken(env));
   return res.status === 401 ? send(await getPublicToken(env, true)) : res;
 }

@@ -17,6 +17,7 @@ import { courierToVerify } from "@/lib/courier-gate";
 import { courierMayActOn, courierMaySelfAssign, needsAutoAssign } from "@/lib/courier-assign";
 import { autoPickCourier, getAssignMode } from "@/lib/courier-assign-server";
 import { mirrorOrder, mirrorOrderEvents } from "@/lib/d1-mirror";
+import { syncFudoSaleAfterStatus } from "@/lib/fudo/sales-sync-server";
 
 const VALID_STATUSES: OrderStatus[] = [
   "Recibidos", "En Preparación", "En Camino", "Finalizados", "Cancelado",
@@ -249,6 +250,13 @@ export async function PATCH(req: NextRequest) {
       .insert(events.map((e) => ({ order_id: data.id, actor: auth.role, ...e })))
       .select();
     await mirrorOrderEvents("orders.events", eventRows ?? []);
+  }
+
+  // Venta en Fudo (solo DATA_BACKEND=d1): confirmar la crea, finalizar cobra y cierra, cancelar anula.
+  // Después de responder y sin tumbar el pedido: si Fudo falla queda pendiente para reintentar desde el admin.
+  if (patch.status) {
+    const status = patch.status;
+    after(() => syncFudoSaleAfterStatus(data.id, status, `orders.patch:${auth.role}:${auth.user.id}`));
   }
 
   // Un pedido nacido en Fudo ya lo gestiona el local allá: sin WhatsApp, puntos, reembolsos ni canjes.

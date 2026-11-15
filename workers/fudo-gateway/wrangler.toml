@@ -39,6 +39,9 @@ CATALOG_CRON = "1"
 # Ventas de delivery y take away (cada 5 min) y clientes (cada hora): prendidos el 2026-11-04 tras revisar el simulacro.
 SALES_CRON = "1"
 CUSTOMERS_CRON = "1"
+# Escrituras hacia el Fudo de producción (ventas, pagos, cierre/anulación). Ver GUIA_INTEGRACION_FUDO §9:
+# solo pasar a "true" tras UNA venta de prueba anulada y con OK del usuario.
+ENABLE_WRITES = "false"
 # DEBUG_WEBHOOK_BODY = "1"  # temporal: loguea el webhook completo (datos del cliente) hasta conocer el formato
 
 # Secrets (npx wrangler secret put <NOMBRE>, nunca en el repo):
@@ -47,6 +50,12 @@ CUSTOMERS_CRON = "1"
 #   FUDO_INTEGRATOR_TOKEN                lo asigna Fudo al aprobar la integración
 #   FUDO_GATEWAY_SECRET                  compartido con la app (misma variable en Vercel)
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+# Rate limit de escrituras (POST /sales, /payments, PATCH /sales/:id/state).
+[[ratelimits]]
+name = "RATE_LIMIT_WRITES"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
 
 [observability]
 enabled = true

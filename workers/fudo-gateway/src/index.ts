@@ -4,9 +4,10 @@ import { parseSalesRange } from "./sales.ts";
 import { claimOrder, listRetryable, loadMaps, markFailed, markSent, MAX_ATTEMPTS, type DbEnv } from "./db";
 import { createFudoOrder, FudoError, listFudoCategories, listFudoPaymentMethods, listFudoProducts, type FudoEnv } from "./fudo";
 import { buildFudoOrder, parseFudoWebhook } from "./payload";
+import { handleWrite, isWriteRoute, type WriteEnv } from "./sales-write";
 import { hmacHex, verifyHmacHex } from "./signature";
 
-export interface Env extends FudoEnv, DbEnv {
+export interface Env extends FudoEnv, DbEnv, WriteEnv {
   APP_URL: string;
   /** Compartido con la app (FUDO_GATEWAY_SECRET en Vercel): firma x-gateway-signature en los dos sentidos. */
   FUDO_GATEWAY_SECRET: string;
@@ -152,6 +153,8 @@ const CATALOG_SYNC_EVERY_MINUTES = 15;
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
+    // Escrituras de ventas (POST /sales, PATCH /sales/:id/state, POST /payments): gate ENABLE_WRITES.
+    if (isWriteRoute(request.method, pathname)) return handleWrite(request, env);
     if (request.method === "POST" && pathname === "/catalog-sync") return handleCatalogSync(request, env);
     if (request.method === "POST" && pathname === "/sales-sync") return handleSignedSync(request, env, "/sales-sync", (dry) => syncSales(env, dry, parseSalesRange(new URL(request.url).searchParams)));
     if (request.method === "POST" && pathname === "/customers-sync") return handleSignedSync(request, env, "/customers-sync", (dry) => syncCustomers(env, dry));

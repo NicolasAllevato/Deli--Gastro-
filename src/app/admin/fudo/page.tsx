@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Save, Trash2 } from "l
 import { Modal } from "@/components/ui";
 import { suggestPaymentIds, type FudoCatalogItem, type MappingState, type PaymentUsage, type SaveInput, type SkippedSummary } from "@/lib/fudo/mapping";
 import { formatDateAR } from "@/lib/time-ar";
+import { VentasPendientes } from "./VentasPendientes";
 
 interface MapResponse extends MappingState {
   catalog: FudoCatalogItem[];
@@ -233,6 +234,8 @@ export default function FudoMapPage() {
           Cada producto y medio de pago de la app necesita su id de Fudo. Sin mapeo, el pedido no se envía a Fudo y queda omitido.
         </p>
       </header>
+
+      <VentasPendientes />
 
       {error && (
         <div role="alert" className="badge-red text-xs font-bold px-3 py-2 rounded-lg flex flex-wrap items-center gap-3">
