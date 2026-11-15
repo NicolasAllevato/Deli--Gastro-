@@ -195,7 +195,7 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
 
   return (
     <section className="neumorphic rounded-2xl p-5 space-y-4" aria-label="Conectar con Facebook">
-      <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Conectar con Facebook</h2>
+      <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">2. Conectar con Facebook</h2>
       <p className="text-xs text-gray-500">
         Iniciá sesión con tu cuenta de Meta, elegí o creá el número y listo: el token, la cuenta y la suscripción se cargan solos.{" "}
         {coexistence
@@ -232,9 +232,9 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
           </Button>
         )}
       </div>
-      {missing && <p className="text-xs text-gray-500">Cargá el App ID y el Config ID de tu app de Meta (en «Credenciales») para habilitar el botón.</p>}
-      {!missing && !canConnect && <p className="text-xs text-gray-500">Cargá y guardá el App Secret en «Credenciales» para habilitar el botón.</p>}
-      {dirty && <p className="text-xs text-gray-500">Hay cambios sin guardar en «Credenciales»: guardalos para habilitar el botón (se usa el valor guardado).</p>}
+      {missing && <p className="text-xs text-gray-500">Completá y guardá el paso 1 (App ID y Config ID) para habilitar el botón.</p>}
+      {!missing && !canConnect && <p className="text-xs text-gray-500">Falta guardar el App Secret en el paso 1 para habilitar el botón.</p>}
+      {dirty && <p className="text-xs text-gray-500">Hay cambios sin guardar en el paso 1: guardalos para habilitar el botón (se usa el valor guardado).</p>}
     </section>
   );
 }

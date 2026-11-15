@@ -77,8 +77,17 @@ export async function PUT(req: NextRequest) {
 
   try {
     await saveWhatsAppSettings(createAdminClient(), parsed.data);
-  } catch {
-    return NextResponse.json({ error: "No se pudo guardar la configuración." }, { status: 500 });
+  } catch (error: unknown) {
+    const missingKey = error instanceof Error && /SETTINGS_ENC_KEY/.test(error.message);
+    console.error("[whatsapp.config] no se pudo guardar:", missingKey ? "falta o es inválida SETTINGS_ENC_KEY" : "error de base");
+    return NextResponse.json(
+      {
+        error: missingKey
+          ? "El servidor no tiene configurada la clave de cifrado (SETTINGS_ENC_KEY). Hasta cargarla no se puede guardar nada."
+          : "No se pudo guardar la configuración.",
+      },
+      { status: 500 },
+    );
   }
   return NextResponse.json(await currentState());
 }

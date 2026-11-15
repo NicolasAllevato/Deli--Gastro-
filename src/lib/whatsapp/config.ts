@@ -2,6 +2,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { isDemoMode } from "@/lib/demo/mode";
 import { createWhatsAppClient, type TemplateInfo, type WhatsAppClient } from "./client.ts";
 import { isCoexistenceValue } from "./embedded-signup.ts";
+import { readAppSettings, usesD1, writeAppSettings, type IntegrationSettingsDb as SqlDatabase } from "@/lib/data";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -23,14 +24,22 @@ export function isCoexistenceEnabled(s: Pick<WhatsAppSettings, "coexistence">): 
   return isCoexistenceValue(s.coexistence);
 }
 
-/** Nombres de las variables de entorno `WHATSAPP_*` que están tapando lo guardado en la base. */
+/**
+ * Nombres de las variables de entorno `WHATSAPP_*` que están tapando lo guardado en la base.
+ * Con D1 lo guardado gana sobre el entorno: nunca tapan nada.
+ */
 export function envOverrides(names: readonly SettingName[]): string[] {
+  if (usesD1()) return [];
   return names.filter((n) => fromEnv(n) !== null).map((n) => SOURCES[n].env);
 }
 
 export type SettingName = keyof WhatsAppSettings;
 
-/** Clave en `integration_secrets` y variable de entorno que la reemplaza (el entorno gana). */
+/**
+ * Clave guardada y variable de entorno equivalente.
+ * Supabase: el entorno gana sobre `integration_secrets`. D1: lo guardado (cifrado en `integration_settings`)
+ * gana y el entorno queda de respaldo, así un número conectado desde el panel no queda tapado.
+ */
 const SOURCES: Record<SettingName, { key: string; env: string }> = {
   accessToken: { key: "whatsapp_access_token", env: "WHATSAPP_ACCESS_TOKEN" },
   phoneNumberId: { key: "whatsapp_phone_number_id", env: "WHATSAPP_PHONE_NUMBER_ID" },
@@ -49,13 +58,37 @@ function fromEnv(name: SettingName): string | null {
   return value ? value : null;
 }
 
-export async function loadWhatsAppSettings(db: Db): Promise<WhatsAppSettings> {
-  const keys = NAMES.map((n) => SOURCES[n].key);
-  const { data } = await db.from("integration_secrets").select("key, value").in("key", keys);
-  const stored = new Map((data ?? []).map((r) => [r.key, r.value]));
+/** Lee filas guardadas: D1 cifrado o `integration_secrets` de Supabase según el backend. */
+export async function readStoredSecrets(db: Db, keys: readonly string[], d1?: SqlDatabase): Promise<Map<string, string>> {
+  if (usesD1()) return readAppSettings(keys, d1);
+  const { data } = await db.from("integration_secrets").select("key, value").in("key", [...keys]);
+  return new Map((data ?? []).map((r) => [r.key, r.value]));
+}
 
+/** Guarda filas: D1 cifrado o `integration_secrets` de Supabase según el backend. Lanza si falla. */
+export async function writeStoredSecrets(
+  db: Db,
+  rows: Array<{ key: string; value: string }>,
+  d1?: SqlDatabase,
+): Promise<void> {
+  if (rows.length === 0) return;
+  if (usesD1()) {
+    await writeAppSettings(rows, d1);
+    return;
+  }
+  const { error } = await db.from("integration_secrets").upsert(rows, { onConflict: "key" });
+  if (error) throw new Error(error.message);
+}
+
+export async function loadWhatsAppSettings(db: Db, d1?: SqlDatabase): Promise<WhatsAppSettings> {
+  const keys = NAMES.map((n) => SOURCES[n].key);
+  const stored = await readStoredSecrets(db, keys, d1);
+  const savedFirst = usesD1();
   return Object.fromEntries(
-    NAMES.map((n) => [n, fromEnv(n) ?? stored.get(SOURCES[n].key) ?? null]),
+    NAMES.map((n) => {
+      const saved = stored.get(SOURCES[n].key)?.trim() || null;
+      return [n, savedFirst ? (saved ?? fromEnv(n)) : (fromEnv(n) ?? saved)];
+    }),
   ) as unknown as WhatsAppSettings;
 }
 
@@ -63,15 +96,17 @@ export async function loadWhatsAppSettings(db: Db): Promise<WhatsAppSettings> {
 export async function saveWhatsAppSettings(
   db: Db,
   patch: Partial<Record<SettingName, string | undefined>>,
+  d1?: SqlDatabase,
 ): Promise<void> {
   const rows = NAMES.flatMap((n) => {
     const value = patch[n]?.trim();
     return value ? [{ key: SOURCES[n].key, value }] : [];
   });
-  if (rows.length === 0) return;
-
-  const { error } = await db.from("integration_secrets").upsert(rows, { onConflict: "key" });
-  if (error) throw new Error(`No se pudo guardar la configuración: ${error.message}`);
+  try {
+    await writeStoredSecrets(db, rows, d1);
+  } catch (error: unknown) {
+    throw new Error(`No se pudo guardar la configuración: ${error instanceof Error ? error.message : "error desconocido"}`);
+  }
 }
 
 /** ¿Alcanza para enviar mensajes? (token + número). */

@@ -36,6 +36,10 @@ export { anon, systemActor, actorFromSession, ForbiddenError, type Actor } from 
 export { type SupabaseAuthUser, authUserRow } from "./mirror.ts";
 export { shadowRead, dualWrite, mirrorToD1, type DiffLogger, type ShadowDiff } from "./shadow.ts";
 export { dataBackend, usesD1, type DataBackend } from "./backend.ts";
+/** Configuración sensible cifrada (`integration_settings`). Solo para código de servidor que ya validó al admin. */
+export { readAppSettings, writeAppSettings } from "./integration-settings-app.ts";
+/** Base inyectable en tests (node:sqlite); en producción se usa el binding único. */
+export type { SqlDatabase as IntegrationSettingsDb } from "./sql.ts";
 export { argentinaDay, argentinaDayRangeUtc, toUtcIso } from "./time.ts";
 export { toCents, fromCents } from "./money.ts";
 export { CLIENT_ORDER_FIELDS, CLIENT_ORDER_SELECT, type ClientOrderField } from "./client-order-fields.ts";

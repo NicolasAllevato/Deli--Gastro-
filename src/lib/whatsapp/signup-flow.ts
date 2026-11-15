@@ -97,6 +97,12 @@ export function signupErrorResponse(error: unknown): { status: number; body: { e
   if (error instanceof PhoneResolutionError) return { status: 409, body: { error: error.message, code: error.code } };
   if (error instanceof SignupValidationError) return { status: 400, body: { error: error.message } };
   if (error instanceof WhatsAppApiError) return { status: 502, body: { error: error.message } };
+  if (error instanceof Error && /SETTINGS_ENC_KEY/.test(error.message)) {
+    return {
+      status: 500,
+      body: { error: "Meta aceptó la conexión, pero el servidor no tiene la clave de cifrado (SETTINGS_ENC_KEY) y no pudo guardarla. Cargala y repetí la conexión." },
+    };
+  }
   return { status: 502, body: { error: "No se pudo completar la conexión con Meta." } };
 }
 

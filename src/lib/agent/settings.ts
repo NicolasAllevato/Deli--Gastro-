@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import { readConfig } from "@/lib/orders-server";
 import { DEFAULT_MODEL } from "./openai.ts";
+import { usesD1, type IntegrationSettingsDb as SqlDatabase } from "@/lib/data";
+import { readStoredSecrets, writeStoredSecrets } from "@/lib/whatsapp/config";
 
 type Db = ReturnType<typeof createAdminClient>;
 
@@ -47,15 +49,18 @@ export async function loadAgentSettings(db: Db): Promise<AgentSettings> {
   };
 }
 
-/** Clave de OpenAI: el entorno gana sobre la guardada desde el panel. */
-export async function loadOpenAIKey(db: Db): Promise<string | null> {
-  const fromEnv = process.env.OPENAI_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-  const { data } = await db.from("integration_secrets").select("value").eq("key", OPENAI_KEY).maybeSingle();
-  return data?.value ?? null;
+/** Clave de OpenAI. Supabase: el entorno gana. D1: la guardada desde el panel (cifrada) gana y el entorno es respaldo. */
+export async function loadOpenAIKey(db: Db, d1?: SqlDatabase): Promise<string | null> {
+  const fromEnv = process.env.OPENAI_API_KEY?.trim() || null;
+  if (fromEnv && !usesD1()) return fromEnv;
+  const saved = (await readStoredSecrets(db, [OPENAI_KEY], d1)).get(OPENAI_KEY)?.trim() || null;
+  return saved ?? fromEnv;
 }
 
-export async function saveOpenAIKey(db: Db, apiKey: string): Promise<void> {
-  const { error } = await db.from("integration_secrets").upsert({ key: OPENAI_KEY, value: apiKey.trim() }, { onConflict: "key" });
-  if (error) throw new Error(`No se pudo guardar la clave: ${error.message}`);
+export async function saveOpenAIKey(db: Db, apiKey: string, d1?: SqlDatabase): Promise<void> {
+  try {
+    await writeStoredSecrets(db, [{ key: OPENAI_KEY, value: apiKey.trim() }], d1);
+  } catch (error: unknown) {
+    throw new Error(`No se pudo guardar la clave: ${error instanceof Error ? error.message : "error desconocido"}`);
+  }
 }
