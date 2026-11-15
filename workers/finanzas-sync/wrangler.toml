@@ -11,3 +11,13 @@ crons = ["0 * * * *"] # cada hora, en punto
 # este directorio, una vez que el proyecto Supabase real esté conectado):
 #   SUPABASE_URL
 #   SUPABASE_SERVICE_ROLE_KEY
+
+# Migración a D1 (docs/migracion-supabase-d1.md): base deli-gastro. Con DATA_BACKEND = "d1" el Worker
+# usa solo este binding (sin SUPABASE_*). El cambio de valor se hace en el corte (docs/runbook-corte-d1.md).
+[[d1_databases]]
+binding = "DB"
+database_name = "deli-gastro"
+database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
+
+[vars]
+DATA_BACKEND = "supabase"

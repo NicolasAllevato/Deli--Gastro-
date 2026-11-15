@@ -10,3 +10,13 @@ crons = ["*/15 * * * *"] # cada 15 minutos; la app solo envía entre las 9 y las
 # Secrets requeridos (cargar con `npx wrangler secret bulk` o `secret put`, ver README.md):
 #   BASE_URL     URL pública de la app, sin barra final (ej. https://deli-gastro.vercel.app)
 #   CRON_SECRET  el mismo valor que CRON_SECRET en la app (Vercel / .env.local)
+
+# Migración a D1 (docs/migracion-supabase-d1.md): base deli-gastro. Con DATA_BACKEND = "d1" el Worker
+# usa solo este binding (sin SUPABASE_*). El cambio de valor se hace en el corte (docs/runbook-corte-d1.md).
+[[d1_databases]]
+binding = "DB"
+database_name = "deli-gastro"
+database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
+
+[vars]
+DATA_BACKEND = "supabase"
