@@ -36,6 +36,8 @@ export interface Plan {
   offset?: number;
   payload: unknown;
   onConflict: string;
+  /** upsert: dejar intacta la fila existente (ON CONFLICT DO NOTHING), como supabase-js. */
+  ignoreDuplicates?: boolean;
   returning: boolean;
   count: boolean;
   head: boolean;
@@ -344,13 +346,15 @@ export async function executeD1Plan(db: SqlDatabase, actor: Actor, plan: Plan): 
       const written: Row[] = [];
       for (const raw of incoming) {
         const row = { ...raw };
-        if (pk === "id" && cols.has("id") && row.id === undefined) row.id = crypto.randomUUID();
+        const generatedId = pk === "id" && cols.has("id") && row.id === undefined;
+        if (generatedId) row.id = crypto.randomUUID();
         const { names, values } = rowValues(plan.table, cols, row);
         let sql = `INSERT INTO ${t} (${names.map(ident).join(", ")}) VALUES (${names.map(() => "?").join(", ")})`;
         if (conflict.length) {
-          const sets = names.filter((n) => !conflict.includes(n)).map((n) => `${ident(n)} = excluded.${ident(n)}`);
+          // Un id generado acá nunca pisa el de la fila existente (si no, cambia la clave que ya tienen otros).
+          const sets = plan.ignoreDuplicates ? [] : names.filter((n) => !conflict.includes(n) && !(generatedId && n === "id")).map((n) => `${ident(n)} = excluded.${ident(n)}`);
           // Sin interpolar valores: la fecha la pone SQLite.
-          if (cols.has("updated_at") && !names.includes("updated_at")) sets.push(`"updated_at" = ${SQL_NOW}`);
+          if (!plan.ignoreDuplicates && cols.has("updated_at") && !names.includes("updated_at")) sets.push(`"updated_at" = ${SQL_NOW}`);
           sql += ` ON CONFLICT (${conflict.map(ident).join(", ")}) ${sets.length ? `DO UPDATE SET ${sets.join(", ")}` : "DO NOTHING"}`;
         }
         const back = await db.prepare(`${sql} RETURNING *`).bind(...values).all<Row>();

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
+import { actorFromSession, dataFor, dualWrite } from "@/lib/data";
+import { type Outcome, isSuccess, respond, serverError } from "@/lib/catalog/outcome";
 import { readConfig } from "@/lib/orders-server";
 import { listZones, localFromConfig, zoneInputSchema } from "@/lib/zones-server";
 
@@ -15,14 +17,15 @@ function firstIssue(error: z.ZodError): string {
 
 async function guard(req: NextRequest, limit: number) {
   if (!(await rateLimit(getClientIp(req), limit, 60_000))) {
-    return NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 });
+    return { denied: NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 }), actor: null };
   }
   const auth = await requireRole("admin", req);
-  return isAuthorizationError(auth) ? auth.error : null;
+  if (isAuthorizationError(auth)) return { denied: auth.error, actor: null };
+  return { denied: null, actor: actorFromSession({ userId: auth.user.id, role: auth.role }) };
 }
 
 export async function GET(req: NextRequest) {
-  const denied = await guard(req, 60);
+  const { denied } = await guard(req, 60);
   if (denied) return denied;
   const db = createAdminClient();
   const [zones, config] = await Promise.all([listZones(db), readConfig(db)]);
@@ -30,24 +33,34 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const denied = await guard(req, 30);
-  if (denied) return denied;
+  const { denied, actor } = await guard(req, 30);
+  if (denied || !actor) return denied;
 
   const parsed = zoneInputSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
 
-  const { data, error } = await createAdminClient()
-    .from("delivery_zones")
-    .insert(parsed.data)
-    .select()
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
+  // El id se genera acá para que Supabase y D1 guarden la misma fila.
+  const id = crypto.randomUUID();
+  try {
+    const outcome = await dualWrite<Outcome>(
+      "zones.create",
+      async () => {
+        const { data, error } = await createAdminClient().from("delivery_zones").insert({ id, ...parsed.data }).select().single();
+        if (error) throw new Error(error.message);
+        return { status: 201, body: data };
+      },
+      async () => ({ status: 201, body: await (await dataFor(actor)).zones.create(id, parsed.data) }),
+      { shouldMirror: isSuccess },
+    );
+    return respond(outcome);
+  } catch (err) {
+    return serverError("zones.create", err);
+  }
 }
 
 export async function PATCH(req: NextRequest) {
-  const denied = await guard(req, 60);
-  if (denied) return denied;
+  const { denied, actor } = await guard(req, 60);
+  if (denied || !actor) return denied;
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
@@ -57,25 +70,50 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "No hay cambios para guardar." }, { status: 400 });
   }
 
-  const { data, error } = await createAdminClient()
-    .from("delivery_zones")
-    .update(changes)
-    .eq("id", id)
-    .select()
-    .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!data) return NextResponse.json({ error: "Zona no encontrada." }, { status: 404 });
-  return NextResponse.json(data);
+  try {
+    const outcome = await dualWrite<Outcome>(
+      "zones.update",
+      async () => {
+        const { data, error } = await createAdminClient().from("delivery_zones").update(changes).eq("id", id).select().maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data) return { status: 404, body: { error: "Zona no encontrada." } };
+        return { status: 200, body: data };
+      },
+      async () => {
+        const row = await (await dataFor(actor)).zones.update(id, changes);
+        return row ? { status: 200, body: row } : { status: 404, body: { error: "Zona no encontrada." } };
+      },
+      { shouldMirror: isSuccess },
+    );
+    return respond(outcome);
+  } catch (err) {
+    return serverError("zones.update", err);
+  }
 }
 
 export async function DELETE(req: NextRequest) {
-  const denied = await guard(req, 30);
-  if (denied) return denied;
+  const { denied, actor } = await guard(req, 30);
+  if (denied || !actor) return denied;
 
   const parsed = deleteSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
 
-  const { error } = await createAdminClient().from("delivery_zones").delete().eq("id", parsed.data.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
+  try {
+    const outcome = await dualWrite<Outcome>(
+      "zones.delete",
+      async () => {
+        const { error } = await createAdminClient().from("delivery_zones").delete().eq("id", parsed.data.id);
+        if (error) throw new Error(error.message);
+        return { status: 200, body: { ok: true } };
+      },
+      async () => {
+        await (await dataFor(actor)).zones.remove(parsed.data.id);
+        return { status: 200, body: { ok: true } };
+      },
+      { shouldMirror: isSuccess },
+    );
+    return respond(outcome);
+  } catch (err) {
+    return serverError("zones.delete", err);
+  }
 }

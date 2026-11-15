@@ -3,6 +3,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireClient } from "@/lib/auth/requireClient";
 import { isAuthorizationError } from "@/lib/auth/requireRole";
+import { dataFor, usesD1 } from "@/lib/data";
 
 /**
  * Perfil del cliente autenticado (etapa 3): reemplaza las lecturas directas a `clients` y
@@ -14,6 +15,13 @@ export async function GET(req: NextRequest) {
   }
   const auth = await requireClient(req);
   if (isAuthorizationError(auth)) return auth.error;
+
+  if (usesD1()) {
+    // D1 única fuente: la capa resuelve la ficha desde el user_id de la sesión.
+    const profile = await (await dataFor({ kind: "cliente", userId: auth.user.id })).clients.ownProfile();
+    if (!profile) return NextResponse.json({ error: "Error interno." }, { status: 500 });
+    return NextResponse.json({ email: auth.user.email ?? null, ...profile });
+  }
 
   const db = createAdminClient();
   const [{ data: client, error }, { count }] = await Promise.all([

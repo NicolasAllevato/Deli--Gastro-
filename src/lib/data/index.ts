@@ -15,6 +15,7 @@ import * as clients from "./clients.ts";
 import * as orders from "./orders.ts";
 import * as points from "./points.ts";
 import * as reviews from "./reviews.ts";
+import * as legal from "./legal.ts";
 import * as catalog from "./catalog.ts";
 import * as catalogAdmin from "./catalog-admin.ts";
 import * as clientViews from "./client-views.ts";
@@ -26,6 +27,8 @@ import * as mirror from "./mirror.ts";
 import * as live from "./live.ts";
 import * as session from "./session.ts";
 import * as fudoSales from "./fudo-sales.ts";
+import * as zones from "./zones.ts";
+import * as reports from "./reports.ts";
 import { executeD1Plan, type Plan, type PlanResult } from "./plan-sql.ts";
 import { systemActor as sysActor } from "./actor.ts";
 
@@ -51,6 +54,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       list: bind(clients.listClients, db, actor),
       createOwn: bind(clients.createOwnClient, db, actor),
       update: bind(clients.updateClient, db, actor),
+      ownProfile: bind(clients.getOwnProfile, db, actor),
     },
     orders: {
       list: bind(orders.listOrders, db, actor),
@@ -61,7 +65,12 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       assign: bind(orders.assignOrder, db, actor),
     },
     points: { ledger: bind(points.listLedger, db, actor), add: bind(points.addPoints, db, actor) },
-    reviews: { list: bind(reviews.listReviews, db, actor), createOwn: bind(reviews.createOwnReview, db, actor) },
+    reviews: {
+      list: bind(reviews.listReviews, db, actor),
+      createOwn: bind(reviews.createOwnReview, db, actor),
+      eligibility: bind(reviews.reviewEligibility, db, actor),
+    },
+    legal: { own: bind(legal.listOwnLegal, db, actor), accept: bind(legal.acceptOwnLegal, db, actor) },
     catalog: {
       products: bind(catalog.listProducts, db, actor),
       categories: bind(catalog.listCategories, db, actor),
@@ -90,11 +99,19 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       updateCategory: bind(catalogAdmin.updateCategory, db, actor),
       deleteCategory: bind(catalogAdmin.deleteCategory, db, actor),
     },
+    zones: {
+      list: bind(zones.listAllZones, db, actor),
+      create: bind(zones.createZone, db, actor),
+      update: bind(zones.updateZone, db, actor),
+      remove: bind(zones.deleteZone, db, actor),
+    },
+    reports: { upsertDaily: bind(reports.upsertDailyReport, db, actor) },
     payments: {
       get: bind(payments.getPaymentIntent, db, actor),
       create: bind(payments.createPaymentIntent, db, actor),
       approve: bind(payments.approvePaymentIntent, db, actor),
       close: bind(payments.closePaymentIntent, db, actor),
+      cancelOwn: bind(payments.cancelOwnPaymentIntent, db, actor),
     },
     couriers: {
       list: bind(couriers.listCouriers, db, actor),
