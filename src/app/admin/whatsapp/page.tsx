@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Copy, KeyRound, MessageCircle, XCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCircle2, Copy, KeyRound, MessageCircle, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
@@ -137,7 +137,12 @@ export default function WhatsAppPage() {
       const next = await request<State>("/api/whatsapp/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumberId, wabaId, accessToken, appSecret, verifyToken, appId, configId, coexistence: coexistence ? "1" : "0" }),
+        // Sin token de verificación se genera uno: es un dato que nadie tiene que inventar.
+        body: JSON.stringify({
+          phoneNumberId, wabaId, accessToken, appSecret, appId, configId,
+          verifyToken: verifyToken.trim() || randomToken(),
+          coexistence: coexistence ? "1" : "0",
+        }),
       });
       apply(next);
       setAccessToken("");
@@ -150,19 +155,32 @@ export default function WhatsAppPage() {
     }
   };
 
-  const testConnection = async () => {
+  const testConnection = useCallback(async () => {
     setBusy(true);
     setError(null);
-    setNotice(null);
     setTest(null);
     try {
       setTest(await request<Diagnosis>("/api/whatsapp/test", { method: "POST" }));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "No se pudo probar la conexión.");
+      setError(e instanceof Error ? e.message : "No se pudo revisar la conexión.");
     } finally {
       setBusy(false);
     }
-  };
+  }, []);
+
+  // Verificación automática: con un número conectado se revisa sola una vez al cargar.
+  const autoChecked = useRef(false);
+  useEffect(() => {
+    if (!state?.canSend || autoChecked.current) return;
+    autoChecked.current = true;
+    void testConnection();
+  }, [state?.canSend, testConnection]);
+
+  const progress: ReadonlyArray<[string, boolean]> = [
+    ["Credenciales de la app", Boolean(state?.appId && state?.configId && state?.appSecretHint)],
+    ["Número conectado", Boolean(state?.canSend && state?.wabaId)],
+    ["Verificado", Boolean(test?.ready)],
+  ];
 
   const link = async (body: { action: "subscribe" } | { action: "register"; pin: string }) => {
     setBusy(true);
@@ -206,14 +224,67 @@ export default function WhatsAppPage() {
       {error && <p role="alert" className="text-xs font-bold text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-100">{error}</p>}
       {notice && <p role="status" className="text-xs font-bold text-green-700 px-3 py-2 rounded-lg bg-green-50 border border-green-100">{notice}</p>}
 
-      <section className="neumorphic rounded-2xl p-5 flex flex-wrap gap-x-8 gap-y-2" aria-label="Estado de la conexión">
-        <StatusBadge ok={state?.canSend ?? false} label="Envío de mensajes" />
-        <StatusBadge ok={state?.canReceive ?? false} label="Recepción de mensajes (webhook)" />
+      <section className="neumorphic rounded-2xl p-5 space-y-3" aria-label="Estado de la conexión">
+        <ol className="grid grid-cols-1 sm:grid-cols-3 gap-2" aria-label="Pasos del alta">
+          {progress.map(([label, done], i) => (
+            <li key={label} className="flex items-center gap-2 text-xs">
+              <span
+                className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-black ${done ? "bg-green-50 text-green-700" : "neumorphic-inset text-gray-500"}`}
+                aria-hidden
+              >
+                {done ? <CheckCircle2 size={14} /> : i + 1}
+              </span>
+              <span className={done ? "font-bold text-gray-700" : "text-gray-600"}>
+                {label}
+                <span className="sr-only">{done ? " (listo)" : " (pendiente)"}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div className="flex flex-wrap gap-x-8 gap-y-2">
+          <StatusBadge ok={state?.canSend ?? false} label="Envío de mensajes" />
+          <StatusBadge ok={state?.canReceive ?? false} label="Recepción de mensajes (webhook)" />
+        </div>
         {state?.connectedBy && (
-          <p className="basis-full text-xs text-gray-600" data-testid="connected-by">
+          <p className="text-xs text-gray-600" data-testid="connected-by">
             Conectado por {describeConnectedBy(state.connectedBy)}
           </p>
         )}
+      </section>
+
+      <section className="neumorphic rounded-2xl p-5 space-y-4" aria-label="Credenciales de la app">
+        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">1. Credenciales de la app de Meta</h2>
+        <p className="text-xs text-gray-500">
+          Se cargan una sola vez. Están en Meta for Developers: App ID y App Secret en «Configuración de la app → Básica»;
+          el Config ID en «WhatsApp → Embedded Signup». Se guardan cifrados.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="App ID" value={appId} onChange={(e) => setAppId(e.target.value)} inputMode="numeric" />
+          <Field label="Config ID" value={configId} onChange={(e) => setConfigId(e.target.value)} inputMode="numeric" />
+          <Field
+            label="App Secret"
+            type="password"
+            autoComplete="off"
+            value={appSecret}
+            onChange={(e) => setAppSecret(e.target.value)}
+            placeholder={state?.appSecretHint || "Pegá el App Secret"}
+            hint={state?.appSecretHint ? "Guardado. Dejalo vacío para conservarlo." : undefined}
+          />
+        </div>
+        <Switch
+          checked={coexistence}
+          onChange={setCoexistence}
+          label="Coexistencia con la app WhatsApp Business"
+          disabled={!state || state.coexistenceLocked}
+          hint={
+            state?.coexistenceLocked
+              ? "Definido por la variable de entorno WHATSAPP_COEXISTENCE: no se puede cambiar desde acá."
+              : "Prendelo si el local sigue usando el número en el celular (sin PIN). Apagalo para un número nuevo solo para el bot."
+          }
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={save} loading={busy}>Guardar</Button>
+        </div>
       </section>
 
       <EmbeddedSignup
@@ -229,6 +300,7 @@ export default function WhatsAppPage() {
           setError(null);
           setNotice(message);
           request<State>("/api/whatsapp/config").then(apply).catch(() => undefined);
+          void testConnection();
         }}
         onError={(message) => {
           setNotice(null);
@@ -236,101 +308,22 @@ export default function WhatsAppPage() {
         }}
       />
 
-      <section className="neumorphic rounded-2xl p-5 space-y-3">
-        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Conexión manual (alternativa)</h2>
-        <ol className="list-decimal pl-5 space-y-1.5 text-xs text-gray-600">
-          {STEPS.map((step) => <li key={step}>{step}</li>)}
-        </ol>
-      </section>
-
-      <section className="neumorphic rounded-2xl p-5 space-y-4" aria-label="Credenciales">
-        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Credenciales</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Phone Number ID" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} inputMode="numeric" />
-          <Field label="WABA ID" value={wabaId} onChange={(e) => setWabaId(e.target.value)} inputMode="numeric" />
-          <Field label="App ID (Meta)" value={appId} onChange={(e) => setAppId(e.target.value)} inputMode="numeric" />
-          <Field label="Config ID (Embedded Signup)" value={configId} onChange={(e) => setConfigId(e.target.value)} inputMode="numeric" />
-          <Field
-            label="Token de acceso"
-            type="password"
-            autoComplete="off"
-            value={accessToken}
-            onChange={(e) => setAccessToken(e.target.value)}
-            placeholder={state?.accessTokenHint || "Pegá el token"}
-            hint={state?.accessTokenHint ? "Guardado. Dejalo vacío para conservarlo." : undefined}
-          />
-          <Field
-            label="App Secret"
-            type="password"
-            autoComplete="off"
-            value={appSecret}
-            onChange={(e) => setAppSecret(e.target.value)}
-            placeholder={state?.appSecretHint || "Pegá el App Secret"}
-            hint={state?.appSecretHint ? "Guardado. Dejalo vacío para conservarlo." : undefined}
-          />
-        </div>
-        <div className="flex items-end gap-3">
-          <div className="flex-1">
-            <Field label="Token de verificación" value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} />
-          </div>
-          <Button size="sm" variant="secondary" leftIcon={<KeyRound size={14} aria-hidden />} onClick={() => setVerifyToken(randomToken())}>
-            Generar
-          </Button>
-        </div>
-        <Switch
-          checked={coexistence}
-          onChange={setCoexistence}
-          label="Coexistencia con la app WhatsApp Business"
-          disabled={!state || state.coexistenceLocked}
-          hint={
-            state?.coexistenceLocked
-              ? "Definido por la variable de entorno WHATSAPP_COEXISTENCE: no se puede cambiar desde acá."
-              : "Conecta un número que el local sigue usando en el celular (sin PIN). Apagalo para un número nuevo solo de la Cloud API. Guardá para que aplique a la próxima conexión con Facebook."
-          }
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={save} loading={busy}>Guardar</Button>
-        </div>
-      </section>
-
-      <section className="neumorphic rounded-2xl p-5 space-y-4" aria-label="Vinculación con Meta">
-        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Vinculación con Meta</h2>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-40">
-            <Field
-              label="PIN de 6 dígitos"
-              type="password"
-              autoComplete="off"
-              inputMode="numeric"
-              maxLength={6}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => link({ action: "register", pin })}
-            disabled={busy || !state?.canSend || pin.length !== 6}
-          >
-            Registrar número
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => link({ action: "subscribe" })}
-            disabled={busy || !state?.canSend || !state?.wabaId}
-          >
-            Suscribir app
-          </Button>
-          <Button size="sm" onClick={testConnection} disabled={busy || !state?.canSend}>
-            Revisar vinculación
-          </Button>
-        </div>
+      <section className="neumorphic rounded-2xl p-5 space-y-4" aria-label="Verificación">
+        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">3. Verificación</h2>
         <p className="text-xs text-gray-500">
-          El registro se hace una sola vez por número. Si Meta responde que ya está registrado, seguí con la suscripción.
+          Se revisa sola al abrir esta página y después de conectar: número, cuenta y suscripción del webhook.
         </p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" leftIcon={<RefreshCw size={14} aria-hidden />} onClick={testConnection} loading={busy} disabled={!state?.canSend}>
+            Volver a revisar
+          </Button>
+          {test && test.subscription.status !== "ok" && (
+            <Button size="sm" variant="secondary" onClick={() => link({ action: "subscribe" })} disabled={busy || !state?.wabaId}>
+              Suscribir ahora
+            </Button>
+          )}
+        </div>
+        {!state?.canSend && <p className="text-xs text-gray-500">Todavía no hay un número conectado: completá el paso 2.</p>}
 
         {test && (
           <ul role="status" className="space-y-2" aria-label="Resultado de la revisión">
@@ -349,25 +342,94 @@ export default function WhatsAppPage() {
             })}
             {test.ready && (
               <li className="text-xs font-bold text-green-700 px-3 py-2 rounded-lg bg-green-50 border border-green-100">
-                Vinculación completa: el número envía y recibe mensajes.
+                Listo: el número envía y recibe mensajes, y el bot ya usa estas credenciales (puede tardar hasta un minuto).
               </li>
             )}
           </ul>
         )}
       </section>
 
-      <section className="neumorphic rounded-2xl p-5 space-y-3" aria-label="Datos para Meta">
-        <h2 className="font-headline font-bold text-sm uppercase tracking-widest text-gray-700">Datos para cargar en Meta</h2>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 min-w-0 truncate px-3 py-2 rounded-xl neumorphic-inset text-xs text-gray-700">{webhookUrl}</code>
-          <Button variant="icon" size="sm" aria-label="Copiar URL del webhook" onClick={() => copy(webhookUrl, "URL")}>
-            <Copy size={14} aria-hidden />
-          </Button>
+      <details className="neumorphic rounded-2xl p-5 group">
+        <summary className="cursor-pointer font-headline font-bold text-sm uppercase tracking-widest text-gray-700">
+          Avanzado: carga manual y datos del webhook
+        </summary>
+        <div className="space-y-5 mt-4">
+          <p className="text-xs text-gray-500">
+            Solo si no podés usar «Conectar con Facebook» o Meta no eligió el número solo.
+          </p>
+          <ol className="list-decimal pl-5 space-y-1.5 text-xs text-gray-600">
+            {STEPS.map((step) => <li key={step}>{step}</li>)}
+          </ol>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Phone Number ID" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} inputMode="numeric" />
+            <Field label="WABA ID" value={wabaId} onChange={(e) => setWabaId(e.target.value)} inputMode="numeric" />
+            <Field
+              label="Token de acceso"
+              type="password"
+              autoComplete="off"
+              value={accessToken}
+              onChange={(e) => setAccessToken(e.target.value)}
+              placeholder={state?.accessTokenHint || "Pegá el token"}
+              hint={state?.accessTokenHint ? "Guardado. Dejalo vacío para conservarlo." : undefined}
+            />
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <Field
+                  label="Token de verificación"
+                  value={verifyToken}
+                  onChange={(e) => setVerifyToken(e.target.value)}
+                  hint="Si queda vacío se genera solo al guardar."
+                />
+              </div>
+              <Button size="sm" variant="secondary" leftIcon={<KeyRound size={14} aria-hidden />} onClick={() => setVerifyToken(randomToken())}>
+                Generar
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={save} loading={busy}>Guardar</Button>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-40">
+              <Field
+                label="PIN de 6 dígitos"
+                type="password"
+                autoComplete="off"
+                inputMode="numeric"
+                maxLength={6}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => link({ action: "register", pin })}
+              disabled={busy || !state?.canSend || pin.length !== 6}
+            >
+              Registrar número
+            </Button>
+          </div>
+          <p className="text-xs text-gray-500">
+            El registro con PIN es solo para números nuevos cargados a mano (con coexistencia no hace falta). Si Meta dice que ya está registrado, seguí.
+          </p>
+
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-gray-700">URL del webhook para Meta</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 min-w-0 truncate px-3 py-2 rounded-xl neumorphic-inset text-xs text-gray-700">{webhookUrl}</code>
+              <Button variant="icon" size="sm" aria-label="Copiar URL del webhook" onClick={() => copy(webhookUrl, "URL")}>
+                <Copy size={14} aria-hidden />
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Meta solo acepta URLs públicas con HTTPS: en tu computadora usá un túnel (por ejemplo cloudflared) o probalo ya desplegado.
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-gray-500">
-          Meta solo acepta URLs públicas con HTTPS: en tu computadora usá un túnel (por ejemplo cloudflared) o probalo ya desplegado.
-        </p>
-      </section>
+      </details>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { mirrorBotRepo, mirrorInboundRepo } from "./repo/d1-mirror.ts";
 import { sqlMirrorReader } from "./repo/d1-mirror-sql.ts";
 import { d1BotRepo, d1InboundRepo } from "./repo/d1.ts";
 import type { SqlDatabase } from "../../../src/lib/data/sql.ts";
+import { loadD1BotSecrets, type BotSecrets } from "./secrets-d1.ts";
 
 export { ConversationBuffer } from "./conversation-buffer.ts";
 
@@ -36,6 +37,8 @@ export interface Env {
   WHATSAPP_VERIFY_TOKEN?: string;
   WHATSAPP_PHONE_NUMBER_ID?: string;
   WHATSAPP_ACCESS_TOKEN?: string;
+  /** Clave AES-GCM (32 bytes base64) para leer `integration_settings` de D1; la misma que en opsyn-dely. */
+  SETTINGS_ENC_KEY?: string;
   /** Secret (wrangler secret put BOT_INTERNAL_SECRET, >= 32 caracteres, igual al de Vercel). Sin él los pedidos quedan apagados. */
   BOT_INTERNAL_SECRET?: string;
 }
@@ -45,12 +48,6 @@ const WEBHOOK_PATH = "/webhook";
 const MAX_BODY_BYTES = 256 * 1024;
 const SECRETS_TTL_MS = 60_000;
 
-interface BotSecrets {
-  appSecret: string | null;
-  verifyToken: string | null;
-  phoneNumberId: string | null;
-  accessToken: string | null;
-}
 
 /** Caché por instancia: evita una consulta por mensaje; un cambio en el panel se ve en ≤ 60 s. */
 let secretsCache: { value: BotSecrets; at: number } | null = null;
@@ -89,19 +86,10 @@ function d1Db(env: Env): SqlDatabase {
   return env.D1 as unknown as SqlDatabase;
 }
 
-function secretsFromEnv(env: Env): BotSecrets {
-  const v = (x: string | undefined) => (x && x.trim() ? x.trim() : null);
-  return {
-    appSecret: v(env.WHATSAPP_APP_SECRET),
-    verifyToken: v(env.WHATSAPP_VERIFY_TOKEN),
-    phoneNumberId: v(env.WHATSAPP_PHONE_NUMBER_ID),
-    accessToken: v(env.WHATSAPP_ACCESS_TOKEN),
-  };
-}
 
-/** Secretos del bot: Worker secrets en d1; la vista de Supabase en los otros modos. */
+/** Secretos del bot: D1 cifrado (respaldo: Worker secrets) en d1; la vista de Supabase en los otros modos. */
 async function botSecrets(env: Env): Promise<BotSecrets> {
-  if (isD1(env)) return secretsFromEnv(env);
+  if (isD1(env)) return loadD1BotSecrets(d1Db(env), env);
   const sql = connect(env);
   try {
     return await loadSecrets(sql);
@@ -209,7 +197,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
   // d1: sin Hyperdrive (etapa 2 del corte).
   const sql = isD1(env) ? null : connect(env);
   try {
-    const secrets = sql ? await loadSecrets(sql) : secretsFromEnv(env);
+    const secrets = sql ? await loadSecrets(sql) : await loadD1BotSecrets(d1Db(env), env);
     if (!secrets.accessToken || !secrets.phoneNumberId) {
       console.error("[whatsapp-bot] faltan el token o el phone number id: los turnos quedan para reintentar");
       batch.retryAll({ delaySeconds: 60 });
