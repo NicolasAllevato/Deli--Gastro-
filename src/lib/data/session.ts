@@ -122,5 +122,6 @@ export function runtimeAuth(db: SqlDatabase, sendResetPassword?: (to: string, ur
     baseURL,
     trustedOrigins: trustedOriginsFor(baseURL),
     sendResetPassword,
+    turnstileSecret: process.env.TURNSTILE_SECRET_KEY?.trim() || undefined,
   });
 }

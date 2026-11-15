@@ -29,8 +29,8 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://va.vercel-scripts.com https://connect.facebook.net`,
-      "frame-src https://*.facebook.com",
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://va.vercel-scripts.com https://connect.facebook.net https://challenges.cloudflare.com`,
+      "frame-src https://*.facebook.com https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline'",
       `img-src 'self' data: blob: https://picsum.photos https://lh3.googleusercontent.com https://*.tile.openstreetmap.org${r2Host ? ` https://${r2Host}` : ""}`,
       "font-src 'self'",

@@ -14,6 +14,7 @@
  *   chequeo CSRF existente de la app.
  */
 import { betterAuth } from "better-auth";
+import { captcha } from "better-auth/plugins/captcha";
 import { courierSessionPlugin } from "./auth-courier.ts";
 
 export interface AuthEnv {
@@ -29,7 +30,15 @@ export interface AuthEnv {
   allowSignUp?: boolean;
   /** Envía el link de recuperación. Sin él, /request-password-reset responde igual pero no manda nada. */
   sendResetPassword?: (to: string, url: string) => Promise<void>;
+  /**
+   * Secreto de Cloudflare Turnstile (Worker secret TURNSTILE_SECRET_KEY). Con él, pedir el link de
+   * recuperación exige el token del widget (header x-captcha-response). El login no lo pide.
+   */
+  turnstileSecret?: string;
 }
+
+/** Endpoints protegidos con captcha: solo el pedido de recuperación (anti-bots/spam de emails). */
+export const CAPTCHA_ENDPOINTS = ["/request-password-reset", "/forget-password"];
 
 export const AUTH_COOKIE_PREFIX = "opsyn";
 export const SESSION_TTL_S = 7 * 24 * 60 * 60;
@@ -98,7 +107,12 @@ export function createAuth(env: AuthEnv) {
       defaultCookieAttributes: { httpOnly: true, secure: true, sameSite: "lax", path: "/" },
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
     },
-    plugins: [courierSessionPlugin()],
+    plugins: [
+      courierSessionPlugin(),
+      ...(env.turnstileSecret
+        ? [captcha({ provider: "cloudflare-turnstile", secretKey: env.turnstileSecret, endpoints: CAPTCHA_ENDPOINTS })]
+        : []),
+    ],
     telemetry: { enabled: false },
   });
 }
