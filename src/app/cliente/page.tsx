@@ -11,6 +11,7 @@ import { AnimatedClock } from "./_components/AnimatedClock";
 import { TodayPicks } from "./_components/TodayPicks";
 import { PROMO_CONFIG_KEY, parsePromos, promosForToday } from "@/lib/promos";
 import { AddToCartButton } from "./_components/AddToCartButton";
+import { isPortalVisible } from "@/lib/catalog/visibility";
 import { MenuSection, type MenuCategory, type MenuProduct } from "./_components/MenuSection";
 
 const PROGRESS: Record<string, number> = {
@@ -37,7 +38,8 @@ export default async function ClienteDashboardPage() {
   ]);
 
   const categories = (categoriesRes.data ?? []) as MenuCategory[];
-  const products = (productsRes.data ?? []).map((p) => ({
+  // Solo lo que el admin marcó "Visible en el portal" (los nuevos de Fudo entran ocultos).
+  const products = (productsRes.data ?? []).filter(isPortalVisible).map((p) => ({
     id: p.id,
     name: p.name,
     description: p.description,

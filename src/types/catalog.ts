@@ -16,6 +16,8 @@ export interface Product {
   /** Cadena vacía = sin categoría. */
   category_id: string;
   is_active: boolean;
+  /** Interruptor del admin "Visible en el portal". Los productos nuevos de Fudo entran ocultos. */
+  show_in_portal?: boolean;
   /** Puntos por cada $100 del plato; pisa los de la categoría. `null` = hereda. */
   points_per_100: number | null;
   /** Id en Fudo. Si está, Fudo manda en nombre, precio, disponibilidad y categoría (solo lectura acá). */

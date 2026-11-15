@@ -482,6 +482,8 @@ export interface Database {
           price: number
           image_url: string
           is_active: boolean
+          /** Solo en D1 (migración 0009). Supabase no la tiene: ausente = visible. */
+          show_in_portal?: boolean
           points_per_100: number | null
           created_at: string
           updated_at: string

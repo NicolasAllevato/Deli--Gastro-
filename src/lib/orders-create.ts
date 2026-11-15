@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
+import { isPortalVisible } from "@/lib/catalog/visibility";
 import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
 import { buildItemsDesc, formatMoney, minutesSince, pointsForLines, REWARDS, type Reward } from "@/lib/orders";
 import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
@@ -73,7 +74,7 @@ export async function priceOrder(
 
   const { data: products, error } = await db
     .from("products")
-    .select("id, name, price, is_active, category_id, points_per_100")
+    .select("*")
     .in("id", [...qtyByProduct.keys()]);
   if (error) return fail(500, error.message);
 
@@ -88,7 +89,7 @@ export async function priceOrder(
   let subtotal = 0;
   for (const [productId, qty] of qtyByProduct) {
     const product = (products ?? []).find((p) => p.id === productId);
-    if (!product || !product.is_active) return fail(400, "Un producto del carrito ya no está disponible.", "product_unavailable");
+    if (!product || !isPortalVisible(product)) return fail(400, "Un producto del carrito ya no está disponible.", "product_unavailable");
     const price = Number(product.price);
     subtotal += price * qty;
     lines.push({
