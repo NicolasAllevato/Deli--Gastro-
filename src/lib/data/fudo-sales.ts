@@ -71,6 +71,12 @@ function gatewayError(r: Extract<GatewayResult, { ok: false }>): string {
   return r.code === "WRITES_DISABLED" ? "Escrituras en Fudo deshabilitadas (ENABLE_WRITES)." : r.error;
 }
 
+/** El gateway rechazó sin tocar Fudo (o Fudo rechazó con 4xx): reintentar no duplica nada. Timeout/5xx = incierto. */
+function definitiveFailure(r: Extract<GatewayResult, { ok: false }>): boolean {
+  if (r.code === "WRITES_DISABLED" || r.code === "NOT_CONFIGURED") return true;
+  return r.status >= 400 && r.status < 500 && r.status !== 408;
+}
+
 interface OrderForSale {
   id: string;
   status: string;
@@ -187,6 +193,9 @@ export async function pushOrderSale(db: SqlDatabase, actor: Actor, gw: FudoWrite
     .bind(sale.saleId, result, sale.partial ? "Alguna línea no se cargó en Fudo: revisar la venta allá." : null, orderId)
     .run();
   await audit(db, actor, { orderId, operation: "create_sale", fudoId: sale.saleId, ok: true, status: res.status, error: null, payload: { ...built.body, response: res.data } });
+  // Si el pedido se canceló mientras se creaba la venta, el cancelSale de ese momento no la vio: se anula acá.
+  const now = await loadSaleState(db, orderId);
+  if (now?.status === "Cancelado") await changeState(db, actor, gw, orderId, sale.saleId, "CANCELED");
   return { result };
 }
 
@@ -227,7 +236,12 @@ async function settleSale(db: SqlDatabase, actor: Actor, gw: FudoWriteGateway, o
       const paymentId = res.ok ? ((res.data as { paymentId?: unknown } | null)?.paymentId ?? null) : null;
       await audit(db, actor, { orderId, operation: "payment", fudoId: typeof paymentId === "number" ? paymentId : null, ok: res.ok, status: res.status, error: res.ok ? null : gatewayError(res), payload: body });
       if (!res.ok) {
-        await db.prepare("UPDATE orders SET fudo_sale_paid_at = NULL, fudo_sale_error = ? WHERE id = ?").bind(`No se pudo registrar el pago: ${gatewayError(res)}`.slice(0, MAX_ERROR), orderId).run();
+        if (definitiveFailure(res)) {
+          await db.prepare("UPDATE orders SET fudo_sale_paid_at = NULL, fudo_sale_error = ? WHERE id = ?").bind(`No se pudo registrar el pago: ${gatewayError(res)}`.slice(0, MAX_ERROR), orderId).run();
+        } else {
+          // Resultado incierto (timeout/5xx): Fudo pudo haber cobrado. No se libera para no duplicar el pago.
+          await noteError(db, orderId, `Pago incierto (${gatewayError(res)}): verificar en Fudo; «Reintentar» solo cierra la venta.`);
+        }
         return;
       }
     }
@@ -257,7 +271,10 @@ async function changeState(db: SqlDatabase, actor: Actor, gw: FudoWriteGateway, 
   const body = { state };
   const res = await callGateway(gw, "PATCH", `/sales/${saleId}/state`, body);
   await audit(db, actor, { orderId, operation: sql.operation, fudoId: saleId, ok: res.ok, status: res.status, error: res.ok ? null : gatewayError(res), payload: body });
-  if (!res.ok) {
+  if (res.ok) {
+    // Paso completo: sale de la lista de pendientes (la nota de una venta parcial se conserva).
+    await db.prepare("UPDATE orders SET fudo_sale_error = NULL WHERE id = ? AND fudo_sale_sync <> 'partial'").bind(orderId).run();
+  } else {
     await db.prepare(sql.release).bind(`No se pudo ${sql.verb} la venta en Fudo: ${gatewayError(res)}`.slice(0, MAX_ERROR), orderId).run();
   }
 }
@@ -270,8 +287,12 @@ async function cancelSale(db: SqlDatabase, actor: Actor, gw: FudoWriteGateway, o
 /** Reacción al cambio de estado del pedido (ya aplicado). Nunca tira por Fudo. */
 export async function onOrderStatusChange(db: SqlDatabase, actor: Actor, gw: FudoWriteGateway, orderId: string, status: string): Promise<void> {
   requireStaff(actor);
-  if (status === "En Preparación") await pushOrderSale(db, actor, gw, orderId);
-  else if (status === "Finalizados") await settleSale(db, actor, gw, orderId);
+  // En Camino/Finalizados también crean la venta si el pedido salteó «En Preparación» (pushOrderSale es idempotente).
+  if (status === "En Preparación" || status === "En Camino") await pushOrderSale(db, actor, gw, orderId);
+  else if (status === "Finalizados") {
+    await pushOrderSale(db, actor, gw, orderId);
+    await settleSale(db, actor, gw, orderId);
+  }
   else if (status === "Cancelado") await cancelSale(db, actor, gw, orderId);
 }
 

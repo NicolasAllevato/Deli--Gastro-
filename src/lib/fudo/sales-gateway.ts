@@ -18,7 +18,7 @@ const timeoutFor = (path: string): number => (path === "/sales" ? 90_000 : 20_00
 
 export function fudoWriteGateway(config: FudoGatewayConfig | null = fudoGatewayConfig()): FudoWriteGateway {
   return async (method, path, payload): Promise<GatewayResult> => {
-    if (!config) return { ok: false, status: 0, error: "La integración con Fudo no está configurada." };
+    if (!config) return { ok: false, status: 0, error: "La integración con Fudo no está configurada.", code: "NOT_CONFIGURED" };
     const body = JSON.stringify(payload);
     const ts = String(Date.now());
     try {

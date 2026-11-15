@@ -212,6 +212,18 @@ export async function setSaleState(env: WriteEnv, saleId: number, state: SaleSta
   }
 }
 
+const paymentKey = (saleId: number) => `fudo:payment-sale:${saleId}`;
+
+/** Un pago por venta: un reintento (timeout del lado de la app) devuelve el pago ya creado y no cobra dos veces. */
+export async function createPaymentOnce(env: WriteEnv, saleId: number, paymentMethodId: number, value: number): Promise<{ paymentId: number; existing: boolean }> {
+  const known = await env.FUDO_KV.get(paymentKey(saleId));
+  const knownId = known ? fudoId(known) : null;
+  if (knownId !== null) return { paymentId: knownId, existing: true };
+  const paymentId = await createPayment(env, saleId, paymentMethodId, value);
+  await env.FUDO_KV.put(paymentKey(saleId), String(paymentId), { expirationTtl: SALE_KEY_TTL_SECONDS });
+  return { paymentId, existing: false };
+}
+
 export async function createPayment(env: WriteEnv, saleId: number, paymentMethodId: number, value: number): Promise<number> {
   return createdId(
     await publicWrite(env, "POST", "payments", {
@@ -274,7 +286,8 @@ export async function handleWrite(request: Request, env: WriteEnv): Promise<Resp
       const methodId = fudoId(b.paymentMethodId);
       const value = amount(b.amount);
       if (saleId === null || methodId === null || value === null || value === 0) return fail("Pago inválido.", 400);
-      return ok({ paymentId: await createPayment(env, saleId, methodId, value) }, 201);
+      const payment = await createPaymentOnce(env, saleId, methodId, value);
+      return ok(payment, payment.existing ? 200 : 201);
     }
     const saleId = fudoId(STATE_PATH.exec(pathname)?.[1]);
     if (saleId === null) return fail("Id de venta inválido.", 404);

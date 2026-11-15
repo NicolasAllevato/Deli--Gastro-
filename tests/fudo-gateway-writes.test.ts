@@ -184,6 +184,18 @@ describe("fudo-gateway: escrituras", () => {
     assert.equal(calls.length, 1);
   });
 
+  it("POST /payments es idempotente por venta: un reintento no duplica el cobro", async () => {
+    const calls = stubFudo(() => Response.json({ data: { id: "77" } }, { status: 201 }));
+    const e = env();
+    await worker.fetch(await signed("POST", "/payments", { saleId: 99, paymentMethodId: 3, amount: 3900 }), e);
+    const again = await worker.fetch(await signed("POST", "/payments", { saleId: 99, paymentMethodId: 3, amount: 3900 }), e);
+    assert.equal(again.status, 200);
+    const json = (await again.json()) as { data: { paymentId: number; existing: boolean } };
+    assert.equal(json.data.paymentId, 77);
+    assert.equal(json.data.existing, true);
+    assert.equal(calls.length, 1);
+  });
+
   it("limita la cantidad de escrituras por minuto (429)", async () => {
     stubFudo(() => Response.json({ data: { id: "1" } }, { status: 201 }));
     const e = env();

@@ -206,6 +206,53 @@ describe("ventas en Fudo al confirmar un pedido", () => {
     assert.equal(calls[0].path, "/sales");
   });
 
+  it("pago con resultado incierto (timeout/5xx): no libera el cobro para no duplicarlo", async () => {
+    seed();
+    const ok = gateway(okSale);
+    await sales.pushOrderSale(db, admin, ok.gw, ORDER);
+    db.raw.exec(`UPDATE orders SET status = 'Finalizados' WHERE id = '${ORDER}'`);
+    const flaky = gateway((c) => (c.path === "/payments" ? { ok: false, status: 0, error: "timeout" } : okSale(c)));
+    await sales.onOrderStatusChange(db, admin, flaky.gw, ORDER, "Finalizados");
+    assert.ok(order().fudo_sale_paid_at, "el pago incierto queda tomado");
+    assert.match(String(order().fudo_sale_error), /verificar/i);
+    assert.equal(flaky.calls.filter((c) => c.path === "/sales/99/state").length, 0, "no cierra sin pago confirmado");
+    assert.ok((await sales.listPendingSales(db, admin)).some((p) => p.id === ORDER));
+    const again = gateway(okSale);
+    await sales.retryOrderSale(db, admin, again.gw, ORDER);
+    assert.equal(again.calls.filter((c) => c.path === "/payments").length, 0);
+  });
+
+  it("pago rechazado de forma definitiva (escrituras apagadas) sí se puede reintentar", async () => {
+    seed();
+    await sales.pushOrderSale(db, admin, gateway(okSale).gw, ORDER);
+    db.raw.exec(`UPDATE orders SET status = 'Finalizados' WHERE id = '${ORDER}'`);
+    const off = gateway((c) => (c.path === "/payments" ? { ok: false, status: 403, error: "off", code: "WRITES_DISABLED" } : okSale(c)));
+    await sales.onOrderStatusChange(db, admin, off.gw, ORDER, "Finalizados");
+    assert.equal(order().fudo_sale_paid_at, null);
+    const on = gateway(okSale);
+    await sales.retryOrderSale(db, admin, on.gw, ORDER);
+    assert.equal(on.calls.filter((c) => c.path === "/payments").length, 1);
+    assert.ok(order().fudo_sale_closed_at);
+  });
+
+  it("finalizar sin haber pasado por En Preparación igual crea la venta y la cobra", async () => {
+    seed({ status: "Finalizados" });
+    const { gw, calls } = gateway(okSale);
+    await sales.onOrderStatusChange(db, admin, gw, ORDER, "Finalizados");
+    assert.deepEqual(calls.map((c) => c.path), ["/sales", "/payments", "/sales/99/state"]);
+  });
+
+  it("si el pedido se canceló mientras se creaba la venta, la anula", async () => {
+    seed();
+    const { gw, calls } = gateway((c) => {
+      if (c.path === "/sales") db.raw.exec(`UPDATE orders SET status = 'Cancelado' WHERE id = '${ORDER}'`);
+      return okSale(c);
+    });
+    await sales.pushOrderSale(db, admin, gw, ORDER);
+    assert.deepEqual(calls.at(-1), { method: "PATCH", path: "/sales/99/state", body: { state: "CANCELED" } });
+    assert.ok(order().fudo_sale_canceled_at);
+  });
+
   it("pedido de retiro: sin datos de delivery", async () => {
     seed({ address: null });
     const { gw, calls } = gateway(okSale);
