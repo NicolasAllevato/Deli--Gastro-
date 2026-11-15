@@ -94,6 +94,8 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+const BOT_WEBHOOK_URL = "https://bot.la-gambeta.com/webhook";
+
 export default function WhatsAppPage() {
   const [state, setState] = useState<State | null>(null);
   const [phoneNumberId, setPhoneNumberId] = useState("");
@@ -109,7 +111,8 @@ export default function WhatsAppPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [test, setTest] = useState<Diagnosis | null>(null);
   const [pin, setPin] = useState("");
-  const [webhookUrl, setWebhookUrl] = useState("/api/whatsapp/webhook");
+  // El webhook de Meta apunta al Worker whatsapp-bot, no a la app.
+  const [webhookUrl, setWebhookUrl] = useState(BOT_WEBHOOK_URL);
 
   const apply = useCallback((next: State) => {
     setState(next);
@@ -123,7 +126,7 @@ export default function WhatsAppPage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWebhookUrl(`${window.location.origin}/api/whatsapp/webhook`);
+    setWebhookUrl(process.env.NEXT_PUBLIC_WHATSAPP_WEBHOOK_URL?.trim() || BOT_WEBHOOK_URL);
     request<State>("/api/whatsapp/config").then(apply).catch((e: unknown) =>
       setError(e instanceof Error ? e.message : "No se pudo cargar la configuración."),
     );

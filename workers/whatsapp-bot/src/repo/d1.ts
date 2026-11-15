@@ -179,7 +179,7 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
         .prepare(
           `SELECT p.id, p.name, p.description, p.price_cents, c.name AS category
            FROM products p LEFT JOIN categories c ON c.id = p.category_id
-           WHERE p.is_active = 1 ORDER BY c.name IS NULL, c.name, p.name LIMIT ?`,
+           WHERE p.is_active = 1 AND COALESCE(p.show_in_portal, 1) = 1 ORDER BY c.name IS NULL, c.name, p.name LIMIT ?`,
         )
         .bind(MENU_LIMIT)
         .all<{ id: string; name: string; description: string | null; price_cents: number; category: string | null }>();
