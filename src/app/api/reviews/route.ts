@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { rejectCrossOrigin } from "@/lib/auth/requireRole";
+import { dataFor, usesD1 } from "@/lib/data";
 
 const MAX_FEEDBACK_LENGTH = 1000;
 
@@ -50,6 +51,16 @@ export async function POST(req: Request) {
     // autenticado. Sin esto, cualquier usuario logueado podría enviar una
     // reseña (y potencialmente generar un ticket) para el pedido de otro
     // cliente adivinando/enumerando UUIDs (IDOR).
+    if (usesD1()) {
+      // D1 única fuente: dueño, estado y unicidad los resuelve la capa con el user_id de la sesión.
+      const data = await dataFor({ kind: "cliente", userId: user.id });
+      const verdict = await data.reviews.eligibility(orderId);
+      if (verdict === "forbidden") return NextResponse.json({ error: "No autorizado para reseñar este pedido." }, { status: 403 });
+      if (verdict === "not_delivered") return NextResponse.json({ error: "Sólo se pueden reseñar pedidos entregados." }, { status: 409 });
+      if (verdict === "already_reviewed" || !(await data.reviews.createOwn({ id: crypto.randomUUID(), orderId, rating, feedback: feedback?.trim() || null }))) {
+        return NextResponse.json({ error: "Ya calificaste este pedido." }, { status: 409 });
+      }
+    } else {
     const adminClient = createAdminClient();
     const { data: clientRow } = await adminClient
       .from("clients")
@@ -92,6 +103,8 @@ export async function POST(req: Request) {
       rating,
       feedback: feedback?.trim() || null,
     });
+
+    }
 
     const webhookUrl = process.env.N8N_WEBHOOK_URL_REVIEWS;
 

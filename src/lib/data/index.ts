@@ -15,6 +15,7 @@ import * as clients from "./clients.ts";
 import * as orders from "./orders.ts";
 import * as points from "./points.ts";
 import * as reviews from "./reviews.ts";
+import * as legal from "./legal.ts";
 import * as catalog from "./catalog.ts";
 import * as catalogAdmin from "./catalog-admin.ts";
 import * as clientViews from "./client-views.ts";
@@ -50,6 +51,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       list: bind(clients.listClients, db, actor),
       createOwn: bind(clients.createOwnClient, db, actor),
       update: bind(clients.updateClient, db, actor),
+      ownProfile: bind(clients.getOwnProfile, db, actor),
     },
     orders: {
       list: bind(orders.listOrders, db, actor),
@@ -60,7 +62,12 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       assign: bind(orders.assignOrder, db, actor),
     },
     points: { ledger: bind(points.listLedger, db, actor), add: bind(points.addPoints, db, actor) },
-    reviews: { list: bind(reviews.listReviews, db, actor), createOwn: bind(reviews.createOwnReview, db, actor) },
+    reviews: {
+      list: bind(reviews.listReviews, db, actor),
+      createOwn: bind(reviews.createOwnReview, db, actor),
+      eligibility: bind(reviews.reviewEligibility, db, actor),
+    },
+    legal: { own: bind(legal.listOwnLegal, db, actor), accept: bind(legal.acceptOwnLegal, db, actor) },
     catalog: {
       products: bind(catalog.listProducts, db, actor),
       categories: bind(catalog.listCategories, db, actor),
@@ -94,6 +101,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       create: bind(payments.createPaymentIntent, db, actor),
       approve: bind(payments.approvePaymentIntent, db, actor),
       close: bind(payments.closePaymentIntent, db, actor),
+      cancelOwn: bind(payments.cancelOwnPaymentIntent, db, actor),
     },
     couriers: {
       list: bind(couriers.listCouriers, db, actor),

@@ -5,7 +5,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { requireAuth, isAuthorizationError } from "@/lib/auth/requireRole";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { isDemoMode } from "@/lib/demo/mode";
-import { dataBackend, setLegalVersion } from "@/lib/data";
+import { actorFromSession, dataBackend, dataFor, setLegalVersion, usesD1 } from "@/lib/data";
 import {
   DEMO_LEGAL_COOKIE,
   LEGAL_BUNDLE_VERSION,
@@ -18,7 +18,11 @@ const acceptSchema = z.object({ document: z.enum(["terminos", "privacidad"]) });
 
 type Db = ReturnType<typeof createAdminClient>;
 
-async function statusFor(db: Db, userId: string): Promise<LegalStatus> {
+async function statusFor(db: Db, userId: string, role?: string | null): Promise<LegalStatus> {
+  if (usesD1()) {
+    // D1 única fuente: cada usuario lee solo sus aceptaciones (la capa toma el user_id del actor).
+    return legalStatus(await (await dataFor(actorFromSession({ userId, role }))).legal.own());
+  }
   const { data, error } = await db
     .from("legal_acceptances")
     .select("document, version, accepted_at")
@@ -62,7 +66,7 @@ export async function GET(req: NextRequest) {
   if (isAuthorizationError(auth)) return auth.error;
   try {
     const db = createAdminClient();
-    const status = await statusFor(db, auth.user.id);
+    const status = await statusFor(db, auth.user.id, auth.role);
     const res = NextResponse.json(status);
     if (status.complete && !hasMark(req, auth.user.app_metadata)) {
       await markComplete(res, db, auth.user.id, auth.user.app_metadata ?? {});
@@ -89,7 +93,17 @@ export async function POST(req: NextRequest) {
   const doc = LEGAL_DOCUMENTS.find((d) => d.id === parsed.data.document)!;
   const db = createAdminClient();
   try {
-    const { error } = await db.from("legal_acceptances").upsert(
+    const row = {
+      email: auth.user.email ?? null,
+      role: auth.role,
+      ip,
+      userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+    };
+    const { error } = usesD1()
+      ? await (await dataFor(actorFromSession({ userId: auth.user.id, role: auth.role }))).legal
+          .accept({ id: crypto.randomUUID(), document: doc.id, version: doc.version, ...row })
+          .then(() => ({ error: null }))
+      : await db.from("legal_acceptances").upsert(
       {
         user_id: auth.user.id,
         email: auth.user.email ?? null,
@@ -115,7 +129,7 @@ export async function POST(req: NextRequest) {
       userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
     }));
 
-    const status = await statusFor(db, auth.user.id);
+    const status = await statusFor(db, auth.user.id, auth.role);
     const res = NextResponse.json(status);
     if (status.complete) await markComplete(res, db, auth.user.id, auth.user.app_metadata ?? {});
     return res;

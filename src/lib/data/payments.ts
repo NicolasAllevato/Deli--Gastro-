@@ -69,6 +69,19 @@ export async function approvePaymentIntent(
   return first.meta.changes === 1;
 }
 
+/** El cliente abandona SU pago pendiente (el dueño sale de la sesión). */
+export async function cancelOwnPaymentIntent(db: SqlDatabase, actor: Actor, id: string): Promise<boolean> {
+  if (actor.kind !== "cliente") throw new ForbiddenError();
+  const r = await db
+    .prepare(
+      `UPDATE payment_intents SET status = 'cancelled', version = version + 1, updated_at = ?
+        WHERE id = ? AND status = 'pending' AND client_id IN (SELECT id FROM clients WHERE user_id = ?)`,
+    )
+    .bind(nowIso(), id, actor.userId)
+    .run();
+  return r.meta.changes === 1;
+}
+
 /** Cancelación/expiración: solo desde pending. */
 export async function closePaymentIntent(db: SqlDatabase, actor: Actor, id: string, status: "cancelled" | "expired"): Promise<boolean> {
   requireStaff(actor);
