@@ -27,6 +27,7 @@ export interface QueryPlan {
   offset?: number;
   payload: unknown;
   onConflict: string;
+  ignoreDuplicates?: boolean;
   returning: boolean;
   count: boolean;
   head: boolean;
