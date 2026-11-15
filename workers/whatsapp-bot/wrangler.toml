@@ -58,7 +58,7 @@ database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
 # "supabase" (default): no copia nada a D1. Cambiar a "dual" solo con OK del usuario.
 # "d1" (corte): el bot usa solo D1 y lee los secretos de Meta de Worker secrets:
 #   WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN
-DATA_BACKEND = "supabase"
+DATA_BACKEND = "d1"
 APP_URL = "https://opsyndely.la-gambeta.com"
 
 [observability]

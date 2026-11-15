@@ -21,7 +21,7 @@
     "BETTER_AUTH_URL": "https://opsyndely.la-gambeta.com",
     // Migración D1 (docs/migracion-supabase-d1.md). supabase = comportamiento actual.
     // Cambiar a dual/d1 SOLO con OK explícito del usuario.
-    "DATA_BACKEND": "supabase"
+    "DATA_BACKEND": "d1"
   },
   // Base D1 de la migración. Solo la usa src/lib/data/db.ts y solo si DATA_BACKEND != supabase.
   "d1_databases": [
