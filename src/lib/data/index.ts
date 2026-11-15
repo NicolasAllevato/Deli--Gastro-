@@ -26,6 +26,8 @@ import * as restricted from "./restricted.ts";
 import * as mirror from "./mirror.ts";
 import * as live from "./live.ts";
 import * as session from "./session.ts";
+import * as zones from "./zones.ts";
+import * as reports from "./reports.ts";
 import { executeD1Plan, type Plan, type PlanResult } from "./plan-sql.ts";
 import { systemActor as sysActor } from "./actor.ts";
 
@@ -96,6 +98,13 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       updateCategory: bind(catalogAdmin.updateCategory, db, actor),
       deleteCategory: bind(catalogAdmin.deleteCategory, db, actor),
     },
+    zones: {
+      list: bind(zones.listAllZones, db, actor),
+      create: bind(zones.createZone, db, actor),
+      update: bind(zones.updateZone, db, actor),
+      remove: bind(zones.deleteZone, db, actor),
+    },
+    reports: { upsertDaily: bind(reports.upsertDailyReport, db, actor) },
     payments: {
       get: bind(payments.getPaymentIntent, db, actor),
       create: bind(payments.createPaymentIntent, db, actor),
