@@ -55,6 +55,14 @@ export const CLIENT_ORDER_EXCLUDED = [
   "delivered_accuracy_m",
   "delivered_in_app",
   "geocode_attempts",
+  // Venta en Fudo de pedidos de la app (migración D1 0007, solo D1): internos del local.
+  "fudo_sale_id",
+  "fudo_sale_sync",
+  "fudo_sale_error",
+  "fudo_sale_claimed_at",
+  "fudo_sale_paid_at",
+  "fudo_sale_closed_at",
+  "fudo_sale_canceled_at",
 ] as const;
 
 /** Columnas de Supabase (montos en pesos): mismos nombres que la API. */

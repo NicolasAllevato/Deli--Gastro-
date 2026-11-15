@@ -12,7 +12,18 @@ import type { SqlDatabase, SqlValue } from "./sql.ts";
 
 type Row = Record<string, unknown>;
 
-const D1_ONLY = new Set(["courier_user_id", "payment_intent_id"]);
+// Las fudo_sale_* (migración 0007) son solo D1: el espejo nunca las pisa.
+const D1_ONLY = new Set([
+  "courier_user_id",
+  "payment_intent_id",
+  "fudo_sale_id",
+  "fudo_sale_sync",
+  "fudo_sale_error",
+  "fudo_sale_claimed_at",
+  "fudo_sale_paid_at",
+  "fudo_sale_closed_at",
+  "fudo_sale_canceled_at",
+]);
 const MONEY: Record<string, string> = { total: "total_cents", delivery_fee: "delivery_fee_cents" };
 
 /** Columnas de orders que vienen de Supabase (las 37), en su nombre de Supabase. */

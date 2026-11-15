@@ -26,6 +26,7 @@ import * as restricted from "./restricted.ts";
 import * as mirror from "./mirror.ts";
 import * as live from "./live.ts";
 import * as session from "./session.ts";
+import * as fudoSales from "./fudo-sales.ts";
 import * as zones from "./zones.ts";
 import * as reports from "./reports.ts";
 import { executeD1Plan, type Plan, type PlanResult } from "./plan-sql.ts";
@@ -138,6 +139,12 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       rows: bind(mirror.mirrorRows, db, actor),
       authUsers: bind(mirror.mirrorAuthUsers, db, actor),
     },
+    // Ventas en Fudo al confirmar/cobrar/cancelar pedidos (solo staff/sistema). El gateway se inyecta.
+    fudoSales: {
+      onStatus: bind(fudoSales.onOrderStatusChange, db, actor),
+      retry: bind(fudoSales.retryOrderSale, db, actor),
+      pending: bind(fudoSales.listPendingSales, db, actor),
+    },
     // Etapa 4: versión por topic en lugar de Realtime (sin datos, autorizada por actor).
     liveVersions: bind(live.liveVersions, db, actor),
     purgeLiveVersions: bind(live.purgeLiveVersions, db, actor),
@@ -145,6 +152,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
 }
 
 export { parseTopics as parseLiveTopics } from "./live.ts";
+export type { FudoWriteGateway, GatewayResult, PendingSale, SaleSyncResult } from "./fudo-sales.ts";
 
 export type DataApi = ReturnType<typeof bindRepos>;
 

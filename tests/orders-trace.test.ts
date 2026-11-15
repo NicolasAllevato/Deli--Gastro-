@@ -10,7 +10,18 @@ import { ORDER_TRACE_KEYS, ORDER_TRACE_SECTIONS, EMPTY, formatTraceValue, pretty
 import { createTestDb } from "./helpers/sqlite-d1.ts";
 
 /** Columnas que existen solo en D1 (todavía no en Supabase): el detalle lee Supabase. */
-const D1_ONLY = new Set(["courier_user_id", "payment_intent_id"]);
+const D1_ONLY = new Set([
+  "courier_user_id",
+  "payment_intent_id",
+  // Venta en Fudo (migración D1 0007): el admin la ve en /admin/fudo (ventas pendientes).
+  "fudo_sale_id",
+  "fudo_sale_sync",
+  "fudo_sale_error",
+  "fudo_sale_claimed_at",
+  "fudo_sale_paid_at",
+  "fudo_sale_closed_at",
+  "fudo_sale_canceled_at",
+]);
 const TRACE = new Set(ORDER_TRACE_KEYS);
 
 /** Columnas de `orders` en Supabase según src/types/database.ts (Row). */
