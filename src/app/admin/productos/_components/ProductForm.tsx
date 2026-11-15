@@ -3,7 +3,7 @@
 import { parsePoints } from "@/lib/catalog/points";
 import { useRef, useState } from "react";
 import NextImage from "next/image";
-import { Image as ImageIcon, Tag, Loader2, Upload } from "lucide-react";
+import { Image as ImageIcon, Tag, Loader2, Upload, Trash2 } from "lucide-react";
 import type { Product, Category } from "@/types/catalog";
 import { Field } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
@@ -24,6 +24,8 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
   // Si el producto viene de Fudo, nombre, categoría, precio y disponibilidad son de solo lectura (los manda Fudo).
   const fromFudo = editingProduct?.fudo_id != null;
   const [isActive, setIsActive] = useState(editingProduct ? editingProduct.is_active : true);
+  // Alta manual: visible por defecto. Producto existente: conserva lo que eligió el admin.
+  const [showInPortal, setShowInPortal] = useState(editingProduct ? editingProduct.show_in_portal !== false : true);
   const [imageUrl, setImageUrl] = useState<string | null>(editingProduct?.image_url ?? null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -77,6 +79,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
       image_url:   imageUrl ?? "",
       category_id: fromFudo ? editingProduct.category_id : (fd.get("category_id") as string),
       is_active:   fromFudo ? editingProduct.is_active : isActive,
+      show_in_portal: showInPortal,
       points_per_100: parsePoints(fd.get("points_per_100")),
     });
   };
@@ -102,7 +105,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-5 overflow-y-auto pr-2 pb-4">
           {fromFudo && (
             <p role="note" className="badge-blue text-xs font-bold px-3 py-2 rounded-lg">
-              Este producto viene de Fudo: nombre, categoría, precio y disponibilidad se cambian allá y se actualizan solos. Acá podés editar la foto, la descripción y los puntos.
+              Este producto viene de Fudo: nombre, categoría, precio y disponibilidad se cambian allá y se actualizan solos. Acá podés editar la foto, la descripción, los puntos y si se ve en el portal.
             </p>
           )}
           {/* Imagen del producto: preview + upload a R2 */}
@@ -111,7 +114,7 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
-              className="w-full h-32 neumorphic-inset rounded-2xl overflow-hidden relative flex items-center justify-center group disabled:opacity-70"
+              className="w-full aspect-[4/3] neumorphic-inset rounded-2xl overflow-hidden relative flex items-center justify-center group disabled:opacity-70"
               aria-label={imageUrl ? "Cambiar imagen del producto" : "Subir imagen del producto"}
             >
               {imageUrl ? (
@@ -136,8 +139,22 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
               aria-hidden="true"
               tabIndex={-1}
             />
+            <div className="mt-2 ml-2 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-gray-500">JPG, PNG o WEBP, hasta 5MB. Se ve recortada al centro.</p>
+              {imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setImageUrl(null)}
+                  disabled={isUploading}
+                  className="flex items-center gap-1 text-[11px] font-bold text-red-500 hover:underline disabled:opacity-50"
+                >
+                  <Trash2 size={12} aria-hidden />
+                  Quitar foto
+                </button>
+              )}
+            </div>
             {uploadError && (
-              <p className="mt-2 ml-2 text-xs font-semibold text-red-500">{uploadError}</p>
+              <p role="alert" className="mt-2 ml-2 text-xs font-semibold text-red-500">{uploadError}</p>
             )}
           </div>
 
@@ -185,7 +202,6 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
             as="textarea"
             label="Descripción"
             name="description"
-            required
             rows={3}
             placeholder="Detalles de los ingredientes..."
             defaultValue={editingProduct?.description}
@@ -207,9 +223,18 @@ export function ProductForm({ editingProduct, categories, onClose, onSubmit, onC
                 checked={isActive}
                 onChange={setIsActive}
                 disabled={fromFudo}
-                label="Visible al cliente"
+                label="Disponible"
               />
             </div>
+          </div>
+
+          <div className="neumorphic-inset rounded-xl px-4 py-3.5">
+            <Switch
+              checked={showInPortal}
+              onChange={setShowInPortal}
+              label="Visible en el portal"
+              hint="Si está apagado, el cliente no lo ve en la carta ni lo puede pedir."
+            />
           </div>
 
           <Field
