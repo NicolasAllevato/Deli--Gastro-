@@ -27,8 +27,17 @@ const productFields = {
   image_url: imageSchema,
   category_id: categoryIdSchema,
   is_active: z.boolean(),
+  /** Interruptor del admin "Visible en el portal". No lo maneja Fudo: se puede cambiar en productos de Fudo. */
+  show_in_portal: z.boolean(),
   points_per_100: z.number().finite().min(0).max(1000).nullable(),
 };
+
+/** Supabase (congelado desde el corte a D1) no tiene la columna show_in_portal: no se le manda. */
+function withoutPortalFlag<T extends { show_in_portal?: boolean }>(row: T): Omit<T, "show_in_portal"> {
+  const { show_in_portal: _omit, ...rest } = row;
+  void _omit;
+  return rest;
+}
 
 const productSchema = z.object({
   ...productFields,
@@ -36,6 +45,7 @@ const productSchema = z.object({
   image_url: productFields.image_url.default(""),
   category_id: productFields.category_id.default(null),
   is_active: productFields.is_active.default(true),
+  show_in_portal: productFields.show_in_portal.default(true),
   points_per_100: productFields.points_per_100.default(null),
 });
 
@@ -107,7 +117,7 @@ export async function POST(req: NextRequest) {
     const outcome = await dualWrite<Outcome>(
       "products.create",
       async () => {
-        const { data, error } = await createAdminClient().from("products").insert({ id, ...parsed.data }).select().single();
+        const { data, error } = await createAdminClient().from("products").insert({ id, ...withoutPortalFlag(parsed.data) }).select().single();
         if (error) throw new Error(error.message);
         return { status: 201, body: data };
       },
@@ -139,7 +149,7 @@ export async function PATCH(req: NextRequest) {
         if (current.error) throw new Error(current.error.message);
         if (!current.data) return { status: 404, body: { error: "Producto no encontrado." } };
         // Nombre, precio, disponibilidad y categoría los manda Fudo: editarlos acá sería pisado en la próxima sincronización.
-        const { patch, ignored } = stripFudoManaged(requested, (current.data as { fudo_id: number | null }).fudo_id ?? null);
+        const { patch, ignored } = stripFudoManaged(withoutPortalFlag(requested), (current.data as { fudo_id: number | null }).fudo_id ?? null);
         if (Object.keys(patch).length === 0) return { status: 409, body: { error: FUDO_LOCKED_MSG(ignored) } };
         const { data, error } = await db.from("products").update(patch).eq("id", id).select().single();
         if (error) throw new Error(error.message);

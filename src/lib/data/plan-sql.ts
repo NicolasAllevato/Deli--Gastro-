@@ -75,7 +75,7 @@ const MONEY: Record<string, Record<string, string>> = {
   reports_daily: { total_income: "total_income_cents" },
 };
 
-const BOOL = new Set(["active", "delivered_in_app", "human_takeover", "is_active", "is_anonymous", "is_combo", "ok", "wa_marketing_opt_in"]);
+const BOOL = new Set(["active", "delivered_in_app", "human_takeover", "is_active", "is_anonymous", "is_combo", "ok", "show_in_portal", "wa_marketing_opt_in"]);
 const JSON_COLS: Record<string, Set<string>> = {
   orders: new Set(["fudo_payments"]), order_items: new Set(["fudo_options"]), payment_intents: new Set(["snapshot"]),
   delivery_zones: new Set(["shape"]), wa_conversations: new Set(["state"]), wa_campaigns: new Set(["segment"]),

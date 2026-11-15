@@ -19,6 +19,7 @@ export default async function AdminProductosPage() {
     image_url: p.image_url,
     category_id: p.category_id ?? "",
     is_active: p.is_active,
+    show_in_portal: p.show_in_portal !== false,
     points_per_100: p.points_per_100 === null ? null : Number(p.points_per_100),
     fudo_id: p.fudo_id ?? null,
   }));

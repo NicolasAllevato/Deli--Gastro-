@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import NextImage from "next/image";
 import { Plus, Edit2, Trash2, Settings2, Image as ImageIcon, Tag } from "lucide-react";
 import type { Category, Product } from "@/types/catalog";
@@ -9,6 +9,21 @@ import { CategoryFormModal } from "./_components/CategoryFormModal";
 import { ManageCategoriesModal } from "./_components/ManageCategoriesModal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
+
+type ProductFilter = "all" | "visible" | "hidden" | "no_photo";
+const FILTERS: { id: ProductFilter; label: string }[] = [
+  { id: "all", label: "Todos" },
+  { id: "visible", label: "Visibles" },
+  { id: "hidden", label: "Ocultos" },
+  { id: "no_photo", label: "Sin foto" },
+];
+
+const matchesFilter = (p: Product, f: ProductFilter): boolean =>
+  f === "all" ? true
+  : f === "visible" ? p.show_in_portal !== false
+  : f === "hidden" ? p.show_in_portal === false
+  : !p.image_url;
 
 interface Props {
   initialCategories: Category[];
@@ -25,6 +40,7 @@ function toProduct(row: Product & { category_id: string | null; price: number | 
     image_url: row.image_url,
     category_id: row.category_id ?? "",
     is_active: row.is_active,
+    show_in_portal: row.show_in_portal !== false,
     points_per_100: row.points_per_100 === null ? null : Number(row.points_per_100),
     fudo_id: row.fudo_id ?? null,
   };
@@ -45,6 +61,13 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [products, setProducts]     = useState<Product[]>(initialProducts);
   const [error, setError]           = useState<string | null>(null);
+  const [filter, setFilter]         = useState<ProductFilter>("all");
+  const [savingPortal, setSavingPortal] = useState<ReadonlySet<string>>(new Set());
+  const shown = useMemo(() => products.filter((p) => matchesFilter(p, filter)), [products, filter]);
+  const counts = useMemo(
+    () => Object.fromEntries(FILTERS.map((f) => [f.id, products.filter((p) => matchesFilter(p, f.id)).length])) as Record<ProductFilter, number>,
+    [products],
+  );
 
   // Ejecuta una acción contra la API y muestra el error si falla.
   const run = async (action: () => Promise<void>) => {
@@ -118,6 +141,31 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
     });
   };
 
+  // Guardado optimista: se cambia en pantalla y, si la API falla, se vuelve atrás y se muestra el error.
+  const togglePortal = (id: string, next: boolean) => {
+    const name = products.find((p) => p.id === id)?.name ?? "el producto";
+    setError(null);
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, show_in_portal: next } : p)));
+    setSavingPortal((prev) => new Set(prev).add(id));
+    void api<Product & { category_id: string | null; price: number | string }>("/api/products", "PATCH", { id, show_in_portal: next })
+      .then((row) => {
+        const saved = toProduct(row);
+        setProducts((prev) => prev.map((p) => (p.id === id ? saved : p)));
+      })
+      .catch((e: unknown) => {
+        setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, show_in_portal: !next } : p)));
+        const reason = e instanceof Error ? e.message : "Error desconocido.";
+        setError(`No se pudo ${next ? "mostrar" : "ocultar"} "${name}" en el portal: ${reason}`);
+      })
+      .finally(() => {
+        setSavingPortal((prev) => {
+          const copy = new Set(prev);
+          copy.delete(id);
+          return copy;
+        });
+      });
+  };
+
   return (
     <div className="flex flex-col h-full gap-6 relative overflow-hidden px-2 md:px-6 py-4">
 
@@ -152,13 +200,32 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
         </p>
       )}
 
+      <div role="group" aria-label="Filtrar productos" className="flex gap-2 flex-wrap shrink-0">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            aria-pressed={filter === f.id}
+            onClick={() => setFilter(f.id)}
+            className={`px-4 py-2 rounded-full text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange/60 ${
+              filter === f.id ? "bg-brand-orange text-white" : "neumorphic text-gray-600 hover:text-gray-800"
+            }`}
+          >
+            {f.label} ({counts[f.id]})
+          </button>
+        ))}
+      </div>
+
       {/* Products + Sidebar */}
       <div className="flex h-full gap-8 relative overflow-hidden">
 
         {/* Grid de productos */}
         <div className={`flex-1 flex flex-col gap-6 transition-all duration-300 ${isProductFormOpen ? "hidden lg:flex lg:w-1/2" : "w-full"}`}>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 overflow-y-auto pb-8 pr-2 content-start">
-            {products.map((product) => {
+            {shown.length === 0 && (
+              <p className="text-sm text-gray-500 col-span-full">No hay productos en este filtro.</p>
+            )}
+            {shown.map((product) => {
               const category = categories.find((c) => c.id === product.category_id);
               return (
                 <div key={product.id} className="neumorphic p-5 rounded-3xl flex flex-col gap-4 relative group hover:-translate-y-1 transition-transform duration-300">
@@ -183,6 +250,15 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
                     </div>
                     <p className="text-gray-500 text-sm font-medium line-clamp-2">{product.description}</p>
                   </div>
+
+                  <Switch
+                    checked={product.show_in_portal !== false}
+                    onChange={(next) => togglePortal(product.id, next)}
+                    disabled={savingPortal.has(product.id)}
+                    label="Visible en el portal"
+                    aria-label={`Visible en el portal: ${product.name}`}
+                    hint={product.show_in_portal === false ? "Oculto: el cliente no lo ve." : product.is_active ? undefined : "Inactivo: no se ve aunque esté prendido."}
+                  />
 
                   <div className="mt-auto flex items-center justify-between pt-4 border-t border-gray-200/50">
                     <button

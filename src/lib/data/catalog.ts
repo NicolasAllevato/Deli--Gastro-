@@ -12,9 +12,9 @@ export interface ProductRow {
   is_active: number;
 }
 
-/** G9: lectura pública. Anónimos y clientes ven solo lo activo; staff ve todo. */
+/** G9: lectura pública. Anónimos y clientes ven solo lo activo y visible en el portal; staff ve todo. */
 export async function listProducts(db: SqlDatabase, actor: Actor): Promise<ProductRow[]> {
-  const where = isStaff(actor) ? "" : "WHERE is_active = 1";
+  const where = isStaff(actor) ? "" : "WHERE is_active = 1 AND show_in_portal = 1";
   const { results } = await db
     .prepare(`SELECT id, category_id, name, description, price_cents, image_url, is_active FROM products ${where} ORDER BY name`)
     .all<ProductRow>();

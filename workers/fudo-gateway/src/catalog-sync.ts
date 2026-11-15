@@ -5,9 +5,9 @@ import {
   type CatalogPlan,
   type ExistingCategory,
   type ExistingProduct,
-} from "./catalog";
-import { rest, type DbEnv } from "./db";
-import { listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo";
+} from "./catalog.ts";
+import { rest, type DbEnv } from "./db.ts";
+import { listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo.ts";
 
 export interface CatalogSyncSummary {
   categoriesCreated: number;
@@ -38,8 +38,12 @@ async function loadState(env: DbEnv): Promise<{ categories: ExistingCategory[]; 
   return { categories, products: products.map((p) => ({ ...p, price: Number(p.price) })) };
 }
 
-/** Aplica el plan: categorías primero (los productos las referencian), después productos, desactivados y mapeo. */
-async function applyPlan(env: DbEnv, plan: CatalogPlan, existing: ExistingProduct[]): Promise<void> {
+/**
+ * Aplica el plan: categorías primero (los productos las referencian), después productos, desactivados y mapeo.
+ * Nunca escribe image_url, description, points_per_100 ni show_in_portal: son del admin. Los productos nuevos
+ * quedan ocultos en el portal por el DEFAULT 0 de show_in_portal (migración D1 0009) hasta que el admin los active.
+ */
+export async function applyPlan(env: DbEnv, plan: CatalogPlan, existing: ExistingProduct[]): Promise<void> {
   const stamp = new Date().toISOString();
   const fudoCols = { source: "fudo", fudo_synced_at: stamp };
 

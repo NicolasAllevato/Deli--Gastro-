@@ -76,7 +76,7 @@ export function seed(db: { raw: DatabaseSync }) {
   db.raw.prepare("INSERT INTO couriers (user_id, name, pin_hash) VALUES (?, ?, ?)").run("u-rep1", "Rep Uno", "hash-1");
   db.raw.prepare("INSERT INTO global_config (key, value) VALUES (?, ?)").run("store", JSON.stringify({ open: true }));
   db.raw.prepare("INSERT INTO categories (id, name) VALUES (?, ?)").run("cat-1", "Pizzas");
-  db.raw.prepare("INSERT INTO products (id, category_id, name, price_cents, is_active) VALUES (?, ?, ?, ?, ?)").run("p-on", "cat-1", "Muzza", 1000000, 1);
+  db.raw.prepare("INSERT INTO products (id, category_id, name, price_cents, is_active, show_in_portal) VALUES (?, ?, ?, ?, ?, 1)").run("p-on", "cat-1", "Muzza", 1000000, 1);
   db.raw.prepare("INSERT INTO products (id, category_id, name, price_cents, is_active) VALUES (?, ?, ?, ?, ?)").run("p-off", "cat-1", "Oculta", 1000000, 0);
   db.raw
     .prepare("INSERT INTO payment_intents (id, client_id, channel, total_cents, snapshot, expires_at) VALUES (?, ?, ?, ?, ?, ?)")

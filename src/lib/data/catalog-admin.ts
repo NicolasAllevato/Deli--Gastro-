@@ -18,6 +18,8 @@ export interface ProductDbRow {
   price_cents: number;
   image_url: string;
   is_active: number;
+  /** 1 = el admin lo muestra en el portal del cliente. Lo maneja solo el admin (el sync de Fudo no lo toca). */
+  show_in_portal: number;
   points_per_100: number | null;
   created_at: string;
   updated_at: string;
@@ -40,12 +42,16 @@ export interface CategoryDbRow {
 }
 
 /** Forma que devuelve la API hoy (la de Supabase): precio en pesos y booleanos. */
-export type ApiProduct = Omit<ProductDbRow, "price_cents" | "is_active"> & { price: number; is_active: boolean };
+export type ApiProduct = Omit<ProductDbRow, "price_cents" | "is_active" | "show_in_portal"> & {
+  price: number;
+  is_active: boolean;
+  show_in_portal: boolean;
+};
 export type ApiCategory = Omit<CategoryDbRow, "is_active"> & { is_active: boolean };
 
 export function productToApi(r: ProductDbRow): ApiProduct {
-  const { price_cents, is_active, ...rest } = r;
-  return { ...rest, price: fromCents(price_cents), is_active: is_active === 1 };
+  const { price_cents, is_active, show_in_portal, ...rest } = r;
+  return { ...rest, price: fromCents(price_cents), is_active: is_active === 1, show_in_portal: show_in_portal === 1 };
 }
 
 export function categoryToApi(r: CategoryDbRow): ApiCategory {
@@ -70,7 +76,7 @@ export function comparableCategory(c: { id: string; [k: string]: unknown }): Rec
 }
 
 const PRODUCT_COLS =
-  "id, category_id, name, description, price_cents, image_url, is_active, points_per_100, created_at, updated_at, fudo_id, source, fudo_synced_at";
+  "id, category_id, name, description, price_cents, image_url, is_active, show_in_portal, points_per_100, created_at, updated_at, fudo_id, source, fudo_synced_at";
 const CATEGORY_COLS = "id, name, description, is_active, points_per_100, created_at, updated_at, fudo_id, source, fudo_synced_at";
 
 export async function listAllProducts(db: SqlDatabase, actor: Actor): Promise<ApiProduct[]> {
@@ -100,6 +106,8 @@ export interface ProductInput {
   image_url: string;
   category_id: string | null;
   is_active: boolean;
+  /** Visible en el portal del cliente. Alta manual desde el admin: visible salvo que se pida lo contrario. */
+  show_in_portal?: boolean;
   points_per_100: number | null;
 }
 
@@ -108,9 +116,9 @@ export async function createProduct(db: SqlDatabase, actor: Actor, id: string, p
   const cents = assertCents(toCents(p.price), "price");
   await db
     .prepare(
-      "INSERT INTO products (id, category_id, name, description, price_cents, image_url, is_active, points_per_100) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO products (id, category_id, name, description, price_cents, image_url, is_active, show_in_portal, points_per_100) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(id, p.category_id, p.name, p.description, cents, p.image_url, p.is_active ? 1 : 0, p.points_per_100)
+    .bind(id, p.category_id, p.name, p.description, cents, p.image_url, p.is_active ? 1 : 0, p.show_in_portal === false ? 0 : 1, p.points_per_100)
     .run();
   const row = await getProduct(db, id);
   if (!row) throw new Error("Producto no creado");
@@ -121,8 +129,9 @@ const PRODUCT_FUDO_MANAGED = new Set(["name", "price", "is_active", "category_id
 /** Columnas editables (lista blanca): API → columna D1. */
 const PRODUCT_EDITABLE: Record<string, string> = {
   name: "name", description: "description", price: "price_cents", image_url: "image_url",
-  category_id: "category_id", is_active: "is_active", points_per_100: "points_per_100",
+  category_id: "category_id", is_active: "is_active", show_in_portal: "show_in_portal", points_per_100: "points_per_100",
 };
+const BOOL_COLUMNS = new Set(["is_active", "show_in_portal"]);
 
 export type UpdateResult<T> = { status: "ok"; row: T; ignored: string[] } | { status: "not_found" } | { status: "fudo_locked"; ignored: string[] };
 
@@ -142,7 +151,7 @@ export async function updateProduct(db: SqlDatabase, actor: Actor, id: string, p
   const values: SqlValue[] = [];
   for (const [k, v] of kept) {
     sets.push(`${PRODUCT_EDITABLE[k]} = ?`);
-    values.push(k === "price" ? assertCents(toCents(v as number), "price") : k === "is_active" ? (v ? 1 : 0) : (v as SqlValue));
+    values.push(k === "price" ? assertCents(toCents(v as number), "price") : BOOL_COLUMNS.has(k) ? (v ? 1 : 0) : (v as SqlValue));
   }
   sets.push("updated_at = ?");
   values.push(nowIso());

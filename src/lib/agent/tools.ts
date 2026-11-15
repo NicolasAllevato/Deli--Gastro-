@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPortalVisible } from "@/lib/catalog/visibility";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
 import { PAYMENT_METHODS } from "@/lib/orders";
@@ -68,11 +69,11 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({}),
       run: async () => {
         const [{ data: products }, { data: categories }] = await Promise.all([
-          db.from("products").select("id, name, description, price, category_id").eq("is_active", true).limit(MENU_LIMIT),
+          db.from("products").select("*").eq("is_active", true).limit(MENU_LIMIT),
           db.from("categories").select("id, name"),
         ]);
         const names = new Map((categories ?? []).map((c) => [c.id, c.name]));
-        return (products ?? []).map((p) => ({
+        return (products ?? []).filter(isPortalVisible).map((p) => ({
           id: p.id,
           name: p.name,
           description: p.description,
