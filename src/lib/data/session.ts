@@ -111,7 +111,8 @@ export function authBaseURL(env: Record<string, string | undefined> = process.en
 export function trustedOriginsFor(baseURL: string): string[] {
   const url = new URL(baseURL);
   const host = url.hostname.startsWith("www.") ? url.hostname.slice(4) : url.hostname;
-  return [`${url.protocol}//${host}`, `${url.protocol}//www.${host}`];
+  const port = url.port ? `:${url.port}` : "";
+  return [`${url.protocol}//${host}${port}`, `${url.protocol}//www.${host}${port}`];
 }
 
 export function runtimeAuth(db: SqlDatabase, sendResetPassword?: (to: string, url: string) => Promise<void>): Auth {

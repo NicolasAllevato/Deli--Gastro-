@@ -58,4 +58,8 @@ describe("cliente de sesión con D1 sin acceso a tablas", () => {
     assert.deepEqual(trustedOriginsFor(BASE), [BASE, "https://www.opsyndely.la-gambeta.com"]);
     assert.deepEqual(trustedOriginsFor("https://www.opsyndely.la-gambeta.com"), [BASE, "https://www.opsyndely.la-gambeta.com"]);
   });
+
+  it("conserva el puerto (prueba local con wrangler dev)", () => {
+    assert.deepEqual(trustedOriginsFor("http://localhost:8787"), ["http://localhost:8787", "http://www.localhost:8787"]);
+  });
 });
