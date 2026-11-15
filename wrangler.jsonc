@@ -17,6 +17,8 @@
   ],
   "vars": {
     "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com",
+    // Base de Better Auth: los links de recuperación SIEMPRE salen de este dominio.
+    "BETTER_AUTH_URL": "https://opsyndely.la-gambeta.com",
     // Migración D1 (docs/migracion-supabase-d1.md). supabase = comportamiento actual.
     // Cambiar a dual/d1 SOLO con OK explícito del usuario.
     "DATA_BACKEND": "supabase"

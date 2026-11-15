@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dataBackend, getAuth } from "@/lib/data";
 import { resolveEmailSender } from "@/lib/daily-summary/email";
 import { getEmailBinding } from "@/lib/daily-summary/email-binding";
+import { buildResetEmail } from "@/lib/auth/reset-email";
 
 /**
  * Better Auth (etapa 3 del corte). Solo existe con DATA_BACKEND=d1: con Supabase responde 404
@@ -14,12 +15,7 @@ async function sendResetPassword(to: string, url: string): Promise<void> {
     console.error("[auth] recuperación: no hay proveedor de correo configurado");
     return;
   }
-  await sender.send({
-    to,
-    subject: "Restablecer tu contraseña de Opsyn Dely",
-    text: `Para elegir una contraseña nueva entrá a este link (vence en 15 minutos y sirve una sola vez):\n${url}\n\nSi no lo pediste, ignorá este correo.`,
-    html: `<p>Para elegir una contraseña nueva entrá a este link (vence en 15 minutos y sirve una sola vez):</p><p><a href="${encodeURI(url)}">Restablecer contraseña</a></p><p>Si no lo pediste, ignorá este correo.</p>`,
-  });
+  await sender.send({ to, ...buildResetEmail(url) });
 }
 
 async function handle(req: Request): Promise<Response> {

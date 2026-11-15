@@ -21,5 +21,11 @@ set -a
 eval "$(grep -E '^(NEXT_PUBLIC_|R2_PUBLIC_BASE_URL=)' "$STASH" | grep -v '^NEXT_PUBLIC_APP_URL')"
 set +a
 export NEXT_PUBLIC_APP_URL="https://opsyndely.la-gambeta.com"
+export NEXT_PUBLIC_SITE_URL="https://opsyndely.la-gambeta.com"
+# El navegador decide Supabase o D1 con NEXT_PUBLIC_DATA_BACKEND (se hornea en el build): se toma
+# siempre de DATA_BACKEND de wrangler.jsonc para que nunca queden distintos.
+NEXT_PUBLIC_DATA_BACKEND="$(node -e 'const t=require("fs").readFileSync("wrangler.jsonc","utf8");const m=t.match(/"DATA_BACKEND"\s*:\s*"([a-z0-9]+)"/);if(!m){process.exit(1)}console.log(m[1])')"
+export NEXT_PUBLIC_DATA_BACKEND
+echo "Build con DATA_BACKEND=$NEXT_PUBLIC_DATA_BACKEND"
 
 env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID npm run cf:deploy
