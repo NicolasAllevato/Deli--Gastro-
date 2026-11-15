@@ -60,10 +60,12 @@ class DemoQueryBuilder implements PromiseLike<QueryResult> {
     return this;
   }
 
-  upsert(payload: unknown, opts?: { onConflict?: string }): this {
+  upsert(payload: unknown, opts?: { onConflict?: string; ignoreDuplicates?: boolean }): this {
     this.plan.action = "upsert";
     this.plan.payload = payload;
     this.plan.onConflict = opts?.onConflict ?? "";
+    // Como supabase-js: con ignoreDuplicates la fila existente queda intacta (ON CONFLICT DO NOTHING).
+    if (opts?.ignoreDuplicates) this.plan.ignoreDuplicates = true;
     return this;
   }
 
