@@ -28,7 +28,7 @@ database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
 
 [vars]
 # "supabase" (default): no copia nada a D1. Cambiar a "dual" solo con OK del usuario.
-DATA_BACKEND = "supabase"
+DATA_BACKEND = "d1"
 FUDO_API_URL = "https://integrations.fu.do/fudo"
 # API pública de Fudo (catálogo y ventas): token en FUDO_AUTH_URL, datos en FUDO_PUBLIC_API_URL.
 FUDO_AUTH_URL = "https://auth.fu.do/api"

@@ -20,4 +20,4 @@ database_name = "deli-gastro"
 database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
 
 [vars]
-DATA_BACKEND = "supabase"
+DATA_BACKEND = "d1"
