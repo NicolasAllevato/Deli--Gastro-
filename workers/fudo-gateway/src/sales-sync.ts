@@ -1,3 +1,4 @@
+import { linkAnonymousClients } from "./anon-client.ts";
 import { parseFudoCustomers, planCustomersImport, type ExistingClient } from "./customers.ts";
 import { rest, type DbEnv } from "./db";
 import { geocodeNewOrders } from "./geocode.ts";
@@ -166,7 +167,10 @@ export async function syncSales(env: FudoEnv & DbEnv, dryRun = false, window: Sa
 
     if (!dryRun) {
       // En lotes: un POST de pedidos y otro de ítems por lote, para no agotar los subrequests del Worker.
-      for (const batch of chunk(plan.inserts, ID_BATCH)) {
+      const usesD1 = env.DATA_BACKEND?.trim().toLowerCase() === "d1";
+      for (const rawBatch of chunk(plan.inserts, ID_BATCH)) {
+        // Con D1 no existe el trigger orders_link_fudo_client: el cliente anónimo del canal se asigna acá.
+        const batch = usesD1 ? await linkAnonymousClients((path, init) => rest(env, path, init), rawBatch) : rawBatch;
         // ignore-duplicates: si dos corridas se pisan, la venta igual entra una sola vez (fudo_order_id único).
         // Solo vuelven las filas insertadas, así que los ítems se cuelgan solo de esas.
         const created = await rest<Array<{ id: string; fudo_order_id: number }>>(env, "orders?on_conflict=fudo_order_id&select=id,fudo_order_id", {
