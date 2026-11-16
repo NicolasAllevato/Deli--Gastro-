@@ -45,6 +45,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
     tabs: [
       { href: "/admin/conversaciones", label: "Conversaciones" },
       { href: "/admin/agente", label: "Agente IA" },
+      { href: "/admin/conocimiento", label: "Conocimiento" },
       { href: "/admin/plantillas", label: "Plantillas" },
       { href: "/admin/campanas", label: "Campañas" },
       { href: "/admin/whatsapp", label: "Conexión" },

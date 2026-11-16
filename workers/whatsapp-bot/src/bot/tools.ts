@@ -56,7 +56,7 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
     },
     {
       name: "get_business_info",
-      description: "Horario, si el local está abierto, demora estimada, zonas de envío con tarifa y pedido mínimo, y formas de pago.",
+      description: "Horario, si el local está abierto, demora estimada, zonas de envío con tarifa y pedido mínimo, formas de pago, y preguntas frecuentes, políticas y promos cargadas por el local.",
       parameters: EMPTY,
       run: async () => ({
         business: settings.businessName,
@@ -65,6 +65,10 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
         estimated_minutes: settings.estimatedMinutes,
         zones: (await repo.zones()).map((z) => ({ name: z.name, delivery_fee: z.fee, min_order: z.minOrder })),
         payment_methods: PAYMENT_METHODS,
+        // Cargado por el dueño en /admin/conocimiento (el vocabulario va al prompt, no acá).
+        knowledge: ((await repo.knowledge?.().catch(() => [])) ?? [])
+          .filter((k) => k.category !== "vocabulario")
+          .map(({ category, topic, content }) => ({ category, topic, content })),
       }),
     },
     {

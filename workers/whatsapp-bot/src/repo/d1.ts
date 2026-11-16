@@ -8,12 +8,13 @@ import type { SqlDatabase } from "../../../../src/lib/data/sql.ts";
 import { fromCents } from "../../../../src/lib/data/money.ts";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import { phoneTail, resolveMatches } from "./phone-tail.ts";
-import type { BotRepo, HistoryItem, InboundRepo } from "./types.ts";
+import type { BotRepo, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
 
 type Log = (message: string, detail?: unknown) => void;
 type ConvRow = { id: string; client_phone: string; silenced: number };
 
 const MENU_LIMIT = 200;
+const KNOWLEDGE_LIMIT = 80;
 const now = () => new Date().toISOString();
 
 /** Conversaciones con los mismos 10 dígitos, la de actividad más reciente primero. */
@@ -191,6 +192,14 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
         .prepare("SELECT name, fee_cents, min_order_cents FROM delivery_zones WHERE is_active = 1 ORDER BY sort_order")
         .all<{ name: string; fee_cents: number; min_order_cents: number }>();
       return results.map((r) => ({ name: r.name, fee: fromCents(r.fee_cents), minOrder: fromCents(r.min_order_cents) }));
+    },
+
+    async knowledge() {
+      const { results } = await db
+        .prepare("SELECT categoria, tema, contenido FROM kb_negocio WHERE activo = 1 ORDER BY categoria, orden, tema LIMIT ?")
+        .bind(KNOWLEDGE_LIMIT)
+        .all<{ categoria: KnowledgeEntry["category"]; tema: string; contenido: string }>();
+      return results.map((r) => ({ category: r.categoria, topic: r.tema, content: r.contenido }));
     },
 
     async latestOrder(clientId) {

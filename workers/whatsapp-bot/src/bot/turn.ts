@@ -79,8 +79,9 @@ async function answer(
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
   while (history.at(-1)?.direction === "in") history.pop();
+  const knowledge = (await deps.repo.knowledge?.().catch(() => [])) ?? [];
   const draft = await respond(deps.run, {
-    system: buildResponderPrompt(settings, intent, conversation.displayName, suspicious),
+    system: buildResponderPrompt(settings, intent, conversation.displayName, suspicious, knowledge),
     history: historyMessages(history),
     userText: wrapUntrusted(turnText),
     tools: suspicious ? [] : toolsFor(intent, deps.repo, conversation, settings, Date.now, order),
