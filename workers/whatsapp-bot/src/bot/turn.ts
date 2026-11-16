@@ -17,7 +17,8 @@ import { settingsFromConfig, type BotSettings } from "./settings.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import {
-  cancelAfterPrompt, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
+  cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
+  ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT,
   pendingOperation, type OrderTurn,
 } from "../orders/flow.ts";
 
@@ -81,16 +82,32 @@ async function answer(
   while (history.at(-1)?.direction === "in") history.pop();
   const knowledge = (await deps.repo.knowledge?.().catch(() => [])) ?? [];
   const lessons = (await deps.repo.lessons?.().catch(() => [])) ?? [];
+  // Si el modelo deriva con handoff_to_human en ESTE turno, su mensaje al cliente igual sale (sin el rechequeo
+  // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
+  let handedOffNow = false;
+  const toolRepo = {
+    ...deps.repo,
+    setTakeover: async (id: string) => {
+      handedOffNow = true;
+      await deps.repo.setTakeover(id);
+    },
+  };
   const draft = await respond(deps.run, {
     system: buildResponderPrompt(settings, intent, conversation.displayName, suspicious, knowledge, lessons),
     history: historyMessages(history),
     userText: wrapUntrusted(turnText),
-    tools: suspicious ? [] : toolsFor(intent, deps.repo, conversation, settings, Date.now, order),
+    tools: suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order),
   });
 
   // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
   if (order?.state.fixedReply) {
     await reply(deps, conversation, order.state.fixedReply);
+    return "answered";
+  }
+
+  // El modelo preguntó a mano si cancela (en vez de cancel_order): se manda la plantilla oficial, que habilita el SÍ.
+  if (order && intent === "pedido_cancelar" && asksCancelConfirmation(draft)) {
+    await reply(deps, conversation, CANCEL_PROMPT);
     return "answered";
   }
 
@@ -102,8 +119,19 @@ async function answer(
     return "output_blocked";
   }
 
+  // Confirmado / pagado / en camino solo lo dicen las plantillas o order_status (intención pedido_estado).
+  if (intent !== "pedido_estado" && claimsOrderState(draft)) {
+    deps.log("[whatsapp-bot] el modelo afirmó un estado del pedido", { conversation: conversation.id, intent });
+    await reply(deps, conversation, ORDER_STATE_SAFE_REPLY);
+    return "output_blocked";
+  }
+
   const appHost = new URL(deps.appUrl).host;
   const check = inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] });
+  if (handedOffNow) {
+    await reply(deps, conversation, draft && check.verdict !== "block" ? draft : REPLIES.handoff, false);
+    return "answered";
+  }
   if (!draft || check.verdict === "block") {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: check.reasons, empty: !draft });
     await reply(deps, conversation, REPLIES.failure);
@@ -171,8 +199,8 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
       : undefined;
 
   // Camino determinista: SÍ literal justo después del resumen (o de la pregunta de cancelar) no pasa por el clasificador.
-  if (order && isAffirmation(text) && !order.hasAudio) {
-    const pending = pendingOperation(lastBot);
+  const pending = pendingOperation(lastBot);
+  if (order && pending && isAffirmation(text, pending) && !order.hasAudio) {
     const direct = pending === "confirm" ? confirmAfterSummary : pending === "cancel" ? cancelAfterPrompt : null;
     if (direct) {
       await direct(order);

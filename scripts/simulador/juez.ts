@@ -133,7 +133,8 @@ export function parseVerdict(
     if (!r.success) return [];
     const { causa, ...rest } = r.data;
     // Un "no_derivo" cuando sí derivó es un error del juez: se descarta.
-    if (rest.tipo === "no_derivo" && derivo) return [];
+    // Tampoco cuenta "no_derivo" en escenarios que no requieren derivar.
+    if (rest.tipo === "no_derivo" && (derivo || !scenario.mustHandoff)) return [];
     const fromEnv =
       causa !== "bot" || rest.respuesta_mala.includes(FAILURE_REPLY) || (environmentHit && rest.tipo === "no_derivo");
     return [{ failure: { ...rest, escenario: scenario.type } as ErrorInput, fromEnv }];

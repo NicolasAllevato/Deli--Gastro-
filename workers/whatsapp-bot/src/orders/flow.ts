@@ -16,7 +16,19 @@ export const RETRY_CANCEL = `${RETRY_MARKER}cancelar tu pedido.`;
 const RETRY_SUFFIX = "Respondé SÍ para reintentar.";
 export const CANCEL_PROMPT = `${CANCEL_MARKER}\nRespondé SÍ para cancelarlo. Si no, seguimos como estaba.`;
 
-const AFFIRMATIONS: ReadonlySet<string> = new Set(["si", "confirmo", "dale"]);
+/** La respuesta tiene que EMPEZAR con una de estas (después de normalizar). "ok", "listo" o "de acuerdo" solos no alcanzan. */
+const AFFIRMATION_STARTS: ReadonlySet<string> = new Set(["si", "sii", "siii", "sip", "dale", "confirmo"]);
+/** Relleno que puede acompañar a la afirmación sin cambiar su sentido. Cualquier otra palabra ("no", "pero", "sin", "agregá") la anula. */
+const AFFIRMATION_FILLER: ReadonlySet<string> = new Set([
+  "si", "sii", "sip", "dale", "confirmo", "porfa", "porfis", "por", "favor", "gracias", "todo", "bien", "perfecto", "genial",
+  "joya", "de", "una", "el", "la", "lo", "pedido", "eso", "va", "nomas", "che", "claro", "obvio", "re", "buenisimo",
+]);
+/** Palabras propias de cada operación: confirmar no acepta "cancelá" y cancelar no acepta "confirmo/pagar". */
+const OP_WORDS: Record<"confirm" | "cancel", ReadonlySet<string>> = {
+  confirm: new Set(["confirmar", "confirmalo", "adelante", "avanza", "avanzamos", "pagar", "pago", "correcto"]),
+  cancel: new Set(["cancela", "cancelalo", "cancelar", "cancelo", "cancelado", "anula", "anulalo", "anular", "seguro"]),
+};
+const MAX_AFFIRMATION_WORDS = 8;
 
 /** Textos de plantilla: el modelo nunca puede mandar un mensaje que los contenga (el cuerpo guardado es la única "marca"). */
 export const TEMPLATE_MARKERS: readonly string[] = [QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para"];
@@ -29,6 +41,32 @@ export function imitatesTemplate(draft: string): boolean {
   return TEMPLATE_MARKERS.some((m) => folded.includes(foldText(m)));
 }
 
+/**
+ * Afirmaciones de estado que solo puede dar el sistema (plantilla de pago o `order_status`): confirmado, pagado,
+ * en camino, en preparación... Un texto libre del modelo que las diga se reemplaza por `ORDER_STATE_SAFE_REPLY`.
+ */
+const ORDER_STATE_CLAIMS: readonly RegExp[] = [
+  /\b(tu|el|su) pedido\b.{0,40}\b(confirmad[oa]|pagad[oa]|en camino|en proceso|en preparacion|despachad[oa]|saliendo|listo para (salir|enviar))/,
+  /\bpedido (esta |quedo |fue |ya esta )?(confirmado|pagado|en camino|en proceso|en preparacion)/,
+  /\b(ya (casi )?(te )?llega|ya (sale|salio|esta saliendo))\b/,
+  /\bpago (fue |esta |quedo )?(acreditado|recibido|aprobado|confirmado)/,
+];
+
+export const ORDER_STATE_SAFE_REPLY =
+  "Tu pedido se confirma recién cuando se acredita el pago con Mercado Pago. Si respondiste SÍ al resumen, te llega el link de pago; si no, decime y lo armamos.";
+
+/** true si el texto libre del modelo afirma un estado del pedido que solo puede informar el sistema. */
+export function claimsOrderState(draft: string): boolean {
+  const folded = foldText(draft).replace(/\s+/g, " ");
+  return ORDER_STATE_CLAIMS.some((re) => re.test(folded));
+}
+
+/** true si el modelo, con texto libre, le pregunta al cliente si confirma la cancelación. */
+export function asksCancelConfirmation(draft: string): boolean {
+  const folded = foldText(draft).replace(/\s+/g, " ");
+  return /\b(confirm\w*|segur[oa]\w*)\b.{0,40}\bcancel\w*/.test(folded) && /\?/.test(draft);
+}
+
 /** Qué operación habilita un SÍ según el último mensaje del bot (null = ninguna). */
 export function pendingOperation(lastBot: string | null): "confirm" | "cancel" | null {
   if (!lastBot) return null;
@@ -36,7 +74,7 @@ export function pendingOperation(lastBot: string | null): "confirm" | "cancel" |
   if (lastBot.startsWith(CANCEL_MARKER) || lastBot.startsWith(RETRY_CANCEL)) return "cancel";
   return null;
 }
-const MAX_AFFIRMATION_CHARS = 24;
+const MAX_AFFIRMATION_CHARS = 60;
 
 /** Minúsculas, sin tildes ni puntuación, espacios colapsados. */
 export function normalizeAnswer(text: string): string {
@@ -49,10 +87,17 @@ export function normalizeAnswer(text: string): string {
     .trim();
 }
 
-/** Afirmación literal de una lista corta: una pregunta o un texto largo nunca cuenta. */
-export function isAffirmation(text: string): boolean {
+/**
+ * Afirmación inequívoca: empieza con SÍ/dale/confirmo y el resto es solo relleno permitido para esa operación
+ * ("SÍ, CANCELA TODO.", "sí porfa", "SÍ, todo bien!"). Preguntas, textos largos y cualquier palabra fuera de la
+ * lista blanca ("si no", "si pero sin cebolla", "no sé") nunca cuentan. `op` null = solo relleno común.
+ */
+export function isAffirmation(text: string, op: "confirm" | "cancel" | null = null): boolean {
   if (text.length > MAX_AFFIRMATION_CHARS || text.includes("?") || text.includes("¿")) return false;
-  return AFFIRMATIONS.has(normalizeAnswer(text));
+  const words = normalizeAnswer(text).split(" ").filter(Boolean);
+  if (words.length === 0 || words.length > MAX_AFFIRMATION_WORDS || !AFFIRMATION_STARTS.has(words[0])) return false;
+  const extra = op ? OP_WORDS[op] : null;
+  return words.slice(1).every((w) => AFFIRMATION_FILLER.has(w) || (extra?.has(w) ?? false));
 }
 
 const money = (n: number): string => `$${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
@@ -218,7 +263,7 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
 /** Compuertas de `confirm`: (b) sin cotización en este turno, (c) afirmación literal, (e) el cliente vio el resumen. */
 function confirmGate(t: OrderTurn): string | null {
   if (t.state.quoted) return "En este mismo turno se cotizó: esperá a que el cliente responda SÍ al resumen.";
-  if (t.hasAudio || !isAffirmation(t.inboundText)) return "El último mensaje del cliente no es una confirmación literal (SÍ, dale, ok...). Pedile que responda SÍ al resumen.";
+  if (t.hasAudio || !isAffirmation(t.inboundText, "confirm")) return "El último mensaje del cliente no es una confirmación literal (SÍ, dale, ok...). Pedile que responda SÍ al resumen.";
   if (pendingOperation(t.lastBotMessage) !== "confirm") {
     // Un SÍ suelto sin resumen a la vista no deja al cliente en un callejón: se le pide empezar de nuevo.
     t.state.fixedReply = ORDER_REPLIES.startOver;
@@ -259,7 +304,7 @@ export const confirmAfterSummary = (t: OrderTurn): Promise<unknown> => runConfir
 export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!ownKeys(args, ["confirmed"])) return { ok: false, error: "Argumentos inválidos." };
   const asked = pendingOperation(t.lastBotMessage) === "cancel";
-  const confirmedNow = asked && !t.hasAudio && isAffirmation(t.inboundText) && args.confirmed === true;
+  const confirmedNow = asked && !t.hasAudio && isAffirmation(t.inboundText, "cancel") && args.confirmed === true;
   if (!confirmedNow) {
     // Primero se pregunta con plantilla fija; recién el mensaje siguiente del cliente puede cancelar.
     t.state.fixedReply = CANCEL_PROMPT;
