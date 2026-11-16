@@ -52,6 +52,9 @@ const ORDER_STATE_CLAIMS: readonly RegExp[] = [
   /\bpago (fue |esta |quedo )?(acreditado|recibido|aprobado|confirmado)/,
 ];
 
+export const PRICE_SAFE_REPLY =
+  "Perdón, para no pasarte un precio equivocado: decime qué te gustaría y te armo el resumen con el total exacto.";
+
 export const ORDER_STATE_SAFE_REPLY =
   "Tu pedido se confirma recién cuando se acredita el pago con Mercado Pago. Si respondiste SÍ al resumen, te llega el link de pago; si no, decime y lo armamos.";
 
@@ -59,6 +62,30 @@ export const ORDER_STATE_SAFE_REPLY =
 export function claimsOrderState(draft: string): boolean {
   const folded = foldText(draft).replace(/\s+/g, " ");
   return ORDER_STATE_CLAIMS.some((re) => re.test(folded));
+}
+
+/** Montos en pesos escritos en un texto ("$3.500", "$ 12,500", "$350"). Ignora centavos. */
+export function extractPrices(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/\$\s?(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,]\d{1,2}(?!\d))?/g)) {
+    out.push(Number(m[1].replace(/[.,]/g, "")));
+  }
+  return out;
+}
+
+const MAX_QTY_MULTIPLE = 20;
+
+/**
+ * Precios que el texto libre del modelo puede mencionar: los del menú y las zonas, y hasta 20 unidades de un producto
+ * ("2 empanadas $3.600"). Devuelve los montos que no coinciden con ninguno (vacío = OK).
+ */
+export function unknownPrices(text: string, allowed: readonly number[]): number[] {
+  const valid = new Set<number>();
+  for (const p of allowed) {
+    if (!Number.isFinite(p) || p <= 0) continue;
+    for (let k = 1; k <= MAX_QTY_MULTIPLE; k++) valid.add(Math.round(p * k));
+  }
+  return extractPrices(text).filter((n) => !valid.has(n));
 }
 
 /** true si el modelo, con texto libre, le pregunta al cliente si confirma la cancelación. */
@@ -100,7 +127,7 @@ export function isAffirmation(text: string, op: "confirm" | "cancel" | null = nu
   return words.slice(1).every((w) => AFFIRMATION_FILLER.has(w) || (extra?.has(w) ?? false));
 }
 
-const money = (n: number): string => `$${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+export const money = (n: number): string => `$${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, " ").trim().slice(0, max);
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 
@@ -257,7 +284,10 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!response.ok) return fail(t, response, "quote");
   const summary = renderQuoteSummary(response.data);
   t.state.fixedReply = summary ?? ORDER_REPLIES.invalidQuote;
-  return summary ? { ok: true, note: "El resumen con el total ya se le envía al cliente. No lo repitas ni lo cambies." } : SENT;
+  const total = response.data.total;
+  return summary
+    ? { ok: true, total_text: typeof total === "number" ? money(total) : undefined, note: "El resumen con el total ya se le envía al cliente. No lo repitas ni lo cambies." }
+    : SENT;
 }
 
 /** Compuertas de `confirm`: (b) sin cotización en este turno, (c) afirmación literal, (e) el cliente vio el resumen. */

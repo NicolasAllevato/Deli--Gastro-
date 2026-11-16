@@ -18,7 +18,7 @@ import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
-  ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT,
+  ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices,
   pendingOperation, type OrderTurn,
 } from "../orders/flow.ts";
 
@@ -124,6 +124,18 @@ async function answer(
     deps.log("[whatsapp-bot] el modelo afirmó un estado del pedido", { conversation: conversation.id, intent });
     await reply(deps, conversation, ORDER_STATE_SAFE_REPLY);
     return "output_blocked";
+  }
+
+  // Precios: todo monto del texto libre tiene que existir en el menú o en las zonas (o ser hasta 20 unidades).
+  if (draft.includes("$")) {
+    const [menu, zones] = await Promise.all([deps.repo.menu(), deps.repo.zones()]);
+    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder])];
+    const wrong = unknownPrices(draft, allowed);
+    if (wrong.length > 0) {
+      deps.log("[whatsapp-bot] precio fuera del menú", { conversation: conversation.id, intent, prices: wrong.slice(0, 5) });
+      await reply(deps, conversation, PRICE_SAFE_REPLY);
+      return "output_blocked";
+    }
   }
 
   const appHost = new URL(deps.appUrl).host;

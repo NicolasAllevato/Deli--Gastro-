@@ -1,7 +1,7 @@
 /** Bugs que encontró el simulador: confirmaciones con texto extra, estados afirmados por el modelo y quejas. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { asksCancelConfirmation, CANCEL_PROMPT, claimsOrderState, isAffirmation, ORDER_STATE_SAFE_REPLY } from "../workers/whatsapp-bot/src/orders/flow.ts";
+import { asksCancelConfirmation, CANCEL_PROMPT, claimsOrderState, extractPrices, isAffirmation, money, ORDER_STATE_SAFE_REPLY, PRICE_SAFE_REPLY, unknownPrices } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { processTurn } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { REPLIES } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import { d1BotRepo, d1InboundRepo } from "../workers/whatsapp-bot/src/repo/d1.ts";
@@ -116,6 +116,36 @@ describe("turno completo", () => {
     const w = await world("pedido_confirmar", [], "¡Perfecto! Tu pedido está confirmado.");
     await w.send("sí, todo bien");
     assert.deepEqual(w.sent, [ORDER_STATE_SAFE_REPLY]);
+  });
+});
+
+describe("precios", () => {
+  it("extrae montos en pesos con distintos formatos", () => {
+    assert.deepEqual(extractPrices("Coca $3.500, agua $ 1500 y pizza $12,500. Envío $1.500,00"), [3500, 1500, 12500, 1500]);
+    assert.deepEqual(extractPrices("sin precios"), []);
+  });
+  it("marca los precios que no están en el menú (la Coca a $350)", () => {
+    const menu = [3500, 1500, 1800];
+    assert.deepEqual(unknownPrices("Coca-Cola 1,5 L: $350", menu), [350]);
+    assert.deepEqual(unknownPrices("Coca $3.500 y 2 empanadas $3.600", menu), []);
+    assert.deepEqual(unknownPrices("Agua $150", menu), [150]);
+  });
+  it("get_menu devuelve price_text formateado", () => {
+    assert.equal(money(3500), "$3.500");
+    assert.equal(money(12500), "$12.500");
+  });
+  it("turno completo: un precio inventado no llega al cliente", async () => {
+    const w = await world("consulta_menu", [], "Tenemos Coca-Cola 1,5 L a $350 y agua a $150.");
+    assert.equal(await w.send("que bebidas tienen?"), "output_blocked");
+    assert.deepEqual(w.sent, [PRICE_SAFE_REPLY]);
+  });
+  it("turno completo: los precios reales pasan", async () => {
+    const w = await world("consulta_menu", [], "Tenemos Coca-Cola 1,5 L a $3.500 y agua a $1.500.");
+    assert.equal(await w.send("que bebidas tienen?"), "answered");
+    assert.deepEqual(w.sent, ["Tenemos Coca-Cola 1,5 L a $3.500 y agua a $1.500."]);
+  });
+  it("el prompt pide copiar el precio formateado", () => {
+    assert.match(buildResponderPrompt(settingsFromConfig({}), "consulta_menu", null, false), /price_text/);
   });
 });
 
