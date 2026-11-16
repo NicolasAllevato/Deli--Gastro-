@@ -85,3 +85,6 @@ spec-kit/
 # OpenNext (Cloudflare)
 .open-next/
 .wrangler/
+
+# Simulador de clientes del bot (informes y base local)
+/reports/

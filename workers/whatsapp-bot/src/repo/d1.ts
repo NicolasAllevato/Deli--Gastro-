@@ -202,6 +202,13 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       return results.map((r) => ({ category: r.categoria, topic: r.tema, content: r.contenido }));
     },
 
+    async lessons() {
+      const { results } = await db
+        .prepare("SELECT correccion FROM kb_errores WHERE estado = 'aprobada' ORDER BY veces DESC, updated_at DESC LIMIT 20")
+        .all<{ correccion: string }>();
+      return results.map((r) => r.correccion);
+    },
+
     async latestOrder(clientId) {
       const row = await db
         .prepare("SELECT id, status, items_desc, total_cents, courier_name, created_at FROM orders WHERE client_id = ? ORDER BY created_at DESC LIMIT 1")

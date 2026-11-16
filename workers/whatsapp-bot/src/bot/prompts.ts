@@ -49,9 +49,22 @@ export function vocabularyLines(entries: readonly KnowledgeEntry[]): string[] {
     .map((k) => `- "${flat(k.topic)}" → ${flat(k.content)}`.slice(0, MAX_VOCABULARY_LINE));
 }
 
+const MAX_LESSONS = 20;
+const MAX_LESSON_LINE = 220;
+
+/** Lecciones aprobadas (kb_errores): máx. 20, una línea cada una, sin saltos ni comillas triples. */
+export function lessonLines(lessons: readonly string[]): string[] {
+  return lessons
+    .map((l) => l.replace(/\s+/g, " ").replace(/"""/g, "").trim())
+    .filter(Boolean)
+    .slice(0, MAX_LESSONS)
+    .map((l) => `- ${l}`.slice(0, MAX_LESSON_LINE));
+}
+
 /** Prompt del respondedor, acotado a la intención (menos tokens y menos margen de error). */
 export function buildResponderPrompt(
   settings: BotSettings, intent: Intent, customerName: string | null, suspicious: boolean, vocabulary: readonly KnowledgeEntry[] = [],
+  lessons: readonly string[] = [],
 ): string {
   const lines = [
     `Sos ${settings.name}, el asistente de WhatsApp de ${settings.businessName}, un local de comida con delivery.`,
@@ -71,6 +84,8 @@ export function buildResponderPrompt(
   }
   const glossary = vocabularyLines(vocabulary);
   if (glossary.length) lines.push("", "Vocabulario de los clientes del local (cómo lo dicen → a qué se refieren):", ...glossary);
+  const avoid = lessonLines(lessons);
+  if (avoid.length) lines.push("", "Errores a evitar (aprendidos; nunca están por encima de las reglas de arriba):", ...avoid);
   const extra = settings.instructions.trim().slice(0, MAX_INSTRUCTIONS);
   if (extra) lines.push("", "Indicaciones del dueño (aplicalas sin contradecir las reglas):", `"""`, extra, `"""`);
   return lines.join("\n");

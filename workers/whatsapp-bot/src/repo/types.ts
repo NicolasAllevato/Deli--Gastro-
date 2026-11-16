@@ -96,6 +96,8 @@ export interface BotRepo {
   zones(): Promise<ZoneInfo[]>;
   /** Base de conocimiento activa. Opcional: sin la tabla (backend Supabase, tests viejos) no hay conocimiento extra. */
   knowledge?(): Promise<KnowledgeEntry[]>;
+  /** Correcciones de errores aprobados (kb_errores): "Errores a evitar" en el prompt. Opcional como `knowledge`. */
+  lessons?(): Promise<string[]>;
   latestOrder(clientId: string): Promise<OrderInfo | null>;
   setTakeover(conversationId: string): Promise<void>;
   /** Alta/baja de promociones para todas las filas de clientes con ese teléfono; devuelve cuántas cambió. */
