@@ -2,7 +2,7 @@ import type { BotTool } from "../ai/responder.ts";
 import { toolsForIntent } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
-import { LEGACY_STATUS, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
+import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
 const PAYMENT_METHODS = ["Efectivo", "Transferencia", "Mercado Pago"];
@@ -52,7 +52,11 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
       description: "Productos disponibles con nombre, descripción, precio y categoría.",
       parameters: EMPTY,
       run: async () =>
-        (await repo.menu()).map(({ id, name, description, price, category }) => (order ? { id, name, description, price, category } : { name, description, price, category })),
+        (await repo.menu()).map(({ id, name, description, price, category }) => {
+          // price_text ya formateado en pesos ("$3.500"): el modelo lo copia tal cual, sin convertir números.
+          const item = { name, description, price, price_text: money(price), category };
+          return order ? { id, ...item } : item;
+        }),
     },
     {
       name: "get_business_info",
@@ -63,7 +67,7 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
         hours: settings.hours,
         open_now: openNow(settings, new Date(now())),
         estimated_minutes: settings.estimatedMinutes,
-        zones: (await repo.zones()).map((z) => ({ name: z.name, delivery_fee: z.fee, min_order: z.minOrder })),
+        zones: (await repo.zones()).map((z) => ({ name: z.name, delivery_fee: z.fee, delivery_fee_text: money(z.fee), min_order: z.minOrder, min_order_text: money(z.minOrder) })),
         payment_methods: PAYMENT_METHODS,
         // Cargado por el dueño en /admin/conocimiento (el vocabulario va al prompt, no acá).
         knowledge: ((await repo.knowledge?.().catch(() => [])) ?? [])

@@ -157,7 +157,7 @@ const TOOLS_BY_INTENT: Readonly<Record<string, readonly string[]>> = {
   pedido_nuevo: ["get_menu", "quote_order"],
   pedido_datos: ["get_menu", "quote_order"],
   pedido_confirmar: ["quote_order", "confirm_order"],
-  pedido_estado: ["order_status"],
+  pedido_estado: ["order_status", "handoff_to_human"],
   pedido_cancelar: ["order_status", "cancel_order"],
   humano: ["handoff_to_human"],
 };

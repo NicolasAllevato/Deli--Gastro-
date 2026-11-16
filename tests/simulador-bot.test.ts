@@ -22,7 +22,7 @@ import { exportPendingSql } from "../scripts/simulador/sql-export.ts";
 
 const sys = systemActor("test");
 const falla = {
-  escenario: "queja_reclamo", tipo: "no_derivo" as const, mensaje_cliente: "la pizza llegó fria!!",
+  escenario: "queja_reclamo", tipo: "no_resolvio" as const, mensaje_cliente: "la pizza llegó fria!!",
   respuesta_mala: "Qué pena", motivo: "No derivó la queja", correccion: "Ante una queja, empatizá y derivá a una persona.",
 };
 
@@ -94,16 +94,21 @@ describe("juez", () => {
     assert.equal(v.fallasEntorno.length, 2);
     assert.equal(v.entorno, true);
     // Con señales técnicas en los logs, un "no_derivo" se atribuye al entorno.
-    const v2 = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [falla] }), { type: "queja_reclamo", mustHandoff: true }, true);
+    const v2 = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [{ ...falla, tipo: "no_derivo" }] }), { type: "queja_reclamo", mustHandoff: true }, true);
     assert.equal(v2?.fallas.length, 0);
     assert.equal(v2?.entorno, true);
   });
   it("los hechos observados ganan: si derivó, no hay 'no_derivo' y la queja queda resuelta", () => {
-    const raw3 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [falla, { ...falla, tipo: "no_resolvio", correccion: "x", causa: "cliente" }] });
+    const raw3 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [{ ...falla, tipo: "no_derivo" }, { ...falla, correccion: "x", causa: "cliente" }] });
     const v = parseVerdict(raw3, { type: "queja_reclamo", mustHandoff: true }, false, { handedOff: true });
     assert.equal(v?.derivo, true);
     assert.equal(v?.fallas.length, 0);
     assert.equal(v?.fallasEntorno.length, 1);
+    assert.equal(v?.exito, true);
+  });
+  it("'no_derivo' no cuenta en escenarios que no requieren derivar", () => {
+    const v = parseVerdict(JSON.stringify({ resuelto: true, derivo: false, invento_precios: false, empatia: 5, fallas: [{ ...falla, tipo: "no_derivo" }] }), { type: "pedido_cambios", mustHandoff: false });
+    assert.equal(v?.fallas.length, 0);
     assert.equal(v?.exito, true);
   });
   it("detecta señales técnicas en los logs", () => {
