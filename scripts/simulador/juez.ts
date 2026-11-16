@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ERROR_TIPOS, normalizeKey, sugerenciaKey, errorKey, type ErrorInput, type SugerenciaInput } from "../../src/lib/data/kb-aprendizaje.ts";
 import { KB_CATEGORIAS } from "../../src/lib/data/kb-negocio.ts";
 import type { Scenario } from "./escenarios.ts";
+import { REPLIES } from "../../workers/whatsapp-bot/src/bot/prompts.ts";
 
 export interface TranscriptLine {
   role: "cliente" | "bot";
@@ -17,6 +18,7 @@ const failureSchema = z.object({
   respuesta_mala: z.string().max(1000).default(""),
   motivo: z.string().min(1).max(500),
   correccion: z.string().min(1).max(300),
+  causa: z.enum(["bot", "entorno", "cliente"]).catch("bot"),
 });
 
 const suggestionSchema = z.object({
@@ -42,7 +44,12 @@ export interface Verdict {
   inventoPrecios: boolean;
   empatia: number;
   noEntendidas: string[];
+  /** Fallas atribuibles al bot: las únicas que se aprenden. */
   fallas: ErrorInput[];
+  /** Fallas del entorno simulado (fakes, menú, herramientas): van al informe, nunca a kb_errores. */
+  fallasEntorno: ErrorInput[];
+  /** La conversación se vio afectada por el entorno: no cuenta para la tasa de éxito. */
+  entorno: boolean;
   sugerencias: SugerenciaInput[];
   /** Éxito del escenario: resolvió, derivó si debía, no inventó precios y empatía ≥ 3. */
   exito: boolean;
@@ -56,9 +63,16 @@ Devolvé SOLO un JSON con esta forma:
  "sugerencias":[{"categoria":"vocabulario|faq|politica|promo|otro","tema":"para vocabulario: cómo lo dice el cliente; para faq: la pregunta","contenido":"a qué se refiere / respuesta sugerida (sin inventar precios)","evidencia":"frase del cliente"}]}
 Reglas: "derivo" es true si el bot pasó la charla a una persona. "invento_precios" es true si dio un precio, promo o producto que no está en el menú.
 Empatía: 1 frío o cortante, 3 correcto, 5 cálido y empático. Las correcciones son reglas generales, no copias de la charla.
-Las sugerencias solo si aportan conocimiento nuevo y útil para el local; nunca inventes precios.`;
+Las sugerencias solo si aportan conocimiento nuevo y útil para el local; nunca inventes precios.
+Cada falla lleva "causa": "bot" si es una decisión o respuesta mala del asistente, o "entorno" si viene de la simulación
+(herramienta con error técnico, respuesta vacía, el mensaje fijo "tuve un problema para responderte", logs de error).
+Una derivación provocada por un error técnico NO es una derivación real: no cuenta como "derivo" y su falla es de "entorno".
+Usá "causa": "cliente" si el cliente simulado abandonó o no llegó a la parte de su objetivo (por ejemplo, nunca pidió cancelar):
+eso no es culpa del bot. En una queja, derivar a una persona ES resolverla. Marcá "no_derivo" solo si el bot no derivó.
+Falla grave del bot (tipo "otro", resuelto=false): decir que un pedido está confirmado, pagado, "en proceso" o "en camino"
+sin que antes aparezca el mensaje de pago de Mercado Pago; o repetir la misma pregunta de confirmación en bucle.`;
 
-export function buildJudgeInput(scenario: Scenario, menu: string, transcript: readonly TranscriptLine[]): string {
+export function buildJudgeInput(scenario: Scenario, menu: string, transcript: readonly TranscriptLine[], logs: readonly string[] = []): string {
   const chat = transcript.map((l) => `${l.role === "cliente" ? "CLIENTE" : "BOT"}: ${l.text}`).join("\n");
   return [
     `Escenario: ${scenario.type}. Persona: ${scenario.persona}.`,
@@ -71,6 +85,9 @@ export function buildJudgeInput(scenario: Scenario, menu: string, transcript: re
     "",
     "Conversación:",
     chat,
+    "",
+    "Logs técnicos del bot (vacío = sin errores):",
+    logs.length ? logs.slice(0, 20).join("\n") : "(ninguno)",
   ].join("\n");
 }
 
@@ -86,14 +103,44 @@ function extractJson(raw: string): unknown {
 }
 
 /** Parsea y valida la salida del juez; null si no sirve. Las fallas/sugerencias inválidas se descartan una por una. */
-export function parseVerdict(raw: string, scenario: Pick<Scenario, "type" | "mustHandoff">): Verdict | null {
+/** Señales técnicas del entorno en los logs del bot (respuesta vacía o bloqueada, errores). */
+export function environmentSignals(logs: readonly string[]): boolean {
+  return logs.some((l) => /respuesta bloqueada|imitó una plantilla|error/i.test(l));
+}
+
+const FAILURE_REPLY = REPLIES.failure.slice(0, 40);
+
+/**
+ * Parsea y valida la salida del juez; null si no sirve. Las fallas/sugerencias inválidas se descartan una por una.
+ * `environmentHit`: hubo señales técnicas en los logs. Toda falla cuya respuesta mala es el mensaje fijo de error
+ * se atribuye al entorno aunque el juez diga "bot" (así no se aprenden errores falsos como "no_derivo").
+ */
+export interface ObservedFacts {
+  /** El bot derivó de verdad (la conversación quedó en manos de una persona sin error técnico). */
+  handedOff?: boolean;
+}
+
+export function parseVerdict(
+  raw: string, scenario: Pick<Scenario, "type" | "mustHandoff">, environmentHit = false, facts: ObservedFacts = {},
+): Verdict | null {
   const parsed = verdictSchema.safeParse(extractJson(raw));
   if (!parsed.success) return null;
-  const v = parsed.data;
-  const fallas = v.fallas.flatMap((f) => {
+  // Los hechos observados ganan sobre la opinión del juez.
+  const derivo = facts.handedOff === undefined ? parsed.data.derivo : facts.handedOff && !environmentHit;
+  const v = { ...parsed.data, derivo, resuelto: parsed.data.resuelto || (scenario.mustHandoff && derivo) };
+  const all = v.fallas.flatMap((f) => {
     const r = failureSchema.safeParse(f);
-    return r.success ? [{ ...r.data, escenario: scenario.type }] : [];
+    if (!r.success) return [];
+    const { causa, ...rest } = r.data;
+    // Un "no_derivo" cuando sí derivó es un error del juez: se descarta.
+    if (rest.tipo === "no_derivo" && derivo) return [];
+    const fromEnv =
+      causa !== "bot" || rest.respuesta_mala.includes(FAILURE_REPLY) || (environmentHit && rest.tipo === "no_derivo");
+    return [{ failure: { ...rest, escenario: scenario.type } as ErrorInput, fromEnv }];
   });
+  const fallas = all.filter((f) => !f.fromEnv).map((f) => f.failure);
+  const fallasEntorno = all.filter((f) => f.fromEnv).map((f) => f.failure);
+  const entorno = environmentHit || fallasEntorno.length > 0;
   const sugerencias = v.sugerencias.flatMap((s) => {
     const r = suggestionSchema.safeParse(s);
     return r.success ? [r.data] : [];
@@ -108,6 +155,8 @@ export function parseVerdict(raw: string, scenario: Pick<Scenario, "type" | "mus
     empatia: v.empatia,
     noEntendidas: v.no_entendidas.map((s) => s.trim()).filter(Boolean),
     fallas,
+    fallasEntorno,
+    entorno,
     sugerencias,
     exito,
   };

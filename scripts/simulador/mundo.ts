@@ -73,6 +73,9 @@ const MENU: Array<[string, string, number]> = [
   ["Postres", "Flan casero con dulce de leche", 3800],
 ];
 
+/** UUID fijo por posición del menú de ejemplo (formato que exige el bot). */
+export const simProductId = (index: number): string => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+
 /** Prepara configuración y menú si la base está vacía. No toca nada que ya exista. */
 export function seedWorld(db: { raw: DatabaseSync }): void {
   const cfg = db.raw.prepare("INSERT INTO global_config (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value");
@@ -99,7 +102,8 @@ export function seedWorld(db: { raw: DatabaseSync }): void {
       }
       db.raw
         .prepare("INSERT INTO products (id, category_id, name, price_cents, is_active, show_in_portal) VALUES (?, ?, ?, ?, 1, 1)")
-        .run(`sim-p-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, cats.get(cat) ?? null, name, price * 100);
+        // UUID: el bot valida product_id como UUID (parseQuoteArgs); un id de otro formato rompe la cotización.
+        .run(simProductId(MENU.findIndex(([, n]) => n === name)), cats.get(cat) ?? null, name, price * 100);
     }
   }
   const zones = db.raw.prepare("SELECT count(*) AS n FROM delivery_zones").get() as { n: number };

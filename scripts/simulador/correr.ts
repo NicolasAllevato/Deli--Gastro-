@@ -14,7 +14,7 @@ import { d1BotRepo, d1InboundRepo } from "../../workers/whatsapp-bot/src/repo/d1
 import { clientSystem, clientUser, parseClientTurn } from "./cliente.ts";
 import { generateScenarios, type RegressionCase, type Scenario } from "./escenarios.ts";
 import { renderReport, type ConversationResult } from "./informe.ts";
-import { JUDGE_SYSTEM, buildJudgeInput, dedupeFailures, dedupeSuggestions, parseVerdict, type TranscriptLine } from "./juez.ts";
+import { JUDGE_SYSTEM, buildJudgeInput, dedupeFailures, dedupeSuggestions, environmentSignals, parseVerdict, type TranscriptLine } from "./juez.ts";
 import { fakeOrders, menuText, openSimDb, seedWorld } from "./mundo.ts";
 import { chatJson, openAiRunner, readOpenAiKey } from "./openai.ts";
 import { Budget, estimatePerConversation } from "./presupuesto.ts";
@@ -60,6 +60,8 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
   const conversation = await inbound.upsertConversation(phone, scenario.persona.split(",")[0]);
   const transcript: TranscriptLine[] = [];
   const sent: string[] = [];
+  const logs: string[] = [];
+  let handedOff = false;
   let seq = 0;
   const deps: TurnDeps = {
     repo,
@@ -71,7 +73,7 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
     },
     appUrl: "https://opsyndely.la-gambeta.com",
     orders,
-    log: () => {},
+    log: (message, detail) => { logs.push(`${message}${detail === undefined ? "" : ` ${JSON.stringify(detail).slice(0, 300)}`}`); },
   };
   try {
     for (let turn = 0; turn < scenario.maxTurns; turn++) {
@@ -86,14 +88,15 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
       await processTurn({ phone, text: next.message, wamids: [wamid], audios: [], receivedAt: Date.now() }, deps);
       for (const text of sent) transcript.push({ role: "bot", text });
       if ((await repo.getConversation(phone))?.humanTakeover) {
+        handedOff = true;
         transcript.push({ role: "bot", text: "[el bot derivó la conversación a una persona del local]" });
         break;
       }
     }
-    const verdict = parseVerdict(await chatJson(run, JUDGE_SYSTEM, buildJudgeInput(scenario, menu, transcript), 1200), scenario);
-    return { scenario, transcript, verdict, error: verdict ? undefined : "el juez devolvió un JSON inválido" };
+    const verdict = parseVerdict(await chatJson(run, JUDGE_SYSTEM, buildJudgeInput(scenario, menu, transcript, logs), 1200), scenario, environmentSignals(logs), { handedOff });
+    return { scenario, transcript, verdict, logs, error: verdict ? undefined : "el juez devolvió un JSON inválido" };
   } catch (error: unknown) {
-    return { scenario, transcript, verdict: null, error: error instanceof Error ? error.message.slice(0, 200) : "error" };
+    return { scenario, transcript, verdict: null, logs, error: error instanceof Error ? error.message.slice(0, 200) : "error" };
   }
 }
 
@@ -123,7 +126,7 @@ async function main(): Promise<void> {
   for (const r of results) {
     for (const f of r.verdict?.fallas ?? []) await recordError(db, actor, crypto.randomUUID(), f).catch(() => {});
     for (const s of r.verdict?.sugerencias ?? []) await recordSugerencia(db, actor, crypto.randomUUID(), s).catch(() => {});
-    if (r.scenario.errorId && r.verdict) await setRegressionResult(db, actor, r.scenario.errorId, r.verdict.exito);
+    if (r.scenario.errorId && r.verdict && !r.verdict.entorno) await setRegressionResult(db, actor, r.scenario.errorId, r.verdict.exito);
   }
 
   const dateIso = new Date().toISOString();
@@ -140,8 +143,10 @@ async function main(): Promise<void> {
   const suggestions = dedupeSuggestions(results.flatMap((r) => r.verdict?.sugerencias ?? []));
   writeFileSync(new URL("pendientes.sql", outDir), exportPendingSql(failures, suggestions, () => crypto.randomUUID()));
 
-  const ok = results.filter((r) => r.verdict?.exito).length;
-  console.log(`Listo: ${results.length} conversaciones, éxito ${ok}/${results.length}, US$ ${budget.costUsd.toFixed(3)} (${budget.inputTokens}+${budget.outputTokens} tokens).`);
+  const valid = results.filter((r) => r.verdict && !r.verdict.entorno);
+  const ok = valid.filter((r) => r.verdict?.exito).length;
+  const env = results.length - valid.length;
+  console.log(`Listo: ${results.length} conversaciones, éxito ${ok}/${valid.length} válidas (${env} afectadas por el entorno o sin juzgar), US$ ${budget.costUsd.toFixed(3)} (${budget.inputTokens}+${budget.outputTokens} tokens).`);
   console.log(`Informe: reports/simulador/informe-${stamp}.md · Pendientes: reports/simulador/pendientes.sql (${failures.length} errores, ${suggestions.length} sugerencias).`);
 }
 

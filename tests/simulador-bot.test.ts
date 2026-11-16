@@ -9,12 +9,13 @@ import {
 import { listKb } from "../src/lib/data/kb-negocio.ts";
 import { d1BotRepo, d1InboundRepo } from "../workers/whatsapp-bot/src/repo/d1.ts";
 import { processTurn } from "../workers/whatsapp-bot/src/bot/turn.ts";
-import { fakeOrders, menuText, openSimDb, seedWorld } from "../scripts/simulador/mundo.ts";
+import { fakeOrders, menuText, openSimDb, seedWorld, simProductId } from "../scripts/simulador/mundo.ts";
 import { buildResponderPrompt, lessonLines } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { generateScenarios, SCENARIO_TYPES } from "../scripts/simulador/escenarios.ts";
 import { Budget, estimatePerConversation } from "../scripts/simulador/presupuesto.ts";
-import { dedupeFailures, dedupeSuggestions, parseVerdict } from "../scripts/simulador/juez.ts";
+import { dedupeFailures, dedupeSuggestions, environmentSignals, parseVerdict } from "../scripts/simulador/juez.ts";
+import { parseQuoteArgs } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { parseClientTurn } from "../scripts/simulador/cliente.ts";
 import { renderReport, successByType } from "../scripts/simulador/informe.ts";
 import { exportPendingSql } from "../scripts/simulador/sql-export.ts";
@@ -82,6 +83,33 @@ describe("juez", () => {
   it("una queja sin derivar no es éxito aunque diga resuelto", () => {
     assert.equal(parseVerdict(raw, { type: "queja_reclamo", mustHandoff: true })?.exito, false);
   });
+  it("separa fallas del entorno de las del bot (no se aprenden)", () => {
+    const failureReply = { ...falla, respuesta_mala: "Perdón, tuve un problema para responderte. Ya le avisamos al local" };
+    const envByJudge = { ...falla, tipo: "otro", correccion: "Revisar herramienta", causa: "entorno" };
+    const raw2 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [failureReply, envByJudge, { ...falla, tipo: "tono_frio", correccion: "Sé cálido." }] });
+    const v = parseVerdict(raw2, { type: "pedido_cambios", mustHandoff: false });
+    assert.ok(v);
+    assert.equal(v.fallas.length, 1);
+    assert.equal(v.fallas[0].tipo, "tono_frio");
+    assert.equal(v.fallasEntorno.length, 2);
+    assert.equal(v.entorno, true);
+    // Con señales técnicas en los logs, un "no_derivo" se atribuye al entorno.
+    const v2 = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [falla] }), { type: "queja_reclamo", mustHandoff: true }, true);
+    assert.equal(v2?.fallas.length, 0);
+    assert.equal(v2?.entorno, true);
+  });
+  it("los hechos observados ganan: si derivó, no hay 'no_derivo' y la queja queda resuelta", () => {
+    const raw3 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [falla, { ...falla, tipo: "no_resolvio", correccion: "x", causa: "cliente" }] });
+    const v = parseVerdict(raw3, { type: "queja_reclamo", mustHandoff: true }, false, { handedOff: true });
+    assert.equal(v?.derivo, true);
+    assert.equal(v?.fallas.length, 0);
+    assert.equal(v?.fallasEntorno.length, 1);
+    assert.equal(v?.exito, true);
+  });
+  it("detecta señales técnicas en los logs", () => {
+    assert.equal(environmentSignals(['[whatsapp-bot] respuesta bloqueada {"empty":true}']), true);
+    assert.equal(environmentSignals([]), false);
+  });
   it("JSON roto o incompleto → null", () => {
     assert.equal(parseVerdict("nada", { type: "x" as never, mustHandoff: false }), null);
     assert.equal(parseVerdict('{"resuelto":true}', { type: "x" as never, mustHandoff: false }), null);
@@ -115,7 +143,7 @@ describe("informe y SQL de pendientes", () => {
   const verdict = parseVerdict(JSON.stringify({ resuelto: true, derivo: false, invento_precios: false, empatia: 5, fallas: [falla] }), scenario);
   it("calcula el éxito por escenario y arma el Markdown", () => {
     const results = [{ scenario, transcript: [], verdict }, { scenario, transcript: [], verdict: null, error: "x" }];
-    assert.deepEqual(successByType(results), [{ type: scenario.type, total: 2, ok: 1 }]);
+    assert.deepEqual(successByType(results), [{ type: scenario.type, total: 1, ok: 1 }]);
     const md = renderReport({ requested: 2, results, costUsd: 0.1, inputTokens: 1, outputTokens: 2, limitUsd: 3, stoppedByBudget: true, dateIso: "2026-11-16T10:00:00Z" });
     assert.match(md, /cortó por presupuesto/);
     assert.match(md, /Ante una queja/);
@@ -184,8 +212,10 @@ describe("mundo local + processTurn real (modelo falso, sin OpenAI)", () => {
     seedWorld(db);
     assert.match(menuText(db), /Napolitana grande: \$14\.500/);
     const orders = fakeOrders(db);
-    const quote = await orders.quote({ conversationId: "c", inboundWamid: "w", items: [{ product_id: "sim-p-muzzarella-grande", qty: 2 }], address: "Palermo 123" });
+    const quote = await orders.quote({ conversationId: "c", inboundWamid: "w", items: [{ product_id: simProductId(0), qty: 2 }], address: "Palermo 123" });
     assert.ok(quote.ok && quote.data.total === 26500);
+    // Regresión del entorno: los ids del menú de ejemplo pasan la validación real de quote_order.
+    assert.ok(parseQuoteArgs({ items: [{ product_id: simProductId(0), qty: 1 }], address: "Palermo 123" }));
     assert.equal((await orders.confirm({ conversationId: "otra", inboundWamid: "w", payment_method: "Mercado Pago" })).ok, false);
 
     const inbound = d1InboundRepo(db);

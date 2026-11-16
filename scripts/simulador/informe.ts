@@ -9,6 +9,8 @@ export interface ConversationResult {
   transcript: TranscriptLine[];
   verdict: Verdict | null;
   error?: string;
+  /** Lo que logueó el bot (deps.log) en esta conversación. */
+  logs?: string[];
 }
 
 export interface RunSummary {
@@ -27,7 +29,8 @@ const cell = (s: string): string => s.replace(/\|/g, "/").replace(/\s+/g, " ").s
 
 export function successByType(results: readonly ConversationResult[]): Array<{ type: string; total: number; ok: number }> {
   const map = new Map<string, { total: number; ok: number }>();
-  for (const r of results) {
+  // Solo conversaciones válidas: las afectadas por el entorno simulado no miden al bot.
+  for (const r of results.filter((x) => x.verdict && !x.verdict.entorno)) {
     const row = map.get(r.scenario.type) ?? { total: 0, ok: 0 };
     map.set(r.scenario.type, { total: row.total + 1, ok: row.ok + (r.verdict?.exito ? 1 : 0) });
   }
@@ -35,8 +38,9 @@ export function successByType(results: readonly ConversationResult[]): Array<{ t
 }
 
 export function renderReport(s: RunSummary): string {
-  const judged = s.results.filter((r) => r.verdict);
+  const judged = s.results.filter((r) => r.verdict && !r.verdict.entorno);
   const ok = judged.filter((r) => r.verdict?.exito).length;
+  const affected = s.results.filter((r) => r.verdict?.entorno);
   const failures: ErrorInput[] = judged.flatMap((r) => r.verdict?.fallas ?? []);
   const suggestions: SugerenciaInput[] = judged.flatMap((r) => r.verdict?.sugerencias ?? []);
   const unknownWords = [...new Set(judged.flatMap((r) => r.verdict?.noEntendidas ?? []))];
@@ -50,7 +54,8 @@ export function renderReport(s: RunSummary): string {
     `- Éxito general: ${ok}/${judged.length} (${pct(ok, judged.length)})`,
     `- Empatía promedio: ${empathy.toFixed(1)} / 5`,
     `- Costo: US$ ${s.costUsd.toFixed(3)} de US$ ${s.limitUsd} · tokens: ${s.inputTokens} entrada, ${s.outputTokens} salida`,
-    `- Sin juzgar (error del simulador o del juez): ${s.results.length - judged.length}`,
+    `- Afectadas por el entorno simulado (no cuentan ni se aprenden): ${affected.length}`,
+    `- Sin juzgar (error del simulador o del juez): ${s.results.filter((r) => !r.verdict).length}`,
     "",
     "## Éxito por escenario",
     "",
@@ -75,6 +80,15 @@ export function renderReport(s: RunSummary): string {
   lines.push("", "## Sugerencias de conocimiento (pendientes de aprobación)", "", "| Veces | Categoría | Tema | Contenido |", "|---|---|---|---|");
   for (const sg of dedupeSuggestions(suggestions).slice(0, 40)) {
     lines.push(`| ${sg.veces} | ${sg.categoria} | ${cell(sg.tema)} | ${cell(sg.contenido)} |`);
+  }
+  const withLogs = s.results.filter((r) => r.verdict?.entorno || !r.verdict || (r.logs?.length ?? 0) > 0);
+  if (withLogs.length) {
+    lines.push("", "## Entorno simulado (revisar el simulador, no el bot)", "");
+    for (const r of withLogs) {
+      lines.push(`### ${r.scenario.id}${r.error ? ` — ${cell(r.error)}` : ""}`);
+      for (const f of r.verdict?.fallasEntorno ?? []) lines.push(`- Falla de entorno: ${cell(f.motivo)}`);
+      for (const l of r.logs ?? []) lines.push(`- Log: \`${cell(l)}\``);
+    }
   }
   lines.push("", "## Palabras que el bot no entendió", "", unknownWords.length ? unknownWords.map((w) => `- ${w}`).join("\n") : "_Ninguna._", "");
   lines.push(
