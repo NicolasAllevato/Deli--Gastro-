@@ -16,6 +16,7 @@ import { buildResponderPrompt, orderReply, REPLIES } from "./prompts.ts";
 import { settingsFromConfig, type BotSettings } from "./settings.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
+import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices,
@@ -139,7 +140,7 @@ async function answer(
   }
 
   const appHost = new URL(deps.appUrl).host;
-  const check = inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] });
+  const check = withPrivacy(draft, inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] }));
   if (handedOffNow) {
     await reply(deps, conversation, draft && check.verdict !== "block" ? draft : REPLIES.handoff, false);
     return "answered";

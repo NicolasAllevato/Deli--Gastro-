@@ -1,3 +1,4 @@
+import { safeError } from "./privacy.ts";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
 import type { InboundMessage, OutboundEcho, WebhookEvent } from "./payload.ts";
@@ -141,7 +142,7 @@ export async function processWebhookEvents(
         await handleMessage(db, event, settings, handler);
       }
     } catch (error: unknown) {
-      console.error("[whatsapp] evento no procesado", event.kind, event.wamid, error);
+      console.error("[whatsapp] evento no procesado", event.kind, event.wamid, safeError(error));
     }
   }
 }

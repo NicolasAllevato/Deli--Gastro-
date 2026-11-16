@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/whatsapp/privacy";
 import { NextRequest, NextResponse, after } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
@@ -23,7 +24,7 @@ function keepOpenWASessionAlive() {
         console.error("[openwa] la sesión no está lista: necesita QR, tiene una falla o la frenaron a mano");
       }
     } catch (error: unknown) {
-      console.error("[openwa] no se pudo revisar la sesión", error);
+      console.error("[openwa] no se pudo revisar la sesión", safeError(error));
     }
   });
 }

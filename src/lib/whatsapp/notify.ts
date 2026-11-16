@@ -1,3 +1,4 @@
+import { safeError } from "./privacy.ts";
 import { isFudoOrigin } from "@/lib/fudo/origin";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { Database } from "@/types/database";
@@ -48,13 +49,25 @@ async function sendTemplateTo(db: Db, conversation: Conversation, templateName: 
   if (!template || !wa) return false;
 
   const clean = params.map(sanitizeParam);
+  const body = renderPreview(template, clean);
+  // Idempotencia: el mismo aviso (misma plantilla, pedido y datos) ya está en el historial → no se repite.
+  const { data: previous } = await db
+    .from("wa_messages")
+    .select("id")
+    .eq("conversation_id", conversation.id)
+    .eq("type", "template")
+    .eq("body", body)
+    .limit(1);
+  // Cuenta como entregado (true): la encuesta no se libera para reintentar algo que el cliente ya recibió.
+  if ((previous ?? []).length > 0) return true;
+
   const wamid = await wa.sendTemplate(conversation.client_phone, template.name, template.language, clean);
   await db.from("wa_messages").insert({
     conversation_id: conversation.id,
     wamid,
     direction: "out",
     type: "template",
-    body: renderPreview(template, clean),
+    body,
   });
   return true;
 }
@@ -101,7 +114,7 @@ export async function notifyOrderEvent(db: Db, orderId: string, notice: OrderNot
     const built = paramsFor(notice, target, estimatedMinutes);
     if (built) await sendTemplateTo(db, target.conversation, built[0], built[1]);
   } catch (error: unknown) {
-    console.error("[whatsapp] no se pudo avisar el pedido", orderId, notice, error);
+    console.error("[whatsapp] no se pudo avisar el pedido", orderId, notice, safeError(error));
   }
 }
 

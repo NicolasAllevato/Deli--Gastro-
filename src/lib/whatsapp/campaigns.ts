@@ -1,3 +1,4 @@
+import { safeError } from "./privacy.ts";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { clientFor, loadWhatsAppSettings } from "./config.ts";
 import { normalizePhone } from "./phone.ts";
@@ -70,7 +71,7 @@ export async function runCampaign(db: Db, campaignId: string, recipients: readon
       }
     } catch (error: unknown) {
       failed += 1;
-      console.error("[campaña] no se pudo enviar a", recipient.id, error);
+      console.error("[campaña] no se pudo enviar a", recipient.id, safeError(error));
     }
   }
 

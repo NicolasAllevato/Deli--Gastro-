@@ -1,3 +1,4 @@
+import { safeError } from "./privacy.ts";
 import { isOpenNow } from "../agent/hours.ts";
 
 export const SURVEY_MIN_DELAY_MIN = 30;
@@ -75,7 +76,7 @@ export async function runSurveys<O extends { id: string }, T>(
       else result.failed += 1;
     } catch (error: unknown) {
       result.failed += 1;
-      console.error("[whatsapp] no se pudo enviar la encuesta", order.id, error);
+      console.error("[whatsapp] no se pudo enviar la encuesta", order.id, safeError(error));
     }
   }
   return result;
