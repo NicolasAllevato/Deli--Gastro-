@@ -17,6 +17,9 @@ import { sqlMirrorReader } from "./repo/d1-mirror-sql.ts";
 import { d1BotRepo, d1InboundRepo } from "./repo/d1.ts";
 import type { SqlDatabase } from "../../../src/lib/data/sql.ts";
 import { loadD1BotSecrets, type BotSecrets } from "./secrets-d1.ts";
+import { safeError, workerLog } from "./privacy.ts";
+import { d1Ledger, handleDeadTurn, onceSend, turnKey } from "./turn-ledger.ts";
+import { REPLIES } from "./bot/prompts.ts";
 
 export { ConversationBuffer } from "./conversation-buffer.ts";
 
@@ -141,7 +144,7 @@ async function processEvents(rawBody: string, phoneNumberId: string | null, env:
   const payload = JSON.parse(rawBody) as unknown;
   const events = [...parseCoexistence(payload), ...parseWebhook(payload)];
   if (events.length === 0) return;
-  const log = (message: string, detail?: unknown) => console.error(message, detail);
+  const log = workerLog;
   if (isD1(env)) {
     await handleWebhookEvents(events, {
       repo: d1InboundRepo(d1Db(env), log),
@@ -154,10 +157,10 @@ async function processEvents(rawBody: string, phoneNumberId: string | null, env:
   const sql = connect(env);
   try {
     await handleWebhookEvents(events, {
-      repo: mirrorInboundRepo(sqlInboundRepo(sql, (message, detail) => console.error(message, detail)), env, sqlMirrorReader(sql)),
+      repo: mirrorInboundRepo(sqlInboundRepo(sql, workerLog), env, sqlMirrorReader(sql)),
       phoneNumberId,
       buffer: (phone: string, message: BufferedMessage) => env.BUFFER.get(env.BUFFER.idFromName(phone)).add(phone, message),
-      log: (message, detail) => console.error(message, detail),
+      log: workerLog,
     });
   } finally {
     await sql.end({ timeout: 1 });
@@ -179,7 +182,7 @@ async function receiveWebhook(req: Request, env: Env, ctx: ExecutionContext): Pr
 
   ctx.waitUntil(
     processEvents(rawBody, secrets.phoneNumberId, env).catch((error: unknown) =>
-      console.error("[whatsapp-bot] webhook", error instanceof Error ? error.message : error),
+      console.error("[whatsapp-bot] webhook", safeError(error)),
     ),
   );
   return new Response("OK");
@@ -189,7 +192,7 @@ async function receiveWebhook(req: Request, env: Env, ctx: ExecutionContext): Pr
 function ordersClientFor(env: Env) {
   const secret = env.BOT_INTERNAL_SECRET?.trim() ?? "";
   if (secret.length < 32) return undefined;
-  return createOrdersClient({ baseUrl: env.APP_URL, secret, log: (message, detail) => console.log(message, detail) });
+  return createOrdersClient({ baseUrl: env.APP_URL, secret, log: workerLog });
 }
 
 /** Consumidor de `wa-inbound` (fase 4): un turno agrupado → una respuesta. */
@@ -207,23 +210,26 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
     const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
     const deps = {
       repo: sql
-        ? mirrorBotRepo(sqlBotRepo(sql, (message, detail) => console.error(message, detail)), env, sqlMirrorReader(sql))
-        : d1BotRepo(d1Db(env), (message, detail) => console.error(message, detail)),
+        ? mirrorBotRepo(sqlBotRepo(sql, workerLog), env, sqlMirrorReader(sql))
+        : d1BotRepo(d1Db(env), workerLog),
       run,
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),
       appUrl: env.APP_URL,
       orders: ordersClientFor(env),
-      log: (message: string, detail?: unknown) => console.error(message, detail),
+      log: workerLog,
     };
     // En orden: dos turnos de la misma conversación nunca se responden a la vez dentro del lote.
+    const ledger = sql ? null : d1Ledger(d1Db(env));
     for (const message of batch.messages) {
       try {
-        const outcome = await processTurn(message.body, deps);
+        // Con D1, cada respuesta del turno sale una sola vez aunque la cola lo reintente.
+        const send = ledger ? onceSend(deps.send, ledger, turnKey(message.body)) : deps.send;
+        const outcome = await processTurn(message.body, { ...deps, send });
         console.log("[whatsapp-bot] turno", outcome);
         message.ack();
       } catch (error: unknown) {
-        console.error("[whatsapp-bot] turno con error", error instanceof Error ? error.message : error);
+        console.error("[whatsapp-bot] turno con error", safeError(error));
         message.retry({ delaySeconds: 10 });
       }
     }
@@ -232,8 +238,40 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
   }
 }
 
+const DEAD_LETTER_QUEUE = "wa-inbound-dlq";
+
+/** Turnos que agotaron los reintentos: aviso único al cliente + takeover (el local lo ve en el panel). */
+async function consumeDeadTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
+  if (!isD1(env)) {
+    workerLog("[whatsapp-bot] DLQ sin D1: turnos descartados", { count: batch.messages.length });
+    batch.ackAll();
+    return;
+  }
+  const db = d1Db(env);
+  const secrets = await loadD1BotSecrets(db, env);
+  if (!secrets.accessToken || !secrets.phoneNumberId) {
+    batch.retryAll({ delaySeconds: 300 });
+    return;
+  }
+  const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
+  const deps = { repo: d1BotRepo(db, workerLog), ledger: d1Ledger(db), send: (p: string, t: string) => wa.sendText(p, t), failureText: REPLIES.failure, log: workerLog };
+  for (const message of batch.messages) {
+    try {
+      console.log("[whatsapp-bot] DLQ", await handleDeadTurn(message.body, deps));
+      message.ack();
+    } catch (error: unknown) {
+      console.error("[whatsapp-bot] DLQ con error", safeError(error));
+      message.retry({ delaySeconds: 60 });
+    }
+  }
+}
+
 export default {
   async queue(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
+    if (batch.queue === DEAD_LETTER_QUEUE) {
+      await consumeDeadTurns(batch, env);
+      return;
+    }
     await consumeTurns(batch, env);
   },
 

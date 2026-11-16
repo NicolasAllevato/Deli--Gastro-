@@ -206,3 +206,4 @@ export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, type KbEntry, type KbInput } from "./kb-negocio.ts";
 export { kbAprendizajeApp } from "./kb-aprendizaje-app.ts";
 export { decisionSchema, type KbError, type KbSugerencia } from "./kb-aprendizaje.ts";
+export { claimBotNonce } from "./bot-nonces.ts";

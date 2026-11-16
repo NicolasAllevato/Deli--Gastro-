@@ -58,6 +58,15 @@ export function addMessage(batch: Batch, message: BufferedMessage): Batch {
   };
 }
 
+/**
+ * Lo que queda del lote después de encolar `sent`: los mensajes que llegaron mientras se encolaba
+ * (el Durable Object atiende otros pedidos durante la espera de la cola) no se pueden borrar sin responder.
+ */
+export function withoutSent(batch: Batch, sent: readonly string[]): Batch {
+  const done = new Set(sent);
+  return batch.messages.filter((m) => !done.has(m.wamid)).reduce(addMessage, emptyBatch());
+}
+
 export function isFull(batch: Batch): boolean {
   return batch.messages.length >= BATCH_POLICY.maxMessages;
 }

@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { addMessage, combineBatch, emptyBatch, flushAt, isFull, type Batch, type BufferedMessage } from "./batching.ts";
+import { addMessage, combineBatch, emptyBatch, flushAt, isFull, withoutSent, type Batch, type BufferedMessage } from "./batching.ts";
 
 import type { InboundTurn } from "./turn-types.ts";
 
@@ -46,6 +46,14 @@ export class ConversationBuffer extends DurableObject<BufferEnv> {
         receivedAt: batch.firstAt ?? Date.now(),
       });
     }
-    await this.ctx.storage.delete(BATCH_KEY);
+    // Solo se borra lo que se encoló: un mensaje que entró durante el envío queda para el próximo turno.
+    const rest = withoutSent((await this.ctx.storage.get<Batch>(BATCH_KEY)) ?? emptyBatch(), turn.wamids);
+    if (rest.messages.length === 0) {
+      await this.ctx.storage.delete(BATCH_KEY);
+      return;
+    }
+    await this.ctx.storage.put(BATCH_KEY, rest);
+    const next = flushAt(rest);
+    if (next !== null) await this.ctx.storage.setAlarm(next);
   }
 }

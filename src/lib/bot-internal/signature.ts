@@ -10,6 +10,9 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export const BOT_TIMESTAMP_HEADER = "x-bot-timestamp";
 export const BOT_SIGNATURE_HEADER = "x-bot-signature";
+/** Nonce único por llamada (UUID): va firmado y la app lo registra para rechazar repeticiones. */
+export const BOT_NONCE_HEADER = "x-bot-nonce";
+const NONCE_RE = /^[A-Za-z0-9-]{16,64}$/;
 /** Ventana de validez de una firma, hacia el pasado y hacia el futuro. */
 export const SIGNATURE_WINDOW_SECONDS = 60;
 /** Cuerpo máximo aceptado. Un pedido de 30 líneas pesa menos de 4 KB. */
@@ -27,6 +30,8 @@ export type SignatureCheck = { ok: true } | { ok: false; reason: SignatureFailur
 
 export interface SignatureParts {
   timestamp: string;
+  /** Con nonce, la firma lo incluye (formato nuevo); sin nonce, formato anterior. */
+  nonce?: string | null;
   method: string;
   path: string;
   body: string;
@@ -34,8 +39,9 @@ export interface SignatureParts {
 
 const sha256Hex = (body: string): string => createHash("sha256").update(body, "utf8").digest("hex");
 
-export function signaturePayload({ timestamp, method, path, body }: SignatureParts): string {
-  return `${timestamp}.${method.toUpperCase()}.${path}.${sha256Hex(body)}`;
+export function signaturePayload({ timestamp, nonce, method, path, body }: SignatureParts): string {
+  const head = nonce ? `${timestamp}.${nonce}` : timestamp;
+  return `${head}.${method.toUpperCase()}.${path}.${sha256Hex(body)}`;
 }
 
 /** Firma hex de una llamada (la usa el Worker; acá, los tests). */
@@ -51,6 +57,8 @@ export interface VerifyInput {
   body: string;
   timestamp: string | null;
   signature: string | null;
+  /** Header x-bot-nonce (null en llamadas del formato anterior). */
+  nonce?: string | null;
   /** Reloj en milisegundos (inyectable para tests). */
   nowMs: number;
 }
@@ -73,7 +81,9 @@ export function verifyBotRequest(input: VerifyInput): SignatureCheck {
   if (skew > SIGNATURE_WINDOW_SECONDS) return { ok: false, reason: "stale" };
   if (skew < -SIGNATURE_WINDOW_SECONDS) return { ok: false, reason: "future" };
 
-  const parts: SignatureParts = { timestamp, method: input.method, path: input.path, body: input.body };
+  const nonce = input.nonce ?? null;
+  if (nonce !== null && !NONCE_RE.test(nonce)) return { ok: false, reason: "bad_signature" };
+  const parts: SignatureParts = { timestamp, nonce, method: input.method, path: input.path, body: input.body };
   // Se prueban todos los secretos sin cortar antes: el tiempo no revela cuál coincidió.
   let match = false;
   for (const secret of input.secrets) {

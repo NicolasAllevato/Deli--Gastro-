@@ -20,6 +20,7 @@ import {
 import { SCHEMAS, type BotOperation } from "./schemas.ts";
 import {
   BOT_SIGNATURE_HEADER,
+  BOT_NONCE_HEADER,
   BOT_TIMESTAMP_HEADER,
   MAX_BODY_BYTES,
   isUsableSecret,
@@ -61,6 +62,8 @@ export interface BotDeps {
   secrets: { current: string; previous: string };
   now?: () => Date;
   rateLimit: (key: string, max: number, windowMs: number) => Promise<boolean>;
+  /** Anti-replay: true si el nonce es nuevo. Sin esta dependencia (tests viejos) no se controla. */
+  claimNonce?: (nonce: string, nowMs: number) => Promise<boolean>;
   geocode?: OrderActionDeps["geocode"];
   gateway?: OrderActionDeps["gateway"];
   log?: (event: Record<string, unknown>) => void;
@@ -397,9 +400,15 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
     body: req.rawBody,
     timestamp: req.headers.get(BOT_TIMESTAMP_HEADER),
     signature: req.headers.get(BOT_SIGNATURE_HEADER),
+    nonce: req.headers.get(BOT_NONCE_HEADER),
     nowMs: now.getTime(),
   });
   if (!verified.ok) return refuse(401, "invalid_signature", "Firma inválida.");
+  // Una llamada firmada se acepta una sola vez (el formato sin nonce queda solo por compatibilidad durante el deploy).
+  const nonce = req.headers.get(BOT_NONCE_HEADER);
+  if (nonce && deps.claimNonce && !(await deps.claimNonce(nonce, now.getTime()))) {
+    return refuse(409, "replay", "Llamada repetida.");
+  }
 
   const parsed = SCHEMAS[op].safeParse(parseJson(req.rawBody));
   if (!parsed.success) return refuse(400, "invalid_body", parsed.error.issues[0]?.message ?? "Cuerpo inválido.");

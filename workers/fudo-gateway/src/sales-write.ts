@@ -10,6 +10,7 @@
  */
 import { FudoError, publicWrite, type FudoEnv } from "./fudo.ts";
 import { verifyHmacHex } from "./signature.ts";
+import { redactPii, safeError } from "../../../src/lib/whatsapp/privacy.ts";
 
 export interface WriteEnv extends FudoEnv {
   FUDO_GATEWAY_SECRET: string;
@@ -140,7 +141,7 @@ async function createdId(res: Response, what: string): Promise<number> {
   const raw = await res.text();
   if (res.status !== 200 && res.status !== 201) {
     // El cuerpo crudo va al log; al cliente solo el estado.
-    console.error(`[fudo.write] ${what} ${res.status}`, raw.slice(0, 500));
+    console.error(`[fudo.write] ${what} ${res.status}`, redactPii(raw.slice(0, 500)));
     throw new FudoError(`Fudo ${what} respondió ${res.status}`, res.status, res.status >= 400 && res.status < 500);
   }
   let id: number | null = null;
@@ -194,7 +195,7 @@ export async function createSale(env: WriteEnv, input: CreateSaleInput): Promise
       );
       linesCreated += 1;
     } catch (e) {
-      console.error("[fudo.write] línea", i, e instanceof Error ? e.message : String(e));
+      console.error("[fudo.write] línea", i, safeError(e));
       failedLines.push(i);
     }
   }
@@ -207,7 +208,7 @@ export type SaleState = (typeof SALE_STATES)[number];
 export async function setSaleState(env: WriteEnv, saleId: number, state: SaleState): Promise<void> {
   const res = await publicWrite(env, "PATCH", `sales/${saleId}`, { data: { type: "Sale", id: String(saleId), attributes: { saleState: state } } });
   if (!res.ok) {
-    console.error("[fudo.write] PATCH /sales", res.status, (await res.text()).slice(0, 500));
+    console.error("[fudo.write] PATCH /sales", res.status, redactPii((await res.text()).slice(0, 500)));
     throw new FudoError(`Fudo PATCH /sales respondió ${res.status}`, res.status, res.status >= 400 && res.status < 500);
   }
 }
@@ -296,7 +297,7 @@ export async function handleWrite(request: Request, env: WriteEnv): Promise<Resp
     await setSaleState(env, saleId, state as SaleState);
     return ok({ saleId, state });
   } catch (e) {
-    console.error("[fudo.write]", pathname, e instanceof Error ? e.message : String(e));
+    console.error("[fudo.write]", pathname, safeError(e));
     return errorResponse(e);
   }
 }

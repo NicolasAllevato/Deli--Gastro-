@@ -42,12 +42,31 @@ function bufferedFor(message: InboundMessage): BufferedMessage {
   return { wamid: message.wamid, text: `(mensaje de tipo ${content.rawType})`, at, kind: "other" };
 }
 
+const RETRY_DELAYS_MS = [200, 800] as const;
+
+/** Reintenta una operación de base ante fallas transitorias (2 reintentos con espera corta). */
+export async function withRetry<T>(op: () => Promise<T>, delays: readonly number[] = RETRY_DELAYS_MS, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))): Promise<T> {
+  for (let i = 0; ; i += 1) {
+    try {
+      return await op();
+    } catch (error: unknown) {
+      if (i >= delays.length) throw error;
+      await sleep(delays[i]);
+    }
+  }
+}
+
 async function handleMessage(message: InboundMessage, deps: EntryDeps): Promise<void> {
   if (deps.phoneNumberId && message.phoneNumberId !== deps.phoneNumberId) return;
 
   const phone = normalizePhone(message.from);
-  const conversation = await deps.repo.upsertConversation(phone, message.name);
-  const isNew = await deps.repo.saveInbound(conversation.id, rowFor(message));
+  // Meta ya recibió el 200 y no reintenta: un corte breve de D1 no puede dejar al cliente sin respuesta.
+  const conversation = await withRetry(() => deps.repo.upsertConversation(phone, message.name));
+  const isNew = await withRetry(() => deps.repo.saveInbound(conversation.id, rowFor(message))).catch((error: unknown) => {
+    // Sin guardar igual se apila (el lote descarta wamids repetidos): el bot responde y el panel lo verá en el próximo mensaje.
+    deps.log("[whatsapp-bot] no se pudo guardar el entrante; se apila igual", { wamid: message.wamid, error: error instanceof Error ? error.message : "error" });
+    return true;
+  });
   if (!isNew || conversation.humanTakeover) return;
 
   await deps.buffer(phone, bufferedFor(message));
