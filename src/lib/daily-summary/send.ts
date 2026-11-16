@@ -5,7 +5,7 @@ import type { Bounds } from "@/lib/reports/range";
 import { clientFor, loadWhatsAppSettings } from "@/lib/whatsapp/config";
 import type { WhatsAppClient } from "@/lib/whatsapp/client";
 import { sanitizeParam, templateByName } from "@/lib/whatsapp/templates";
-import { normalizePhone } from "@/lib/whatsapp/phone";
+import { toArgentineWhatsApp } from "@/lib/whatsapp/phone";
 import { getEmailBinding } from "./email-binding.ts";
 import { resolveEmailSender, type EmailSender } from "./email.ts";
 import {
@@ -121,7 +121,7 @@ async function deliver(
     if (wa && template && person.telefono) {
       try {
         const params = whatsappParams(summary, ctx.businessName, person.nombre.split(/\s+/)[0] ?? person.nombre).map(sanitizeParam);
-        await wa.sendTemplate(normalizePhone(person.telefono), template.name, template.language, params);
+        await wa.sendTemplate(toArgentineWhatsApp(person.telefono), template.name, template.language, params);
         report.whatsapp.sent += 1;
       } catch (error: unknown) {
         report.whatsapp.failed += 1;

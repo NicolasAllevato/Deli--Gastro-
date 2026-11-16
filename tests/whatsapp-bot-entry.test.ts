@@ -137,6 +137,7 @@ describe("entrada del webhook en el Worker", () => {
     const buffered: { phone: string; message: BufferedMessage }[] = [];
     await handleWebhookEvents([text("malo", "x"), text("w2", "sigo")], deps(failing, buffered));
     assert.ok(messages.has("w2"));
-    assert.equal(buffered.length, 1);
+    // El que no se pudo guardar (tras reintentar) se apila igual: el cliente no queda sin respuesta.
+    assert.deepEqual(buffered.map((b) => b.message.wamid).sort(), ["malo", "w2"]);
   });
 });

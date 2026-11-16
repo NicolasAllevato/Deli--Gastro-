@@ -16,3 +16,16 @@ export function samePhone(a: string, b: string): boolean {
   if (left.length < MIN_DIGITS || right.length < MIN_DIGITS) return false;
   return left.slice(-COMPARE_DIGITS) === right.slice(-COMPARE_DIGITS);
 }
+
+/**
+ * Número para WhatsApp en Argentina: solo dígitos, con 549 adelante.
+ * "11 5619-4690" → "5491156194690"; "011 ..." y "+54 11 ..." también (a los celulares les falta el 9).
+ * Un número que no es de 10 dígitos locales ni empieza con 54 se deja como está (puede ser de otro país).
+ */
+export function toArgentineWhatsApp(phone: string): string {
+  let d = normalizePhone(phone);
+  if (d.startsWith("549")) return d;
+  if (d.startsWith("54") && d.length === 12) return `549${d.slice(2)}`;
+  if (d.startsWith("0")) d = d.slice(1);
+  return d.length === 10 ? `549${d}` : d;
+}

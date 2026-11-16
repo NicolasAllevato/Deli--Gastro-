@@ -18,6 +18,8 @@ import { d1BotRepo, d1InboundRepo } from "./repo/d1.ts";
 import type { SqlDatabase } from "../../../src/lib/data/sql.ts";
 import { loadD1BotSecrets, type BotSecrets } from "./secrets-d1.ts";
 import { safeError, workerLog } from "./privacy.ts";
+import { d1Ledger, handleDeadTurn, onceSend, turnKey } from "./turn-ledger.ts";
+import { REPLIES } from "./bot/prompts.ts";
 
 export { ConversationBuffer } from "./conversation-buffer.ts";
 
@@ -218,9 +220,12 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       log: workerLog,
     };
     // En orden: dos turnos de la misma conversación nunca se responden a la vez dentro del lote.
+    const ledger = sql ? null : d1Ledger(d1Db(env));
     for (const message of batch.messages) {
       try {
-        const outcome = await processTurn(message.body, deps);
+        // Con D1, cada respuesta del turno sale una sola vez aunque la cola lo reintente.
+        const send = ledger ? onceSend(deps.send, ledger, turnKey(message.body)) : deps.send;
+        const outcome = await processTurn(message.body, { ...deps, send });
         console.log("[whatsapp-bot] turno", outcome);
         message.ack();
       } catch (error: unknown) {
@@ -233,8 +238,40 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
   }
 }
 
+const DEAD_LETTER_QUEUE = "wa-inbound-dlq";
+
+/** Turnos que agotaron los reintentos: aviso único al cliente + takeover (el local lo ve en el panel). */
+async function consumeDeadTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
+  if (!isD1(env)) {
+    workerLog("[whatsapp-bot] DLQ sin D1: turnos descartados", { count: batch.messages.length });
+    batch.ackAll();
+    return;
+  }
+  const db = d1Db(env);
+  const secrets = await loadD1BotSecrets(db, env);
+  if (!secrets.accessToken || !secrets.phoneNumberId) {
+    batch.retryAll({ delaySeconds: 300 });
+    return;
+  }
+  const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
+  const deps = { repo: d1BotRepo(db, workerLog), ledger: d1Ledger(db), send: (p: string, t: string) => wa.sendText(p, t), failureText: REPLIES.failure, log: workerLog };
+  for (const message of batch.messages) {
+    try {
+      console.log("[whatsapp-bot] DLQ", await handleDeadTurn(message.body, deps));
+      message.ack();
+    } catch (error: unknown) {
+      console.error("[whatsapp-bot] DLQ con error", safeError(error));
+      message.retry({ delaySeconds: 60 });
+    }
+  }
+}
+
 export default {
   async queue(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
+    if (batch.queue === DEAD_LETTER_QUEUE) {
+      await consumeDeadTurns(batch, env);
+      return;
+    }
     await consumeTurns(batch, env);
   },
 

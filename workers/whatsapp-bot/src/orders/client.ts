@@ -10,6 +10,7 @@ export type OrderOp = "quote" | "confirm" | "cancel" | "status";
 
 export const TIMESTAMP_HEADER = "x-bot-timestamp";
 export const SIGNATURE_HEADER = "x-bot-signature";
+export const NONCE_HEADER = "x-bot-nonce";
 export const REQUEST_TIMEOUT_MS = 8_000;
 /** Reintentos después del primer intento (solo códigos transitorios). */
 export const MAX_RETRIES = 2;
@@ -17,6 +18,7 @@ const BACKOFF_MS = [250, 750] as const;
 
 export interface SignatureParts {
   timestamp: string;
+  nonce?: string | null;
   method: string;
   path: string;
   body: string;
@@ -31,7 +33,8 @@ async function sha256Hex(text: string): Promise<string> {
 
 /** Firma hex de una llamada (idéntica a `signBotRequest` de la app). */
 export async function signRequest(secret: string, parts: SignatureParts): Promise<string> {
-  const payload = `${parts.timestamp}.${parts.method.toUpperCase()}.${parts.path}.${await sha256Hex(parts.body)}`;
+  const head = parts.nonce ? `${parts.timestamp}.${parts.nonce}` : parts.timestamp;
+  const payload = `${head}.${parts.method.toUpperCase()}.${parts.path}.${await sha256Hex(parts.body)}`;
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toHex(await crypto.subtle.sign("HMAC", key, encoder.encode(payload)));
 }
@@ -134,11 +137,14 @@ export function createOrdersClient(options: OrdersClientOptions): OrdersClient {
   async function attempt(path: string, rawBody: string, idempotencyKey: string | null): Promise<Verdict> {
     // Timestamp NUEVO en cada intento: la ventana del servidor es de 60 s.
     const timestamp = String(Math.floor(now() / 1000));
-    const signature = await signRequest(options.secret, { timestamp, method: "POST", path, body: rawBody });
+    // Nonce nuevo por intento: la app rechaza una llamada repetida (anti-replay) aunque caiga en el mismo segundo.
+    const nonce = crypto.randomUUID();
+    const signature = await signRequest(options.secret, { timestamp, nonce, method: "POST", path, body: rawBody });
     const headers: Record<string, string> = {
       "content-type": "application/json",
       [TIMESTAMP_HEADER]: timestamp,
       [SIGNATURE_HEADER]: signature,
+      [NONCE_HEADER]: nonce,
     };
     if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
 

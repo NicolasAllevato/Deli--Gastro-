@@ -70,9 +70,12 @@ describe("fase 5: cliente firmado", () => {
     const c = calls[0];
     const check = verifyBotRequest({
       secrets: [SECRET], method: "POST", path: "/api/internal/bot/confirm", body: c.body,
-      timestamp: c.headers["x-bot-timestamp"], signature: c.headers["x-bot-signature"], nowMs: Number(c.headers["x-bot-timestamp"]) * 1000,
+      timestamp: c.headers["x-bot-timestamp"], signature: c.headers["x-bot-signature"], nonce: c.headers["x-bot-nonce"],
+      nowMs: Number(c.headers["x-bot-timestamp"]) * 1000,
     });
     assert.deepEqual(check, { ok: true });
+    // Cada intento lleva un nonce distinto (anti-replay en la app).
+    assert.notEqual(calls[0].headers["x-bot-nonce"], calls[1].headers["x-bot-nonce"]);
   });
 
   it("reintenta 5xx/429/red con timestamp nuevo en cada intento y se rinde a los 3", async () => {
