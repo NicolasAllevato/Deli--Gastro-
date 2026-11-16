@@ -5,6 +5,7 @@ import { BookOpen, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
+import { Aprendizaje } from "./Aprendizaje";
 
 type Categoria = "faq" | "politica" | "promo" | "vocabulario" | "otro";
 
@@ -131,6 +132,8 @@ export default function ConocimientoPage() {
           {draft.id && <Button size="sm" variant="secondary" onClick={() => setDraft(EMPTY)}>Cancelar</Button>}
         </div>
       </section>
+
+      <Aprendizaje onApproved={() => void load()} />
 
       {entries === null && !error && <p className="text-sm text-gray-500">Cargando...</p>}
       {entries?.length === 0 && <p className="text-sm text-gray-500">Todavía no cargaste nada. Empezá por las preguntas que más te hacen.</p>}
