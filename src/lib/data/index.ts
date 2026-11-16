@@ -201,3 +201,6 @@ export async function setCourierBlocked(userId: string, blocked: boolean): Promi
 export async function courierSessionCookies(userId: string): Promise<string[] | null> {
   return session.courierSessionCookiesWith(await getAuth(), userId);
 }
+
+export { kbApp } from "./kb-negocio-app.ts";
+export { kbInputSchema, KB_CATEGORIAS, type KbEntry, type KbInput } from "./kb-negocio.ts";

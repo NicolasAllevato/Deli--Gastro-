@@ -69,6 +69,13 @@ export interface ZoneInfo {
   minOrder: number;
 }
 
+/** Entrada activa de la base de conocimiento del negocio (`kb_negocio`, la carga el admin). */
+export interface KnowledgeEntry {
+  category: "faq" | "politica" | "promo" | "vocabulario" | "otro";
+  topic: string;
+  content: string;
+}
+
 export interface OrderInfo {
   id: string;
   status: string;
@@ -87,6 +94,8 @@ export interface BotRepo {
   config(): Promise<Record<string, unknown>>;
   menu(): Promise<MenuItem[]>;
   zones(): Promise<ZoneInfo[]>;
+  /** Base de conocimiento activa. Opcional: sin la tabla (backend Supabase, tests viejos) no hay conocimiento extra. */
+  knowledge?(): Promise<KnowledgeEntry[]>;
   latestOrder(clientId: string): Promise<OrderInfo | null>;
   setTakeover(conversationId: string): Promise<void>;
   /** Alta/baja de promociones para todas las filas de clientes con ese teléfono; devuelve cuántas cambió. */
