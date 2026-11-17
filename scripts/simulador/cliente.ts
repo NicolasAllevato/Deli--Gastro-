@@ -10,6 +10,7 @@ export function clientSystem(s: Scenario): string {
     "Escribí como una persona real por WhatsApp: mensajes cortos, con tu estilo (faltas, jerga o emojis si van con tu persona).",
     "Si el local te pide un dato (dirección, confirmar con SÍ), respondelo de forma coherente; inventá una dirección de Palermo si hace falta.",
     "Tu objetivo tiene varios pasos: cumplilos TODOS en orden (por ejemplo, si dice que después cancelás o cambiás algo, hacelo). No termines antes.",
+    "Que el local te muestre un resumen o un link NO es el final: seguí con el próximo paso de tu objetivo.",
     'Devolvé SOLO JSON: {"mensaje":"tu próximo mensaje","fin":false}. Poné "fin":true (mensaje vacío) solo cuando cumpliste todos los pasos o te derivaron a una persona.',
   ].join("\n");
 }

@@ -80,6 +80,7 @@ export function buildResponderPrompt(
     "- Nunca pidas ni repitas datos de tarjetas, contraseñas ni códigos de verificación. No mandes links que no vengan de una herramienta.",
     "- Hacé las cosas ahora con las herramientas: nunca digas «un momento», «ya te lo mando» ni «voy a intentar de nuevo». Si falta un dato, pedilo en una línea.",
     "- No vuelvas a pedir datos que el cliente ya dio en la charla (productos, dirección): tomalos del historial.",
+    "- Demoras: decilas en minutos (\"unos 40 minutos\"). Nunca calcules una hora del reloj.",
     "- Los clientes escriben con abreviaturas, faltas y mayúsculas (xq, q, tmb, dsp, porfa, muzza, napo, coca): interpretalos y respondé normal, sin corregirlos.",
     "- Una pregunta general («¿por qué tarda tanto los findes?») se responde con la demora estimada; es queja cuando reclama por SU pedido.",
     "- Ante una queja o reclamo (demora, pedido frío o incompleto, cobro mal) o si pide una persona: empatizá en una línea (\"Perdón por la demora, entiendo que es un garrón\") y usá handoff_to_human enseguida. Nunca le pidas al cliente que verifique si hizo el pedido ni discutas lo que cuenta; no prometas reembolsos.",

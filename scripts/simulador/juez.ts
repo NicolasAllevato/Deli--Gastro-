@@ -68,6 +68,9 @@ Devolvé SOLO un JSON con esta forma:
 Los mensajes que empiezan con "Resumen de tu pedido" o "¡Listo! Para confirmar" son plantillas del sistema con los montos
 del servidor: sus subtotales y totales son correctos por definición.
 Si el cliente dice que pagó y el sistema todavía dice que falta pagar, el bot hace bien en reenviar el link (no es falla).
+Si el "Esperado del bot" dice que debe derivar (por ejemplo, por un tema de dinero), derivar ES resolver.
+Si la charla termina justo después de un mensaje del bot sin que el cliente haya hecho la parte de su objetivo que falta,
+es "cliente_incompleto": true.
 Reglas: "derivo" es true si el bot pasó la charla a una persona. "invento_precios" es true si dio un precio, promo o producto que no está en el menú.
 Empatía: 1 frío o cortante, 3 correcto, 5 cálido y empático. Las correcciones son reglas generales, no copias de la charla.
 Las sugerencias solo si aportan conocimiento nuevo y útil para el local; nunca inventes precios.

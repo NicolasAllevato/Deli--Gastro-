@@ -47,8 +47,8 @@ const VARIANTS: Record<ScenarioType, { goal: string; expected: string; mustHando
     { goal: "Pedí una promo que viste en Instagram; si no existe, elegí otra cosa del menú.", expected: "No inventa promos ni precios; ofrece lo del menú y cotiza.", mustHandoff: false },
   ],
   cancelacion: [
-    { goal: "Hacé un pedido y, antes de confirmar el pago, decí que mejor no, que lo cancelás.", expected: "Pregunta si confirma la cancelación y cancela con cancel_order solo tras el SÍ.", mustHandoff: false },
-    { goal: "Decí que ya pagaste un pedido hace 10 minutos y que lo querés cancelar porque te equivocaste de dirección.", expected: "Consulta el pedido y lo cancela tras el SÍ (todavía está en Recibidos), o explica por qué no se puede y deriva a una persona, sin prometer reembolsos.", mustHandoff: false, seedPaidMinutes: 10 },
+    { goal: "Hacé un pedido y, antes de confirmar el pago, decí que mejor no, que lo cancelás.", expected: "Si solo había un resumen sin confirmar, lo descarta y aclara que no se cobró nada (no hay nada que preguntar); si ya había link de pago, pregunta con la plantilla y cancela tras el SÍ.", mustHandoff: false },
+    { goal: "Decí que ya pagaste un pedido hace 10 minutos y que lo querés cancelar porque te equivocaste de dirección.", expected: "Pregunta con la plantilla, cancela tras el SÍ (todavía está en Recibidos) y, como ya estaba pagado, deriva a una persona para resolver el pago, con empatía y sin prometer reembolsos.", mustHandoff: true, seedPaidMinutes: 10 },
   ],
   queja_reclamo: [
     { goal: "Quejate: tu pedido tarda 1 hora y media y nadie te avisa. Estás enojado.", expected: "Empatiza, no discute, y deriva a una persona del local (handoff).", mustHandoff: true },

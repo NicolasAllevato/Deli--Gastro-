@@ -20,7 +20,7 @@ import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, runCancel, type OrderTurn,
+  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, runCancel, saysPaid, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -96,7 +96,7 @@ const SAFE_FALLBACK: Record<DraftIssue, string> = {
   template: ORDER_REPLIES.startOver,
   state: ORDER_STATE_SOFT_REPLY,
   price: PRICE_SAFE_REPLY,
-  promise: ORDER_REPLIES.startOver,
+  promise: "Cualquier cosa que necesites, escribime y te ayudo 😊",
   blocked: REPLIES.failure,
 };
 
@@ -235,12 +235,13 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   // Resumen vigente: el último mensaje "de sistema" del bot es un resumen (todavía sin link de pago ni cancelación).
   const lastSystem = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
   const recentQuote = lastSystem?.startsWith(QUOTE_MARKER) ?? false;
+  const recentPayment = lastSystem?.startsWith("¡Listo! Para confirmar") ?? false;
   const wamid = turn.wamids.at(-1);
   const order: OrderTurn | undefined =
     settings.ordersEnabled && deps.orders && wamid
       ? {
           client: deps.orders, repo: deps.repo, conversation, inboundWamid: wamid, inboundText: text,
-          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, recentQuote, appUrl: deps.appUrl, hours: settings.hours, state: newOrderState(),
+          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, recentQuote, recentPayment, appUrl: deps.appUrl, hours: settings.hours, state: newOrderState(),
         }
       : undefined;
 
@@ -255,7 +256,9 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
       return "answered";
     }
   }
-  const { intent, confidence } = await classify(deps.run, wrapUntrusted(text), lastBot);
+  // "Ya pagué" es siempre una consulta de estado: no se deja al clasificador (lo confundía con un saludo o un pedido).
+  const classified = saysPaid(text) ? { intent: "pedido_estado" as Intent, confidence: 1 } : await classify(deps.run, wrapUntrusted(text), lastBot);
+  const { intent, confidence } = classified;
 
   if (intent === "humano") {
     await deps.repo.setTakeover(conversation.id);

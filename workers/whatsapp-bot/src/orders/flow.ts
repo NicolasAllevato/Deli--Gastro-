@@ -14,7 +14,7 @@ export const RETRY_MARKER = "Tuve un problema al ";
 export const RETRY_CONFIRM = `${RETRY_MARKER}confirmar tu pedido.`;
 export const RETRY_CANCEL = `${RETRY_MARKER}cancelar tu pedido.`;
 const RETRY_SUFFIX = "Respondé SÍ para reintentar.";
-export const CANCEL_PROMPT = `${CANCEL_MARKER}\nRespondé SÍ para cancelarlo. Si no, seguimos como estaba.`;
+export const CANCEL_PROMPT = `${CANCEL_MARKER}\nRespondé SÍ para cancelarlo. Si no, seguimos como estaba. Tranqui, lo resolvemos 🙏`;
 
 /** La respuesta tiene que EMPEZAR con una de estas (después de normalizar). "ok", "listo" o "de acuerdo" solos no alcanzan. */
 const AFFIRMATION_STARTS: ReadonlySet<string> = new Set(["si", "sii", "siii", "sip", "dale", "confirmo"]);
@@ -60,7 +60,9 @@ function negatesCancel(words: readonly string[]): boolean {
 }
 
 function restIsClean(rest: readonly string[], op: "confirm" | "cancel" | null): boolean {
-  const other = op ? OTHER_OP_PREFIXES[op] : [...OTHER_OP_PREFIXES.confirm, ...OTHER_OP_PREFIXES.cancel];
+  // "SÍ, confirmo que quiero cancelar": confirmar la cancelación sigue siendo cancelar.
+  const namesOwnOp = op !== null && rest.some((w) => hasPrefix(w, op === "cancel" ? ["cancel", "anul"] : ["confirm", "pag"]));
+  const other = namesOwnOp ? [] : op ? OTHER_OP_PREFIXES[op] : [...OTHER_OP_PREFIXES.confirm, ...OTHER_OP_PREFIXES.cancel];
   for (const w of rest) {
     // Números (cantidades, direcciones) o pedir otra cosa: es un pedido nuevo, no un SÍ al resumen.
     if (/\d/.test(w) || hasPrefix(w, other) || hasPrefix(w, CHANGE_PREFIXES)) return false;
@@ -88,6 +90,7 @@ const ORDER_STATE_CLAIMS: readonly RegExp[] = [
   /\b(tu|el|su) pedido\b.{0,40}\b(confirmad[oa]|pagad[oa]|en camino|en proceso|en preparacion|despachad[oa]|saliendo|listo para (salir|enviar))/,
   /\bpedido (esta |quedo |fue |ya esta )?(confirmado|pagado|en camino|en proceso|en preparacion)/,
   /\b(ya (casi )?(te )?llega|ya (sale|salio|esta saliendo))\b/,
+  /\b(tu|el|su) pedido\b.{0,30}\b(estara listo|esta recibido|llega en|sale en)/,
   /\bpago (fue |esta |quedo )?(acreditado|recibido|aprobado|confirmado)/,
 ];
 
@@ -206,6 +209,11 @@ export function trailingQuestion(text: string): "demora" | "pago" | "otra" | nul
   return "otra";
 }
 
+/** "Ya pagué", "hice el pago": siempre es una consulta de estado del pedido. */
+export function saysPaid(text: string): boolean {
+  return /\b(ya )?(pague|pagamos|hice el pago|realice el pago|transferi)\b|\bya (lo )?pag/.test(normalizeAnswer(text));
+}
+
 /** Texto libre que promete hacer algo después ("un momento", "voy a intentar de nuevo"): nunca llega, se reintenta. */
 export function promisesLater(draft: string): boolean {
   const f = foldText(draft).replace(/\s+/g, " ");
@@ -245,7 +253,7 @@ export function renderPaymentMessage(paymentUrl: string, total: number | null): 
 export const ORDER_REPLIES = {
   cancelled: "Listo, cancelamos tu pedido.",
   cancelledUnpaid: "Listo, cancelamos tu pedido 👍. No se cobró nada. Si querés, armamos otro cuando quieras.",
-  cancelledPaid: "Listo, cancelamos tu pedido 👍. Como ya estaba pagado, te paso con una persona del local para resolver lo del pago con vos. Si te equivocaste de dirección, contale cuál es la correcta y lo arman de nuevo.",
+  cancelledPaid: "Listo, ya cancelamos tu pedido 👍 Perdón por el lío. Como ya estaba pagado, te paso con una persona del local que te ayuda con el pago y, si querés, con un pedido nuevo a la dirección correcta.",
   noOrderHandoff: "No encontré un pedido en curso a tu nombre 😕. Te paso con una persona del local para que lo revise con vos.",
   draftDropped: "Listo, dejamos ese pedido sin confirmar: no se cobró nada. Si querés, armamos otro cuando quieras.",
   alreadyCancelled: "Tu pedido ya está cancelado. Si querés, armamos uno nuevo.",
@@ -325,6 +333,8 @@ export interface OrderTurn {
   lastBotMessage: string | null;
   /** Hay un resumen reciente sin link de pago todavía (pedido armado pero no confirmado). */
   recentQuote?: boolean;
+  /** El último mensaje de sistema fue el link de pago: ya no hay nada que confirmar. */
+  recentPayment?: boolean;
   appUrl: string;
   hours: { open: string; close: string };
   state: OrderTurnState;
@@ -404,6 +414,8 @@ function confirmGate(t: OrderTurn): string | null {
   if (t.state.quoted) return "En este mismo turno se cotizó: esperá a que el cliente responda SÍ al resumen.";
   if (t.hasAudio || !isAffirmation(t.inboundText, "confirm")) return "El último mensaje del cliente no es una confirmación literal (SÍ, dale, ok...). Pedile que responda SÍ al resumen.";
   if (pendingOperation(t.lastBotMessage) !== "confirm") {
+    // Ya tiene el link de pago: no hay nada que confirmar ni que empezar de nuevo; el modelo responde su mensaje.
+    if (t.recentPayment) return "El cliente ya recibió el link de pago: no confirmes nada. Respondé su mensaje con calidez; si pregunta por el pedido o dice que pagó, decile que apenas se acredite sale.";
     // Un SÍ suelto sin resumen a la vista no deja al cliente en un callejón: se le pide empezar de nuevo.
     t.state.fixedReply = ORDER_REPLIES.startOver;
     return "El cliente todavía no vio un resumen para confirmar.";

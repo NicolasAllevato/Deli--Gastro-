@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   isAffirmation, trailingQuestion, promisesLater, lastDecisiveBotMessage, QUOTE_MARKER, CANCEL_PROMPT, ORDER_REPLIES,
-  runCancel, newOrderState, type OrderTurn,
+  runCancel, runConfirm, newOrderState, saysPaid, claimsOrderState, type OrderTurn,
 } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import type { OrdersClient, OrderResponse } from "../workers/whatsapp-bot/src/orders/client.ts";
 import { respond, MAX_STEPS } from "../workers/whatsapp-bot/src/ai/responder.ts";
@@ -183,6 +183,34 @@ describe("ronda 2: después de cancelar, el cliente sabe qué pasa con la plata"
     await runCancel(c.t, { confirmed: true });
     assert.match(c.t.state.fixedReply ?? "", /en preparación.*persona del local/);
     assert.equal(c.takeover(), true);
+  });
+});
+
+describe("ronda 3", () => {
+  it("'SÍ, confirmo que quiero cancelar' es un SÍ a cancelar; 'si, confirmar' no", () => {
+    assert.equal(isAffirmation("SÍ, confirmo que quiero cancelar el pedido. 😔 Gracias!", "cancel"), true);
+    assert.equal(isAffirmation("si, confirmar", "cancel"), false);
+    assert.equal(isAffirmation("SÍ, CANCELA TODO.", "confirm"), false);
+  });
+  it("'ya pagué' se reconoce siempre como consulta de estado", () => {
+    for (const t of ["Ya pagué! espero la pizza", "Listo, ya hice el pago 😊", "ok, ya lo pagué", "YA PAGUE HACE UN RATO"]) assert.equal(saysPaid(t), true, t);
+    for (const t of ["¿cómo pago?", "quiero pagar con mercado pago", "pago en efectivo?"]) assert.equal(saysPaid(t), false, t);
+  });
+  it("'tu pedido estará listo en 40 minutos' lo dice solo el sistema", () => {
+    assert.equal(claimsOrderState("Tu pedido estará listo en aproximadamente 40 minutos"), true);
+    assert.equal(claimsOrderState("La demora estimada es de 40 minutos."), false);
+  });
+  it("después del link de pago, un mensaje no empieza un pedido de cero", async () => {
+    const t: OrderTurn = {
+      client: { confirm: async () => assert.fail("no debe confirmar") } as unknown as OrdersClient,
+      repo: {} as OrderTurn["repo"], conversation: { id: "c1", phone: "1" } as OrderTurn["conversation"], inboundWamid: "w",
+      inboundText: "sí, gracias!", hasAudio: false, lastBotMessage: "¡Listo! Para confirmar tu pedido pagá acá", recentPayment: true,
+      appUrl: "https://x.test", hours: { open: "00:00", close: "23:59" }, state: newOrderState(),
+    };
+    const r = (await runConfirm(t, { payment_method: "Mercado Pago" })) as { ok: boolean; error: string };
+    assert.equal(r.ok, false);
+    assert.match(r.error, /link de pago/);
+    assert.equal(t.state.fixedReply, null);
   });
 });
 
