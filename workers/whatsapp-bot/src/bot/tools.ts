@@ -15,7 +15,15 @@ const OBJECT_NO_EXTRA = (properties: Record<string, unknown>, required: string[]
  * Herramientas de pedidos (fase 5, solo con el flag encendido). El modelo no manda precios, totales, cliente,
  * wamid ni conversación: los fija el turno. El texto que ve el cliente sale de plantillas (orders/flow.ts).
  */
-function orderTools(order: OrderTurn): BotTool[] {
+/** true = la dirección es la del perfil y el cliente no la confirmó todavía: no se cotiza. */
+export type AddressGuard = (address: string) => boolean;
+
+export const UNCONFIRMED_ADDRESS = {
+  ok: false,
+  error: "Esa es la dirección guardada del cliente y todavía no la confirmó. Preguntale si lo mandamos a la misma dirección y esperá su respuesta.",
+};
+
+function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
   return [
     {
       name: "quote_order",
@@ -27,7 +35,11 @@ function orderTools(order: OrderTurn): BotTool[] {
         },
         ["items", "address"],
       ),
-      run: (args) => runQuote(order, args),
+      run: async (args) => {
+        const address = typeof (args as { address?: unknown })?.address === "string" ? (args as { address: string }).address : "";
+        if (guard && address && guard(address)) return UNCONFIRMED_ADDRESS;
+        return runQuote(order, args);
+      },
     },
     {
       name: "confirm_order",
@@ -53,7 +65,7 @@ function describePayment(data: unknown): unknown {
 }
 
 /** Herramientas de solo lectura y traspaso; con el flag de pedidos, `get_menu` incluye el id y `order_status` va por la app. */
-function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number, order?: OrderTurn): BotTool[] {
+function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number, order?: OrderTurn, guard?: AddressGuard): BotTool[] {
   return [
     {
       name: "get_menu",
@@ -116,12 +128,14 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
         return { ok: true, note: "Avisale al cliente que una persona del local le va a responder a la brevedad." };
       },
     },
-    ...(order ? orderTools(order) : []),
+    ...(order ? orderTools(order, guard) : []),
   ];
 }
 
 /** Solo las herramientas que la intención permite (lista blanca de guardrails.ts). Sin `order` (flag apagado) no existen las de pedidos. */
-export function toolsFor(intent: string, repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number = Date.now, order?: OrderTurn): BotTool[] {
+export function toolsFor(
+  intent: string, repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number = Date.now, order?: OrderTurn, guard?: AddressGuard,
+): BotTool[] {
   const allowed = new Set(toolsForIntent(intent));
-  return allTools(repo, conversation, settings, now, order).filter((t) => allowed.has(t.name));
+  return allTools(repo, conversation, settings, now, order, guard).filter((t) => allowed.has(t.name));
 }

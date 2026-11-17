@@ -12,7 +12,7 @@ import { inspectInbound, inspectOutbound, wrapUntrusted } from "../guardrails.ts
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
-import { buildResponderPrompt, orderReply, REPLIES } from "./prompts.ts";
+import { buildResponderPrompt, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { settingsFromConfig, type BotSettings } from "./settings.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
@@ -127,6 +127,11 @@ async function answer(
   while (history.at(-1)?.direction === "in") history.pop();
   const knowledge = (await deps.repo.knowledge?.().catch(() => [])) ?? [];
   const lessons = (await deps.repo.lessons?.().catch(() => [])) ?? [];
+  // Perfil del cliente habitual: siempre el de ESTE teléfono (etapa 2). Si falla, se sigue sin perfil.
+  const profile = (await deps.repo.customerProfile?.(conversation.phone).catch(() => null)) ?? null;
+  const clientTexts = history.filter((h) => h.direction === "in").map((h) => h.body);
+  const lastBot = history.filter((h) => h.direction === "out").at(-1)?.body ?? null;
+  const guard = (address: string) => profileAddressUnconfirmed(address, profile?.lastAddress, clientTexts, lastBot, turnText);
   // Si el modelo deriva con handoff_to_human en ESTE turno, su mensaje al cliente igual sale (sin el rechequeo
   // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
   let handedOffNow = false;
@@ -137,8 +142,8 @@ async function answer(
       await deps.repo.setTakeover(id);
     },
   };
-  const system = buildResponderPrompt(settings, intent, conversation.displayName, suspicious, knowledge, lessons);
-  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order);
+  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, knowledge, lessons, profile);
+  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard);
   const ask = (extra?: string) =>
     respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history), userText: wrapUntrusted(turnText), tools });
 

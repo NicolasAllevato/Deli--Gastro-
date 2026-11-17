@@ -11,6 +11,7 @@ interface Sugerencia {
   contenido: string;
   evidencia: string;
   veces: number;
+  origen?: "simulacion" | "conversacion";
 }
 
 interface ErrorAprendido {
@@ -24,7 +25,10 @@ interface ErrorAprendido {
   veces: number;
   estado: "pendiente" | "aprobada" | "rechazada" | "desactivada";
   ultima_prueba: "ok" | "falla" | null;
+  origen?: "simulacion" | "conversacion";
 }
+
+const ORIGEN_LABEL = (o: string | undefined) => (o === "conversacion" ? "conversación real" : "simulación");
 
 type Accion = "aprobar" | "rechazar" | "desactivar";
 type Tab = "sugerencias" | "errores";
@@ -113,8 +117,8 @@ export function Aprendizaje({ onApproved }: { onApproved: () => void }) {
       </div>
       <p className="text-xs text-gray-500">
         {tab === "sugerencias"
-          ? "Lo que propuso el simulador de clientes. Al aprobar, pasa a la base de conocimiento activa."
-          : "Fallas que detectó el simulador. Al aprobar, la corrección se vuelve una lección que el agente recibe como «Errores a evitar» (hasta 20) y se repite como prueba en la próxima simulación."}
+          ? "Lo que propusieron el simulador y el análisis nocturno de conversaciones reales. Al aprobar, pasa a la base de conocimiento activa."
+          : "Fallas que detectaron el simulador y el análisis nocturno de conversaciones reales. Al aprobar, la corrección se vuelve una lección que el agente recibe como «Errores a evitar» (hasta 20) y se repite como prueba en la próxima simulación."}
       </p>
       {error && <p role="alert" className="text-xs font-bold text-red-600">{error}</p>}
       {data === null && !error && <p className="text-sm text-gray-500">Cargando...</p>}
@@ -125,7 +129,7 @@ export function Aprendizaje({ onApproved }: { onApproved: () => void }) {
           {data.sugerencias.map((s) => (
             <li key={s.id} className="neumorphic-inset rounded-xl p-3 space-y-1">
               <p className="text-xs text-gray-500">
-                <span className={ESTADO_BADGE[s.estado]}>{s.estado}</span> · {s.categoria} · {s.veces} {s.veces === 1 ? "vez" : "veces"}
+                <span className={ESTADO_BADGE[s.estado]}>{s.estado}</span> · {ORIGEN_LABEL(s.origen)} · {s.categoria} · {s.veces} {s.veces === 1 ? "vez" : "veces"}
               </p>
               <p className="text-sm font-bold text-gray-800">{s.tema}</p>
               <p className="text-xs text-gray-600 whitespace-pre-wrap">{s.contenido}</p>
@@ -147,7 +151,7 @@ export function Aprendizaje({ onApproved }: { onApproved: () => void }) {
           {data.errores.map((e) => (
             <li key={e.id} className="neumorphic-inset rounded-xl p-3 space-y-1">
               <p className="text-xs text-gray-500">
-                <span className={ESTADO_BADGE[e.estado]}>{e.estado}</span> · {TIPO_LABEL[e.tipo] ?? e.tipo} · {e.escenario} · {e.veces}{" "}
+                <span className={ESTADO_BADGE[e.estado]}>{e.estado}</span> · {ORIGEN_LABEL(e.origen)} · {TIPO_LABEL[e.tipo] ?? e.tipo} · {e.escenario} · {e.veces}{" "}
                 {e.veces === 1 ? "vez" : "veces"}
                 {e.ultima_prueba && ` · última prueba: ${e.ultima_prueba === "ok" ? "ya no falla" : "sigue fallando"}`}
               </p>

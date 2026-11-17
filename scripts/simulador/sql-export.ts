@@ -20,7 +20,7 @@ export function exportPendingSql(
   }
   for (const f of failures) {
     lines.push(
-      `INSERT INTO kb_errores (id, clave, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces) VALUES (${q(newId())}, ${q(errorKey(f))}, ${q(f.escenario.slice(0, 60))}, ${q(f.tipo)}, ${q(f.mensaje_cliente.slice(0, 1000))}, ${q((f.respuesta_mala ?? "").slice(0, 1000))}, ${q(f.motivo.slice(0, 500))}, ${q(f.correccion.slice(0, 300))}, ${f.veces}) ON CONFLICT (clave) DO UPDATE SET veces = veces + excluded.veces;`,
+      `INSERT INTO kb_errores (id, clave, origen, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces) VALUES (${q(newId())}, ${q(errorKey(f))}, 'simulacion',${q(f.escenario.slice(0, 60))}, ${q(f.tipo)}, ${q(f.mensaje_cliente.slice(0, 1000))}, ${q((f.respuesta_mala ?? "").slice(0, 1000))}, ${q(f.motivo.slice(0, 500))}, ${q(f.correccion.slice(0, 300))}, ${f.veces}) ON CONFLICT (clave) DO UPDATE SET veces = veces + excluded.veces;`,
     );
   }
   return `${lines.join("\n")}\n`;
