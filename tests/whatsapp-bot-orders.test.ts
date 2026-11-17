@@ -53,7 +53,7 @@ const common = { conversationId: "c1", inboundWamid: "wamid.X" };
 
 describe("fase 5: cliente firmado", () => {
   it("la firma del Worker (Web Crypto) coincide con la de la app y la app la verifica", async () => {
-    const parts = { timestamp: "1700000000", method: "POST", path: "/api/internal/bot/quote", body: '{"a":"ñ"}' };
+    const parts = { timestamp: "1700000000", nonce: "11111111-2222-3333-4444-555555555555", method: "POST", path: "/api/internal/bot/quote", body: '{"a":"ñ"}' };
     assert.equal(await signRequest(SECRET, parts), signBotRequest(SECRET, parts));
     const check = verifyBotRequest({ secrets: [SECRET], ...parts, timestamp: parts.timestamp, signature: await signRequest(SECRET, parts), nowMs: 1_700_000_000_000 });
     assert.deepEqual(check, { ok: true });

@@ -52,8 +52,9 @@ async function call(demo: DemoDb, op: BotOperation, body: Record<string, unknown
   const rawBody = JSON.stringify(body);
   const shift = opts.nowShiftSec ?? 0;
   const timestamp = String(Math.floor(T0.getTime() / 1000) + shift);
-  const signature = signBotRequest(opts.secret ?? SECRET, { timestamp, method: "POST", path, body: rawBody });
-  const headers = new Map<string, string>([["x-bot-timestamp", timestamp], ["x-bot-signature", signature]]);
+  const nonce = crypto.randomUUID();
+  const signature = signBotRequest(opts.secret ?? SECRET, { timestamp, nonce, method: "POST", path, body: rawBody });
+  const headers = new Map<string, string>([["x-bot-timestamp", timestamp], ["x-bot-signature", signature], ["x-bot-nonce", nonce]]);
   if (typeof body.inboundWamid === "string") headers.set("idempotency-key", body.inboundWamid);
   return handleBot(
     op,
@@ -287,8 +288,9 @@ describe("endurecimientos bajos", () => {
   });
 
   it("la firma debe medir exactamente 64 hex", () => {
-    const sig = signBotRequest(SECRET, { timestamp: "1000", method: "POST", path: "/p", body: "{}" });
-    const base = { secrets: [SECRET], method: "POST", path: "/p", body: "{}", timestamp: "1000", nowMs: 1_000_000 };
+    const nonce = "11111111-2222-3333-4444-555555555555";
+    const sig = signBotRequest(SECRET, { timestamp: "1000", nonce, method: "POST", path: "/p", body: "{}" });
+    const base = { secrets: [SECRET], method: "POST", path: "/p", body: "{}", timestamp: "1000", nonce, nowMs: 1_000_000 };
     assert.equal(sig.length, 64);
     assert.equal(verifyBotRequest({ ...base, signature: sig }).ok, true);
     assert.equal(verifyBotRequest({ ...base, signature: sig + "00" }).ok, false);
