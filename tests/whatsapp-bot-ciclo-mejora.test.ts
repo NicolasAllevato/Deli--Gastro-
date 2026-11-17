@@ -140,3 +140,49 @@ describe("herramientas por intención", () => {
     assert.ok(!toolsForIntent("consulta_menu").includes("confirm_order"));
   });
 });
+
+function cancelConfirmed(cancel: OrderResponse, recentQuote = false) {
+  let takeover = false;
+  const client = { status: async () => ({ ok: true, status: 200, data: { ok: true, found: true, status: "Recibidos" } }), cancel: async () => cancel } as unknown as OrdersClient;
+  const t: OrderTurn = {
+    client, repo: { setTakeover: async () => { takeover = true; } } as unknown as OrderTurn["repo"],
+    conversation: { id: "c1", phone: "5491100000000" } as OrderTurn["conversation"], inboundWamid: "w1", inboundText: "SÍ, CANCELALO",
+    hasAudio: false, lastBotMessage: CANCEL_PROMPT, recentQuote, appUrl: "https://x.test", hours: { open: "00:00", close: "23:59" }, state: newOrderState(),
+  };
+  return { t, takeover: () => takeover };
+}
+
+describe("ronda 2: después de cancelar, el cliente sabe qué pasa con la plata", () => {
+  it("pago pendiente cancelado: no se cobró nada, sin derivar", async () => {
+    const c = cancelConfirmed({ ok: true, status: 200, data: { ok: true, note: "Se canceló el pago pendiente." } });
+    await runCancel(c.t, { confirmed: true });
+    assert.equal(c.t.state.fixedReply, ORDER_REPLIES.cancelledUnpaid);
+    assert.equal(c.takeover(), false);
+  });
+  it("pedido ya pagado: se cancela y deriva para resolver el pago (sin prometer reembolso)", async () => {
+    const c = cancelConfirmed({ ok: true, status: 200, data: { ok: true } });
+    await runCancel(c.t, { confirmed: true });
+    assert.equal(c.t.state.fixedReply, ORDER_REPLIES.cancelledPaid);
+    assert.doesNotMatch(ORDER_REPLIES.cancelledPaid, /reembols|devolvemos|te devuelven/i);
+    assert.equal(c.takeover(), true);
+  });
+  it("SÍ a cancelar un resumen sin confirmar: se descarta sin derivar", async () => {
+    const c = cancelConfirmed({ ok: false, kind: "api", status: 409, code: "rejected", error: "No encontré un pedido para cancelar." }, true);
+    await runCancel(c.t, { confirmed: true });
+    assert.equal(c.t.state.fixedReply, ORDER_REPLIES.draftDropped);
+    assert.equal(c.takeover(), false);
+  });
+  it("sin pedido y sin resumen: deriva", async () => {
+    const c = cancelConfirmed({ ok: false, kind: "api", status: 409, code: "rejected", error: "No encontré un pedido para cancelar." });
+    await runCancel(c.t, { confirmed: true });
+    assert.equal(c.t.state.fixedReply, ORDER_REPLIES.noOrderHandoff);
+    assert.equal(c.takeover(), true);
+  });
+  it("ya en preparación al confirmar: explica el motivo del servidor y deriva", async () => {
+    const c = cancelConfirmed({ ok: false, kind: "api", status: 409, code: "rejected", error: "El pedido ya está en preparación y no se puede cancelar." });
+    await runCancel(c.t, { confirmed: true });
+    assert.match(c.t.state.fixedReply ?? "", /en preparación.*persona del local/);
+    assert.equal(c.takeover(), true);
+  });
+});
+

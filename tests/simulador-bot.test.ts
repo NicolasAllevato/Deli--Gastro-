@@ -14,7 +14,7 @@ import { buildResponderPrompt, lessonLines } from "../workers/whatsapp-bot/src/b
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { generateScenarios, SCENARIO_TYPES } from "../scripts/simulador/escenarios.ts";
 import { Budget, estimatePerConversation } from "../scripts/simulador/presupuesto.ts";
-import { dedupeFailures, dedupeSuggestions, environmentSignals, parseVerdict } from "../scripts/simulador/juez.ts";
+import { dedupeFailures, dedupeSuggestions, environmentSignals, inventedPrices, parseVerdict } from "../scripts/simulador/juez.ts";
 import { parseQuoteArgs } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { parseClientTurn } from "../scripts/simulador/cliente.ts";
 import { renderReport, successByType } from "../scripts/simulador/informe.ts";
@@ -145,6 +145,28 @@ describe("juez", () => {
   });
   it("normaliza acentos y signos", () => {
     assert.equal(normalizeKey("  ¿Tenés SIN-TACC? "), "tenes sin tacc");
+  });
+});
+
+describe("juez: precios medidos en el código", () => {
+  const menuPrices = [1800, 3500, 12500, 1500, 10000];
+  it("el resumen y el pago son plantillas: sus totales no cuentan como inventados", () => {
+    const tr = [
+      { role: "bot" as const, text: "Resumen de tu pedido:\n• 2 x Empanada — $3.600\nTotal: $8.600" },
+      { role: "bot" as const, text: "¡Listo! Para confirmar tu pedido por $8.600 pagá acá" },
+      { role: "bot" as const, text: "La muzza sale $12.500 y la coca $3.500." },
+    ];
+    assert.equal(inventedPrices(tr, menuPrices), false);
+    assert.equal(inventedPrices([{ role: "bot", text: "La coca sale $350." }], menuPrices), true);
+  });
+  it("si el código no vio montos inventados, se descarta el 'precio_inventado' del juez", () => {
+    const raw = JSON.stringify({ resuelto: true, derivo: false, invento_precios: true, empatia: 4, fallas: [{ ...falla, tipo: "precio_inventado" }] });
+    const v = parseVerdict(raw, { type: "pedido_cambios", mustHandoff: false }, false, { pricesInvented: false });
+    assert.equal(v?.inventoPrecios, false);
+    assert.equal(v?.fallas.length, 0);
+    assert.equal(v?.exito, true);
+    const v2 = parseVerdict(raw, { type: "pedido_cambios", mustHandoff: false }, false, { pricesInvented: true });
+    assert.equal(v2?.exito, false);
   });
 });
 

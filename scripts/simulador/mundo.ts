@@ -128,6 +128,8 @@ type FakeState = "cotizado" | "esperando_pago" | "pagado" | "cancelado";
 export interface FakeOrders extends OrdersClient {
   /** Siembra un pedido ya pagado hace `minutesAgo` minutos (escenario "ya pagué y quiero cancelar"). */
   seedPaid(conversationId: string, minutesAgo: number): void;
+  /** El cliente simulado dice que pagó: si había un link de pago pendiente, Mercado Pago lo acredita (como en la vida real). */
+  markPaid(conversationId: string): void;
 }
 
 /**
@@ -142,6 +144,9 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
   return {
     seedPaid(conversationId, minutesAgo) {
       state.set(conversationId, { s: "pagado", at: Date.now() - minutesAgo * 60_000 });
+    },
+    markPaid(conversationId) {
+      if (state.get(conversationId)?.s === "esperando_pago") set(conversationId, "pagado");
     },
     async quote(body) {
       if (!body.address?.trim()) return fail(400, "invalid", "Falta la dirección.");

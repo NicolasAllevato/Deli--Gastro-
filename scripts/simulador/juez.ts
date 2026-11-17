@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ERROR_TIPOS, normalizeKey, sugerenciaKey, errorKey, type ErrorInput, type SugerenciaInput } from "../../src/lib/data/kb-aprendizaje.ts";
 import { KB_CATEGORIAS } from "../../src/lib/data/kb-negocio.ts";
 import type { Scenario } from "./escenarios.ts";
+import { QUOTE_MARKER, unknownPrices } from "../../workers/whatsapp-bot/src/orders/flow.ts";
 
 export interface TranscriptLine {
   role: "cliente" | "bot";
@@ -64,6 +65,9 @@ Devolvé SOLO un JSON con esta forma:
  "fallas":[{"tipo":"precio_inventado|no_derivo|no_entendio|tono_frio|no_resolvio|otro","mensaje_cliente":"mensaje exacto del cliente","respuesta_mala":"respuesta exacta del bot","motivo":"por qué está mal","correccion":"regla corta e imperativa, una línea, para que no vuelva a pasar (sin datos personales)"}],
  "sugerencias":[{"categoria":"vocabulario|faq|politica|promo|otro","tema":"para vocabulario: cómo lo dice el cliente; para faq: la pregunta","contenido":"a qué se refiere / respuesta sugerida (sin inventar precios)","evidencia":"frase del cliente"}],
  "cliente_incompleto":bool}
+Los mensajes que empiezan con "Resumen de tu pedido" o "¡Listo! Para confirmar" son plantillas del sistema con los montos
+del servidor: sus subtotales y totales son correctos por definición.
+Si el cliente dice que pagó y el sistema todavía dice que falta pagar, el bot hace bien en reenviar el link (no es falla).
 Reglas: "derivo" es true si el bot pasó la charla a una persona. "invento_precios" es true si dio un precio, promo o producto que no está en el menú.
 Empatía: 1 frío o cortante, 3 correcto, 5 cálido y empático. Las correcciones son reglas generales, no copias de la charla.
 Las sugerencias solo si aportan conocimiento nuevo y útil para el local; nunca inventes precios.
@@ -121,6 +125,17 @@ export function environmentSignals(logs: readonly string[]): boolean {
 export interface ObservedFacts {
   /** El bot derivó de verdad (la conversación quedó en manos de una persona sin error técnico). */
   handedOff?: boolean;
+  /** Medido en el código: algún monto de texto libre del bot no existe en el menú ni en las zonas. */
+  pricesInvented?: boolean;
+}
+
+/**
+ * Hecho observado de precios: los montos que el bot escribió con texto libre tienen que salir del menú o las zonas
+ * (hasta 20 unidades). El resumen y el mensaje de pago son plantillas del sistema con datos del servidor: no cuentan.
+ */
+export function inventedPrices(transcript: readonly TranscriptLine[], allowed: readonly number[]): boolean {
+  return transcript.some((l) => l.role === "bot" && !l.text.startsWith(QUOTE_MARKER) && !l.text.startsWith("¡Listo! Para confirmar") &&
+    unknownPrices(l.text, allowed).length > 0);
 }
 
 export function parseVerdict(
@@ -130,7 +145,9 @@ export function parseVerdict(
   if (!parsed.success) return null;
   // Los hechos observados ganan sobre la opinión del juez.
   const derivo = facts.handedOff === undefined ? parsed.data.derivo : facts.handedOff && !environmentHit;
-  const v = { ...parsed.data, derivo, resuelto: parsed.data.resuelto || (scenario.mustHandoff && derivo) };
+  // Precios: si el código midió que no hubo montos inventados, el juez no puede afirmarlo (y al revés).
+  const invento = facts.pricesInvented === undefined ? parsed.data.invento_precios : facts.pricesInvented;
+  const v = { ...parsed.data, derivo, invento_precios: invento, resuelto: parsed.data.resuelto || (scenario.mustHandoff && derivo) };
   const all = v.fallas.flatMap((f) => {
     const r = failureSchema.safeParse(f);
     if (!r.success) return [];
@@ -138,6 +155,8 @@ export function parseVerdict(
     // Un "no_derivo" cuando sí derivó es un error del juez: se descarta.
     // Tampoco cuenta "no_derivo" en escenarios que no requieren derivar.
     if (rest.tipo === "no_derivo" && (derivo || !scenario.mustHandoff)) return [];
+    // "precio_inventado" contra el hecho medido: sin montos inventados en el código, es un error del juez.
+    if (rest.tipo === "precio_inventado" && facts.pricesInvented === false) return [];
     // "entorno" solo vale con una señal real de la simulación en los logs; si no, es del bot (no se aflojan fallas).
     // "cliente" (el simulado abandonó) no se aprende.
     if (causa === "cliente") return [];

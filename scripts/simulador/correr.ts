@@ -14,7 +14,7 @@ import { d1BotRepo, d1InboundRepo } from "../../workers/whatsapp-bot/src/repo/d1
 import { clientSystem, clientUser, parseClientTurn } from "./cliente.ts";
 import { generateScenarios, type RegressionCase, type Scenario } from "./escenarios.ts";
 import { renderReport, type ConversationResult } from "./informe.ts";
-import { JUDGE_SYSTEM, buildJudgeInput, dedupeFailures, dedupeSuggestions, environmentSignals, parseVerdict, type TranscriptLine } from "./juez.ts";
+import { JUDGE_SYSTEM, buildJudgeInput, dedupeFailures, dedupeSuggestions, environmentSignals, inventedPrices, parseVerdict, type TranscriptLine } from "./juez.ts";
 import { fakeOrders, menuText, openSimDb, seedWorld } from "./mundo.ts";
 import { chatJson, openAiRunner, readOpenAiKey } from "./openai.ts";
 import { Budget, estimatePerConversation } from "./presupuesto.ts";
@@ -46,6 +46,14 @@ const run = openAiRunner(apiKey, budget);
 const db = openSimDb(fileURLToPath(new URL(values.db, ROOT)));
 seedWorld(db);
 const menu = menuText(db);
+const allowedPrices = [
+  ...(await repoPrices()),
+];
+async function repoPrices(): Promise<number[]> {
+  const r = d1BotRepo(db);
+  const [m, z] = await Promise.all([r.menu(), r.zones()]);
+  return [...m.map((p) => p.price), ...z.flatMap((x) => [x.fee, x.minOrder])];
+}
 const orders = fakeOrders(db);
 const repo = d1BotRepo(db);
 const inbound = d1InboundRepo(db);
@@ -82,8 +90,13 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
       let next = turn === 0 && scenario.opener ? { message: scenario.opener, done: false, parsed: true } : await askClient();
       // Un JSON roto del cliente simulado no corta la charla: se le vuelve a pedir una vez.
       if (next.done && !next.message && !next.parsed) next = await askClient();
-      if (next.done) break;
+      if (next.done) {
+        if (!next.parsed) logs.push("[cliente] el cliente simulado devolvió un JSON inválido y la charla terminó");
+        break;
+      }
       transcript.push({ role: "cliente", text: next.message });
+      // "Ya pagué": en el mundo simulado el pago se acredita (si había un link pendiente).
+      if (/pagu[eé]|ya (lo )?pag|hice el pago|ya transfer/i.test(next.message)) orders.markPaid(conversation.id);
       const wamid = `sim-in-${index}-${++seq}`;
       await inbound.saveInbound(conversation.id, { wamid, type: "text", body: next.message });
       sent.length = 0;
@@ -95,7 +108,8 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
         break;
       }
     }
-    const verdict = parseVerdict(await chatJson(run, JUDGE_SYSTEM, buildJudgeInput(scenario, menu, transcript, logs), 1200), scenario, environmentSignals(logs), { handedOff });
+    const pricesInvented = inventedPrices(transcript, allowedPrices);
+    const verdict = parseVerdict(await chatJson(run, JUDGE_SYSTEM, buildJudgeInput(scenario, menu, transcript, logs), 1200), scenario, environmentSignals(logs), { handedOff, pricesInvented });
     return { scenario, transcript, verdict, logs, error: verdict ? undefined : "el juez devolvió un JSON inválido" };
   } catch (error: unknown) {
     return { scenario, transcript, verdict: null, logs, error: error instanceof Error ? error.message.slice(0, 200) : "error" };

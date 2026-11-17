@@ -19,8 +19,8 @@ import type { OrdersClient } from "../orders/client.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
-  ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, type OrderTurn,
+  asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
+  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, runCancel, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -87,10 +87,14 @@ const RETRY_HINT: Record<DraftIssue, string> = {
   blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
 };
 
+/** Reemplazo cálido cuando el modelo insiste en afirmar el estado del pedido (no afirma nada que no sepa el sistema). */
+const ORDER_STATE_SOFT_REPLY =
+  "¡Genial! 🙌 Apenas se acredite el pago con Mercado Pago tu pedido sale. Si querés saber cómo va, preguntame y te cuento.";
+
 const SAFE_FALLBACK: Record<DraftIssue, string> = {
   empty: REPLIES.failure,
   template: ORDER_REPLIES.startOver,
-  state: ORDER_STATE_SAFE_REPLY,
+  state: ORDER_STATE_SOFT_REPLY,
   price: PRICE_SAFE_REPLY,
   promise: ORDER_REPLIES.startOver,
   blocked: REPLIES.failure,
@@ -144,8 +148,10 @@ async function answer(
       return "answered";
     }
     // El modelo preguntó a mano si cancela (en vez de cancel_order): se manda la plantilla oficial, que habilita el SÍ.
+    // Pasa por runCancel: primero se mira el pedido (sin pedido, resumen sin confirmar o ya en preparación no se pregunta).
     if (order && intent === "pedido_cancelar" && asksCancelConfirmation(draft)) {
-      await reply(deps, conversation, CANCEL_PROMPT);
+      await runCancel(order, { confirmed: false });
+      await reply(deps, conversation, order.state.fixedReply ?? CANCEL_PROMPT, !order.state.handedOff);
       return "answered";
     }
     issue = await draftIssue(draft, intent, conversation, deps, order);

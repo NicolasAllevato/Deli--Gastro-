@@ -244,6 +244,8 @@ export function renderPaymentMessage(paymentUrl: string, total: number | null): 
 
 export const ORDER_REPLIES = {
   cancelled: "Listo, cancelamos tu pedido.",
+  cancelledUnpaid: "Listo, cancelamos tu pedido 👍. No se cobró nada. Si querés, armamos otro cuando quieras.",
+  cancelledPaid: "Listo, cancelamos tu pedido 👍. Como ya estaba pagado, te paso con una persona del local para resolver lo del pago con vos. Si te equivocaste de dirección, contale cuál es la correcta y lo arman de nuevo.",
   noOrderHandoff: "No encontré un pedido en curso a tu nombre 😕. Te paso con una persona del local para que lo revise con vos.",
   draftDropped: "Listo, dejamos ese pedido sin confirmar: no se cobró nada. Si querés, armamos otro cuando quieras.",
   alreadyCancelled: "Tu pedido ya está cancelado. Si querés, armamos uno nuevo.",
@@ -451,9 +453,21 @@ export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
     return { ok: false, note: "Se le preguntó al cliente si confirma la cancelación. Esperá su respuesta." };
   }
   const response = await t.client.cancel({ ...common(t), confirmed: true });
-  if (!response.ok) return fail(t, response, "cancel");
-  t.state.fixedReply = ORDER_REPLIES.cancelled;
-  return { ok: true, note: "Ya se le avisó al cliente que el pedido quedó cancelado." };
+  if (!response.ok) {
+    // Solo había un resumen sin confirmar: no había pedido que cancelar, se descarta sin derivar.
+    if (t.recentQuote && response.code === "rejected" && /no encontr/i.test(response.error)) {
+      t.state.fixedReply = ORDER_REPLIES.draftDropped;
+      return SENT;
+    }
+    return fail(t, response, "cancel");
+  }
+  // Con nota del servidor (pago pendiente cancelado): no se cobró nada. Sin nota: el pedido ya estaba pagado y la
+  // devolución la maneja una persona (el bot nunca promete reembolsos).
+  if (typeof response.data.note === "string") {
+    t.state.fixedReply = ORDER_REPLIES.cancelledUnpaid;
+    return { ok: true, note: "Ya se le avisó al cliente que el pedido quedó cancelado." };
+  }
+  return handOff(t, ORDER_REPLIES.cancelledPaid);
 }
 
 /** Estados de un pedido ya hecho que todavía se pueden cancelar desde el bot (el servidor igual lo valida). */
