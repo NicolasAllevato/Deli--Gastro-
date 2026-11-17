@@ -12,6 +12,7 @@ import type { OrdersClient, OrderResponse } from "../workers/whatsapp-bot/src/or
 import { respond, MAX_STEPS } from "../workers/whatsapp-bot/src/ai/responder.ts";
 import { toolsForIntent } from "../workers/whatsapp-bot/src/guardrails.ts";
 import { toolsFor } from "../workers/whatsapp-bot/src/bot/tools.ts";
+import { afterPaymentHandoff, lastQuoteAddress, PAID_CHANGE_HANDOFF, PAYMENT_PENDING_HANDOFF } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { buildResponderPrompt } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { fakeOrders, openSimDb, seedWorld } from "../scripts/simulador/mundo.ts";
@@ -251,6 +252,40 @@ describe("ronda 4", () => {
     assert.equal(o.markPaid("c1"), true);
     const st = await o.status({ conversationId: "c1", inboundWamid: "w3" });
     assert.ok(st.ok && st.data.status === "Recibidos");
+  });
+});
+
+describe("ronda 5: después del link de pago", () => {
+  function turnWith(status: Record<string, unknown>, recentPayment = true): OrderTurn {
+    const ok = { ok: true, status: 200, data: { ok: true, ...status } } as OrderResponse;
+    return {
+      client: { status: async () => ok } as unknown as OrdersClient, repo: {} as OrderTurn["repo"],
+      conversation: { id: "c1", phone: "1" } as OrderTurn["conversation"], inboundWamid: "w", inboundText: "", hasAudio: false,
+      lastBotMessage: null, recentPayment, appUrl: "https://x.test", hours: { open: "00:00", close: "23:59" }, state: newOrderState(),
+    };
+  }
+  const PAGADO = { found: true, status: "Recibidos" };
+  const PENDIENTE = { found: true, awaiting_payment: true };
+  it("pedido pagado + cambio de dirección: lo cambia una persona", async () => {
+    const msg = "Hice un error en la dirección, es Av. Santa Fe 4321. ¿Lo actualizan?";
+    assert.equal(await afterPaymentHandoff(turnWith(PAGADO), "pedido_datos", msg, []), PAID_CHANGE_HANDOFF);
+    // Sin pagar todavía: se re-cotiza normalmente (no se deriva).
+    assert.equal(await afterPaymentHandoff(turnWith(PENDIENTE), "pedido_datos", msg, []), null);
+    // Sin link de pago reciente: nada que derivar.
+    assert.equal(await afterPaymentHandoff(turnWith(PAGADO, false), "pedido_datos", msg, []), null);
+    // Un pedido nuevo sin pedir cambios no se deriva.
+    assert.equal(await afterPaymentHandoff(turnWith(PAGADO), "pedido_nuevo", "quiero otra pizza más tarde", []), null);
+  });
+  it("'ya pagué' insistente con el pago pendiente: deriva para revisarlo", async () => {
+    const prev = ["Perdón, pero parece que el pago aún está pendiente. Te reenvío el link: https://mpago.la/x"];
+    assert.equal(await afterPaymentHandoff(turnWith(PENDIENTE), "pedido_estado", "Ya realicé el pago!", prev), PAYMENT_PENDING_HANDOFF);
+    // Primera vez que avisa: todavía no se deriva (el bot consulta y responde).
+    assert.equal(await afterPaymentHandoff(turnWith(PENDIENTE), "pedido_estado", "Ya realicé el pago!", ["¡Listo! Para confirmar tu pedido pagá acá"]), null);
+  });
+  it("la dirección del último resumen se reusa al re-cotizar", () => {
+    const quote = `${QUOTE_MARKER}:\n• 1 x Muzza — $12.500\nDirección: AVENIDA SANTA FE 1234, PALERMO\nPago: Mercado Pago`;
+    assert.equal(lastQuoteAddress(["Listo, dejamos ese pedido sin confirmar", quote]), "AVENIDA SANTA FE 1234, PALERMO");
+    assert.equal(lastQuoteAddress(["hola"]), null);
   });
 });
 

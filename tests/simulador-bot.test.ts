@@ -170,6 +170,17 @@ describe("juez: precios medidos en el código", () => {
   });
 });
 
+describe("juez: pago acreditado en el mundo", () => {
+  it("'confirmado sin pago' se descarta si Mercado Pago acreditó el pago", () => {
+    const f = { ...falla, tipo: "no_resolvio", motivo: "El bot confirma el pedido sin que se haya acreditado el pago previamente." };
+    const raw = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [f] });
+    const ok = parseVerdict(raw, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: true });
+    assert.equal(ok?.fallas.length, 0);
+    const sinPago = parseVerdict(raw, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: false });
+    assert.equal(sinPago?.fallas.length, 1);
+  });
+});
+
 describe("cliente simulado", () => {
   it("parsea el próximo mensaje o el fin", () => {
     assert.deepEqual(parseClientTurn('{"mensaje":"hola","fin":false}'), { message: "hola", done: false, parsed: true });

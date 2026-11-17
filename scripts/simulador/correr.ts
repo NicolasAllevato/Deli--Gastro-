@@ -96,7 +96,7 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
       }
       transcript.push({ role: "cliente", text: next.message });
       // "Ya pagué": en el mundo simulado el pago se acredita (si había un link pendiente).
-      if (/pagu[eé]|ya (lo )?pag|hice el pago|ya transfer/i.test(next.message) && orders.markPaid(conversation.id)) {
+      if (/pagu[eé]|ya (lo )?pag|hice el pago|realic[eé] el pago|confirm[eé] el pago|ya transfer/i.test(next.message) && orders.markPaid(conversation.id)) {
         // El juez tiene que ver el hecho del mundo: Mercado Pago acreditó el pago (si no, cree que el bot inventa).
         transcript.push({ role: "bot", text: "[sistema: Mercado Pago acreditó el pago del pedido]" });
       }
@@ -112,7 +112,8 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
       }
     }
     const pricesInvented = inventedPrices(transcript, allowedPrices);
-    const verdict = parseVerdict(await chatJson(run, JUDGE_SYSTEM, buildJudgeInput(scenario, menu, transcript, logs), 1200), scenario, environmentSignals(logs), { handedOff, pricesInvented });
+    const paymentAccredited = transcript.some((l) => l.text.startsWith("[sistema: Mercado Pago acreditó"));
+    const verdict = parseVerdict(await chatJson(run, JUDGE_SYSTEM, buildJudgeInput(scenario, menu, transcript, logs), 1200), scenario, environmentSignals(logs), { handedOff, pricesInvented, paymentAccredited });
     return { scenario, transcript, verdict, logs, error: verdict ? undefined : "el juez devolvió un JSON inválido" };
   } catch (error: unknown) {
     return { scenario, transcript, verdict: null, logs, error: error instanceof Error ? error.message.slice(0, 200) : "error" };

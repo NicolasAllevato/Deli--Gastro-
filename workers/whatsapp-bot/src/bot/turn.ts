@@ -120,6 +120,7 @@ async function draftIssue(draft: string, intent: Intent, conversation: BotConver
 
 async function answer(
   turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps, order?: OrderTurn,
+  knownAddress: string | null = null,
 ): Promise<TurnOutcome> {
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
@@ -161,7 +162,10 @@ async function answer(
     // Sin problemas, o derivó en este turno (sale su mensaje si es válido, si no el aviso de traspaso).
     if (!issue || handedOffNow) break;
     deps.log("[whatsapp-bot] borrador descartado", { conversation: conversation.id, intent, issue, attempt });
-    if (attempt === 0) draft = await ask(RETRY_HINT[issue]);
+    const hint = issue === "promise" && order && knownAddress
+      ? `${RETRY_HINT.promise} Si quiere pedir, llamá quote_order YA con los product_id de get_menu y la dirección "${knownAddress}".`
+      : RETRY_HINT[issue];
+    if (attempt === 0) draft = await ask(hint);
   }
 
   if (handedOffNow) {
@@ -177,7 +181,8 @@ async function answer(
   }
   if (issue) {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });
-    await reply(deps, conversation, SAFE_FALLBACK[issue]);
+    const orderIntent = intent === "pedido_nuevo" || intent === "pedido_datos" || intent === "pedido_confirmar";
+    await reply(deps, conversation, issue === "promise" && orderIntent ? ORDER_REPLIES.startOver : SAFE_FALLBACK[issue]);
     if (issue === "empty" || issue === "blocked") await deps.repo.setTakeover(conversation.id);
     return "output_blocked";
   }
@@ -289,5 +294,38 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     await reply(deps, conversation, disabledReply(deps.appUrl));
     return "order_redirect";
   }
-  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order);
+  const early = order ? await afterPaymentHandoff(order, intent, text, outNewestFirst) : null;
+  if (early) {
+    await deps.repo.setTakeover(conversation.id);
+    await reply(deps, conversation, early, false);
+    return "answered";
+  }
+  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst));
+}
+
+export const PAID_CHANGE_HANDOFF = "Como tu pedido ya está pagado, el cambio lo hace una persona del local 🙏 Ya te paso con alguien para actualizarlo.";
+export const PAYMENT_PENDING_HANDOFF = "Mercado Pago a veces tarda unos minutos en avisarnos 🙏 Te paso con una persona del local para que lo revise con vos.";
+
+/**
+ * Casos que el modelo no puede resolver solo y antes terminaban en "escribime":
+ * - el pedido ya está pagado y el cliente quiere cambiar algo (dirección, productos): lo cambia una persona;
+ * - el cliente insiste en que pagó y el bot ya le dijo que el pago estaba pendiente: una persona lo revisa.
+ */
+export async function afterPaymentHandoff(order: OrderTurn, intent: Intent, text: string, outNewestFirst: readonly string[]): Promise<string | null> {
+  const asksChange = /cambi|direcci|me equivoqu|en vez|corregi|agreg|sac[aá]|quit[aá]/i.test(text);
+  const wantsChange = asksChange && (intent === "pedido_datos" || intent === "pedido_nuevo" || (intent === "pedido_confirmar" && !saysPaid(text)));
+  const insistsPaid = saysPaid(text) && outNewestFirst.slice(0, 3).some((b) => /pago (aun|aún|todav[ií]a) (est[aá] )?pendiente|falta pagar|pendiente de pago/i.test(b));
+  if (!order.recentPayment || (!wantsChange && !insistsPaid)) return null;
+  const st = await order.client.status({ conversationId: order.conversation.id, inboundWamid: order.inboundWamid }).catch(() => null);
+  if (!st?.ok || st.data.found !== true) return null;
+  const paid = st.data.awaiting_payment !== true;
+  if (wantsChange && paid) return PAID_CHANGE_HANDOFF;
+  if (insistsPaid && !paid) return PAYMENT_PENDING_HANDOFF;
+  return null;
+}
+
+/** Dirección del último resumen (para que el modelo cotice de nuevo sin volver a pedirla). */
+export function lastQuoteAddress(outNewestFirst: readonly string[]): string | null {
+  const quote = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER));
+  return quote?.match(/^Dirección: (.+)$/m)?.[1]?.trim().slice(0, 200) ?? null;
 }
