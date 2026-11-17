@@ -363,7 +363,8 @@ describe("fase 5: pedidos con el flag encendido", () => {
   });
 
   it("cancelar: primero pregunta con plantilla; recién un SÍ posterior cancela", async () => {
-    const s = setup({ enabled: true });
+    const recibido = { status: async () => ({ ok: true, status: 200, data: { ok: true, found: true, status: "Recibidos" } }) as OrderResponse };
+    const s = setup({ enabled: true, orders: recibido });
     await processTurn(turn("quiero cancelar"), deps(s, model("pedido_cancelar", "cancelado!", [{ name: "cancel_order", arguments: { confirmed: true } }]).run));
     assert.deepEqual(s.calls, []);
     assert.ok(s.sent[0].startsWith(CANCEL_MARKER));

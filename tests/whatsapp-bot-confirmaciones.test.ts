@@ -1,7 +1,7 @@
 /** Bugs que encontró el simulador: confirmaciones con texto extra, estados afirmados por el modelo y quejas. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { asksCancelConfirmation, CANCEL_PROMPT, claimsOrderState, extractPrices, isAffirmation, money, ORDER_STATE_SAFE_REPLY, PRICE_SAFE_REPLY, unknownPrices } from "../workers/whatsapp-bot/src/orders/flow.ts";
+import { asksCancelConfirmation, CANCEL_PROMPT, ORDER_REPLIES, claimsOrderState, extractPrices, isAffirmation, money, ORDER_STATE_SAFE_REPLY, PRICE_SAFE_REPLY, unknownPrices } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { processTurn } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { REPLIES } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import { d1BotRepo, d1InboundRepo } from "../workers/whatsapp-bot/src/repo/d1.ts";
@@ -110,12 +110,17 @@ describe("turno completo", () => {
   it("cancelar: la pregunta escrita a mano se reemplaza por la plantilla oficial", async () => {
     const w = await world("pedido_cancelar", [], "Entiendo. ¿Confirmás que querés cancelar el pedido?");
     await w.send("NO, MEJOR NO, CANCELA EL PEDIDO.");
-    assert.deepEqual(w.sent, [CANCEL_PROMPT]);
+    // La pregunta a mano pasa por runCancel: sin pedido en curso no se pregunta nada, se deriva con un mensaje claro.
+    assert.deepEqual(w.sent, [ORDER_REPLIES.noOrderHandoff]);
+    assert.ok(!w.sent.some((m) => m.startsWith(CANCEL_PROMPT)));
   });
   it("el modelo no puede decir que el pedido está confirmado", async () => {
     const w = await world("pedido_confirmar", [], "¡Perfecto! Tu pedido está confirmado.");
     await w.send("sí, todo bien");
-    assert.deepEqual(w.sent, [ORDER_STATE_SAFE_REPLY]);
+    // El modelo insiste (también en el reintento): sale un reemplazo fijo que no afirma ningún estado.
+    assert.equal(w.sent.length, 1);
+    assert.doesNotMatch(w.sent[0], /confirmad|pagad|en camino/i);
+    assert.match(w.sent[0], /acredite el pago/);
   });
 });
 

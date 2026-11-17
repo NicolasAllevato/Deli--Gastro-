@@ -5,7 +5,7 @@ import { z } from "zod";
 import { ERROR_TIPOS, normalizeKey, sugerenciaKey, errorKey, type ErrorInput, type SugerenciaInput } from "../../src/lib/data/kb-aprendizaje.ts";
 import { KB_CATEGORIAS } from "../../src/lib/data/kb-negocio.ts";
 import type { Scenario } from "./escenarios.ts";
-import { REPLIES } from "../../workers/whatsapp-bot/src/bot/prompts.ts";
+import { QUOTE_MARKER, unknownPrices } from "../../workers/whatsapp-bot/src/orders/flow.ts";
 
 export interface TranscriptLine {
   role: "cliente" | "bot";
@@ -36,6 +36,7 @@ const verdictSchema = z.object({
   no_entendidas: z.array(z.string().max(200)).max(20).default([]),
   fallas: z.array(z.unknown()).max(10).default([]),
   sugerencias: z.array(z.unknown()).max(10).default([]),
+  cliente_incompleto: z.boolean().default(false),
 });
 
 export interface Verdict {
@@ -53,6 +54,8 @@ export interface Verdict {
   sugerencias: SugerenciaInput[];
   /** Éxito del escenario: resolvió, derivó si debía, no inventó precios y empatía ≥ 3. */
   exito: boolean;
+  /** El cliente simulado no llegó a su objetivo (abandonó o no pidió lo que decía) sin culpa del bot. */
+  clienteIncompleto: boolean;
 }
 
 export const JUDGE_SYSTEM = `Sos un evaluador estricto de un asistente de WhatsApp de un local de comida argentino.
@@ -60,15 +63,26 @@ Recibís el escenario (objetivo del cliente y lo esperado del bot), el menú rea
 Devolvé SOLO un JSON con esta forma:
 {"resuelto":bool,"derivo":bool,"invento_precios":bool,"empatia":1-5,"no_entendidas":["palabra o frase del cliente que el bot no entendió"],
  "fallas":[{"tipo":"precio_inventado|no_derivo|no_entendio|tono_frio|no_resolvio|otro","mensaje_cliente":"mensaje exacto del cliente","respuesta_mala":"respuesta exacta del bot","motivo":"por qué está mal","correccion":"regla corta e imperativa, una línea, para que no vuelva a pasar (sin datos personales)"}],
- "sugerencias":[{"categoria":"vocabulario|faq|politica|promo|otro","tema":"para vocabulario: cómo lo dice el cliente; para faq: la pregunta","contenido":"a qué se refiere / respuesta sugerida (sin inventar precios)","evidencia":"frase del cliente"}]}
+ "sugerencias":[{"categoria":"vocabulario|faq|politica|promo|otro","tema":"para vocabulario: cómo lo dice el cliente; para faq: la pregunta","contenido":"a qué se refiere / respuesta sugerida (sin inventar precios)","evidencia":"frase del cliente"}],
+ "cliente_incompleto":bool}
+Los mensajes que empiezan con "Resumen de tu pedido" o "¡Listo! Para confirmar" son plantillas del sistema con los montos
+del servidor: sus subtotales y totales son correctos por definición.
+Si el cliente dice que pagó y el sistema todavía dice que falta pagar, el bot hace bien en reenviar el link (no es falla).
+Las líneas "[sistema: ...]" son hechos del mundo: después de "[sistema: Mercado Pago acreditó el pago del pedido]" el bot
+hace bien en decir que el pago se acreditó y que el pedido está recibido o en proceso.
+Inventar una promo ("la promo sigue vigente") o reemplazar un producto pedido por otro sin preguntar es falla grave del bot.
+Si el "Esperado del bot" dice que debe derivar (por ejemplo, por un tema de dinero), derivar ES resolver.
+Si la charla termina justo después de un mensaje del bot sin que el cliente haya hecho la parte de su objetivo que falta,
+es "cliente_incompleto": true.
 Reglas: "derivo" es true si el bot pasó la charla a una persona. "invento_precios" es true si dio un precio, promo o producto que no está en el menú.
 Empatía: 1 frío o cortante, 3 correcto, 5 cálido y empático. Las correcciones son reglas generales, no copias de la charla.
 Las sugerencias solo si aportan conocimiento nuevo y útil para el local; nunca inventes precios.
-Cada falla lleva "causa": "bot" si es una decisión o respuesta mala del asistente, o "entorno" si viene de la simulación
-(herramienta con error técnico, respuesta vacía, el mensaje fijo "tuve un problema para responderte", logs de error).
-Una derivación provocada por un error técnico NO es una derivación real: no cuenta como "derivo" y su falla es de "entorno".
-Usá "causa": "cliente" si el cliente simulado abandonó o no llegó a la parte de su objetivo (por ejemplo, nunca pidió cancelar):
-eso no es culpa del bot. En una queja, derivar a una persona ES resolverla. Marcá "no_derivo" solo si el bot no derivó.
+Cada falla lleva "causa": "bot" si es una decisión o respuesta del asistente. Las respuestas vacías, bloqueadas o el mensaje
+fijo "tuve un problema" SON fallas del bot ("causa":"bot"): el cliente se quedó sin respuesta. Usá "entorno" solo si los logs
+muestran un error de la simulación marcado con [sim].
+Una derivación provocada por un error del bot NO es una derivación real: no cuenta como "derivo".
+Usá "causa": "cliente" y "cliente_incompleto": true si el cliente simulado abandonó o no llegó a la parte de su objetivo
+(por ejemplo, nunca pidió cancelar o se despidió antes de confirmar) y el bot no hizo nada mal: eso no es culpa del bot. En una queja, derivar a una persona ES resolverla. Marcá "no_derivo" solo si el bot no derivó.
 Falla grave del bot (tipo "otro", resuelto=false): decir que un pedido está confirmado, pagado, "en proceso" o "en camino"
 sin que antes aparezca el mensaje de pago de Mercado Pago; o repetir la misma pregunta de confirmación en bucle.`;
 
@@ -105,10 +119,9 @@ function extractJson(raw: string): unknown {
 /** Parsea y valida la salida del juez; null si no sirve. Las fallas/sugerencias inválidas se descartan una por una. */
 /** Señales técnicas del entorno en los logs del bot (respuesta vacía o bloqueada, errores). */
 export function environmentSignals(logs: readonly string[]): boolean {
-  return logs.some((l) => /respuesta bloqueada|imitó una plantilla|error/i.test(l));
+  // Solo errores propios de la simulación. Respuestas vacías o bloqueadas del bot son fallas del bot, no del entorno.
+  return logs.some((l) => /\[sim\]/.test(l));
 }
-
-const FAILURE_REPLY = REPLIES.failure.slice(0, 40);
 
 /**
  * Parsea y valida la salida del juez; null si no sirve. Las fallas/sugerencias inválidas se descartan una por una.
@@ -118,6 +131,19 @@ const FAILURE_REPLY = REPLIES.failure.slice(0, 40);
 export interface ObservedFacts {
   /** El bot derivó de verdad (la conversación quedó en manos de una persona sin error técnico). */
   handedOff?: boolean;
+  /** Medido en el código: algún monto de texto libre del bot no existe en el menú ni en las zonas. */
+  pricesInvented?: boolean;
+  /** En el mundo simulado Mercado Pago acreditó el pago: decir "confirmado / recibido" después es correcto. */
+  paymentAccredited?: boolean;
+}
+
+/**
+ * Hecho observado de precios: los montos que el bot escribió con texto libre tienen que salir del menú o las zonas
+ * (hasta 20 unidades). El resumen y el mensaje de pago son plantillas del sistema con datos del servidor: no cuentan.
+ */
+export function inventedPrices(transcript: readonly TranscriptLine[], allowed: readonly number[]): boolean {
+  return transcript.some((l) => l.role === "bot" && !l.text.startsWith(QUOTE_MARKER) && !l.text.startsWith("¡Listo! Para confirmar") &&
+    unknownPrices(l.text, allowed).length > 0);
 }
 
 export function parseVerdict(
@@ -127,7 +153,9 @@ export function parseVerdict(
   if (!parsed.success) return null;
   // Los hechos observados ganan sobre la opinión del juez.
   const derivo = facts.handedOff === undefined ? parsed.data.derivo : facts.handedOff && !environmentHit;
-  const v = { ...parsed.data, derivo, resuelto: parsed.data.resuelto || (scenario.mustHandoff && derivo) };
+  // Precios: si el código midió que no hubo montos inventados, el juez no puede afirmarlo (y al revés).
+  const invento = facts.pricesInvented === undefined ? parsed.data.invento_precios : facts.pricesInvented;
+  const v = { ...parsed.data, derivo, invento_precios: invento, resuelto: parsed.data.resuelto || (scenario.mustHandoff && derivo) };
   const all = v.fallas.flatMap((f) => {
     const r = failureSchema.safeParse(f);
     if (!r.success) return [];
@@ -135,13 +163,21 @@ export function parseVerdict(
     // Un "no_derivo" cuando sí derivó es un error del juez: se descarta.
     // Tampoco cuenta "no_derivo" en escenarios que no requieren derivar.
     if (rest.tipo === "no_derivo" && (derivo || !scenario.mustHandoff)) return [];
-    const fromEnv =
-      causa !== "bot" || rest.respuesta_mala.includes(FAILURE_REPLY) || (environmentHit && rest.tipo === "no_derivo");
+    // "precio_inventado" contra el hecho medido: sin montos inventados en el código, es un error del juez.
+    if (rest.tipo === "precio_inventado" && facts.pricesInvented === false) return [];
+    // "Confirmó sin pago" cuando el pago SÍ se acreditó en el mundo: error del juez, no del bot.
+    if (facts.paymentAccredited && /acredit|sin pago|sin (que )?(se )?(haya )?pag|mensaje de pago|no reconoce que el pago/i.test(rest.motivo)) return [];
+    // "entorno" solo vale con una señal real de la simulación en los logs; si no, es del bot (no se aflojan fallas).
+    // "cliente" (el simulado abandonó) no se aprende.
+    if (causa === "cliente") return [];
+    const fromEnv = causa === "entorno" && environmentHit;
     return [{ failure: { ...rest, escenario: scenario.type } as ErrorInput, fromEnv }];
   });
   const fallas = all.filter((f) => !f.fromEnv).map((f) => f.failure);
   const fallasEntorno = all.filter((f) => f.fromEnv).map((f) => f.failure);
-  const entorno = environmentHit || fallasEntorno.length > 0;
+  const clienteIncompleto = parsed.data.cliente_incompleto && fallas.length === 0;
+  // Fuera de la tasa: entorno roto o cliente simulado que no completó su objetivo (sin falla del bot).
+  const entorno = environmentHit || fallasEntorno.length > 0 || clienteIncompleto;
   const sugerencias = v.sugerencias.flatMap((s) => {
     const r = suggestionSchema.safeParse(s);
     return r.success ? [r.data] : [];
@@ -160,6 +196,7 @@ export function parseVerdict(
     entorno,
     sugerencias,
     exito,
+    clienteIncompleto,
   };
 }
 

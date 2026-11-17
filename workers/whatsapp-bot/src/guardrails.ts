@@ -152,11 +152,11 @@ export function wrapUntrusted(text: string): string {
 /** Herramientas que cada intención puede usar (lista blanca: intención desconocida → ninguna). */
 const TOOLS_BY_INTENT: Readonly<Record<string, readonly string[]>> = {
   consulta_local: ["get_business_info"],
-  consulta_menu: ["get_menu", "get_business_info"],
+  consulta_menu: ["get_menu", "get_business_info", "quote_order"],
   saludo: ["get_business_info"],
   pedido_nuevo: ["get_menu", "quote_order"],
   pedido_datos: ["get_menu", "quote_order"],
-  pedido_confirmar: ["quote_order", "confirm_order"],
+  pedido_confirmar: ["get_menu", "quote_order", "confirm_order"],
   pedido_estado: ["order_status", "handoff_to_human"],
   pedido_cancelar: ["order_status", "cancel_order"],
   humano: ["handoff_to_human"],

@@ -14,7 +14,7 @@ import { buildResponderPrompt, lessonLines } from "../workers/whatsapp-bot/src/b
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { generateScenarios, SCENARIO_TYPES } from "../scripts/simulador/escenarios.ts";
 import { Budget, estimatePerConversation } from "../scripts/simulador/presupuesto.ts";
-import { dedupeFailures, dedupeSuggestions, environmentSignals, parseVerdict } from "../scripts/simulador/juez.ts";
+import { dedupeFailures, dedupeSuggestions, environmentSignals, inventedPrices, parseVerdict } from "../scripts/simulador/juez.ts";
 import { parseQuoteArgs } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { parseClientTurn } from "../scripts/simulador/cliente.ts";
 import { renderReport, successByType } from "../scripts/simulador/informe.ts";
@@ -83,27 +83,30 @@ describe("juez", () => {
   it("una queja sin derivar no es éxito aunque diga resuelto", () => {
     assert.equal(parseVerdict(raw, { type: "queja_reclamo", mustHandoff: true })?.exito, false);
   });
-  it("separa fallas del entorno de las del bot (no se aprenden)", () => {
+  it("el mensaje fijo de error y las respuestas vacías son fallas del bot (no se esconden como entorno)", () => {
     const failureReply = { ...falla, respuesta_mala: "Perdón, tuve un problema para responderte. Ya le avisamos al local" };
     const envByJudge = { ...falla, tipo: "otro", correccion: "Revisar herramienta", causa: "entorno" };
     const raw2 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [failureReply, envByJudge, { ...falla, tipo: "tono_frio", correccion: "Sé cálido." }] });
     const v = parseVerdict(raw2, { type: "pedido_cambios", mustHandoff: false });
     assert.ok(v);
-    assert.equal(v.fallas.length, 1);
-    assert.equal(v.fallas[0].tipo, "tono_frio");
-    assert.equal(v.fallasEntorno.length, 2);
-    assert.equal(v.entorno, true);
-    // Con señales técnicas en los logs, un "no_derivo" se atribuye al entorno.
-    const v2 = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [{ ...falla, tipo: "no_derivo" }] }), { type: "queja_reclamo", mustHandoff: true }, true);
-    assert.equal(v2?.fallas.length, 0);
-    assert.equal(v2?.entorno, true);
+    // Sin [sim] en los logs, "entorno" no alcanza: las tres cuentan como del bot.
+    assert.equal(v.fallas.length, 3);
+    assert.equal(v.fallasEntorno.length, 0);
+    assert.equal(v.entorno, false);
+    assert.equal(v.exito, false);
+  });
+  it("con un error real de la simulación ([sim]) la falla de entorno no se aprende ni cuenta", () => {
+    const env = { ...falla, tipo: "otro", correccion: "x", causa: "entorno" };
+    const v = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [env] }), { type: "pedido_cambios", mustHandoff: false }, true);
+    assert.equal(v?.fallas.length, 0);
+    assert.equal(v?.fallasEntorno.length, 1);
+    assert.equal(v?.entorno, true);
   });
   it("los hechos observados ganan: si derivó, no hay 'no_derivo' y la queja queda resuelta", () => {
     const raw3 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [{ ...falla, tipo: "no_derivo" }, { ...falla, correccion: "x", causa: "cliente" }] });
     const v = parseVerdict(raw3, { type: "queja_reclamo", mustHandoff: true }, false, { handedOff: true });
     assert.equal(v?.derivo, true);
     assert.equal(v?.fallas.length, 0);
-    assert.equal(v?.fallasEntorno.length, 1);
     assert.equal(v?.exito, true);
   });
   it("'no_derivo' no cuenta en escenarios que no requieren derivar", () => {
@@ -111,8 +114,18 @@ describe("juez", () => {
     assert.equal(v?.fallas.length, 0);
     assert.equal(v?.exito, true);
   });
-  it("detecta señales técnicas en los logs", () => {
-    assert.equal(environmentSignals(['[whatsapp-bot] respuesta bloqueada {"empty":true}']), true);
+  it("cliente simulado que no completó su objetivo: fuera de la tasa solo si el bot no falló", () => {
+    const base = { resuelto: false, derivo: false, invento_precios: false, empatia: 4, cliente_incompleto: true };
+    const sinFalla = parseVerdict(JSON.stringify({ ...base, fallas: [] }), { type: "cancelacion", mustHandoff: false });
+    assert.equal(sinFalla?.entorno, true);
+    assert.equal(sinFalla?.clienteIncompleto, true);
+    const conFalla = parseVerdict(JSON.stringify({ ...base, fallas: [falla] }), { type: "cancelacion", mustHandoff: false });
+    assert.equal(conFalla?.entorno, false);
+    assert.equal(conFalla?.clienteIncompleto, false);
+  });
+  it("detecta solo errores propios de la simulación en los logs", () => {
+    assert.equal(environmentSignals(['[whatsapp-bot] respuesta bloqueada {"empty":true}']), false);
+    assert.equal(environmentSignals(["[sim] el mundo simulado falló"]), true);
     assert.equal(environmentSignals([]), false);
   });
   it("JSON roto o incompleto → null", () => {
@@ -135,11 +148,48 @@ describe("juez", () => {
   });
 });
 
+describe("juez: precios medidos en el código", () => {
+  const menuPrices = [1800, 3500, 12500, 1500, 10000];
+  it("el resumen y el pago son plantillas: sus totales no cuentan como inventados", () => {
+    const tr = [
+      { role: "bot" as const, text: "Resumen de tu pedido:\n• 2 x Empanada — $3.600\nTotal: $8.600" },
+      { role: "bot" as const, text: "¡Listo! Para confirmar tu pedido por $8.600 pagá acá" },
+      { role: "bot" as const, text: "La muzza sale $12.500 y la coca $3.500." },
+    ];
+    assert.equal(inventedPrices(tr, menuPrices), false);
+    assert.equal(inventedPrices([{ role: "bot", text: "La coca sale $350." }], menuPrices), true);
+  });
+  it("si el código no vio montos inventados, se descarta el 'precio_inventado' del juez", () => {
+    const raw = JSON.stringify({ resuelto: true, derivo: false, invento_precios: true, empatia: 4, fallas: [{ ...falla, tipo: "precio_inventado" }] });
+    const v = parseVerdict(raw, { type: "pedido_cambios", mustHandoff: false }, false, { pricesInvented: false });
+    assert.equal(v?.inventoPrecios, false);
+    assert.equal(v?.fallas.length, 0);
+    assert.equal(v?.exito, true);
+    const v2 = parseVerdict(raw, { type: "pedido_cambios", mustHandoff: false }, false, { pricesInvented: true });
+    assert.equal(v2?.exito, false);
+  });
+});
+
+describe("juez: pago acreditado en el mundo", () => {
+  it("'confirmado sin pago' se descarta si Mercado Pago acreditó el pago", () => {
+    const f = { ...falla, tipo: "no_resolvio", motivo: "El bot confirma el pedido sin que se haya acreditado el pago previamente." };
+    const raw = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [f] });
+    const ok = parseVerdict(raw, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: true });
+    assert.equal(ok?.fallas.length, 0);
+    const otraForma = { ...f, motivo: "El bot no debería confirmar el pedido hasta que se acredite el pago." };
+    const raw2 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [otraForma] });
+    assert.equal(parseVerdict(raw2, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: true })?.fallas.length, 0);
+    const sinPago = parseVerdict(raw, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: false });
+    assert.equal(sinPago?.fallas.length, 1);
+  });
+});
+
 describe("cliente simulado", () => {
   it("parsea el próximo mensaje o el fin", () => {
-    assert.deepEqual(parseClientTurn('{"mensaje":"hola","fin":false}'), { message: "hola", done: false });
+    assert.deepEqual(parseClientTurn('{"mensaje":"hola","fin":false}'), { message: "hola", done: false, parsed: true });
     assert.equal(parseClientTurn('{"mensaje":"","fin":true}').done, true);
     assert.equal(parseClientTurn("roto").done, true);
+    assert.equal(parseClientTurn("roto").parsed, false);
   });
 });
 
