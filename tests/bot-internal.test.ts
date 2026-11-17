@@ -58,8 +58,9 @@ async function call(demo: DemoDb, op: BotOperation, body: Record<string, unknown
   const rawBody = opts.rawBody ?? JSON.stringify(body);
   const shift = opts.nowShiftSec ?? 0;
   const timestamp = String(Math.floor(T0.getTime() / 1000) + shift + (opts.tsOffset ?? 0));
-  const signature = signBotRequest(opts.secret ?? SECRET, { timestamp, method: opts.method ?? "POST", path: opts.signPath ?? path, body: rawBody });
-  const headers = new Map<string, string>([["x-bot-timestamp", timestamp], ["x-bot-signature", signature]]);
+  const nonce = crypto.randomUUID();
+  const signature = signBotRequest(opts.secret ?? SECRET, { timestamp, nonce, method: opts.method ?? "POST", path: opts.signPath ?? path, body: rawBody });
+  const headers = new Map<string, string>([["x-bot-timestamp", timestamp], ["x-bot-signature", signature], ["x-bot-nonce", nonce]]);
   const wamid = body.inboundWamid;
   const key = opts.key === undefined ? (typeof wamid === "string" ? wamid : null) : opts.key;
   if (key) headers.set("idempotency-key", key);
@@ -90,9 +91,14 @@ const confirmBody = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe("firma", () => {
-  const parts = { timestamp: "1000", method: "POST", path: "/api/internal/bot/quote", body: "{}" };
-  const base = { secrets: [SECRET], method: "POST", path: parts.path, body: "{}", timestamp: "1000", nowMs: 1_000_000 };
+  const parts = { timestamp: "1000", nonce: "11111111-2222-3333-4444-555555555555", method: "POST", path: "/api/internal/bot/quote", body: "{}" };
+  const base = { secrets: [SECRET], method: "POST", path: parts.path, body: "{}", timestamp: "1000", nonce: parts.nonce, nowMs: 1_000_000 };
   const sig = signBotRequest(SECRET, parts);
+
+  it("sin nonce se rechaza aunque la firma del formato viejo sea válida", () => {
+    const old = signBotRequest(SECRET, { ...parts, nonce: null });
+    assert.deepEqual(verifyBotRequest({ ...base, nonce: null, signature: old }), { ok: false, reason: "missing_headers" });
+  });
 
   it("acepta una firma válida y rechaza una inválida", () => {
     assert.deepEqual(verifyBotRequest({ ...base, signature: sig }), { ok: true });

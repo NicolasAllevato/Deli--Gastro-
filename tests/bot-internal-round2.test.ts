@@ -43,9 +43,11 @@ async function call(demo: DemoDb, op: BotOperation, body: Record<string, unknown
   const rawBody = JSON.stringify(body);
   const shift = opts.shift ?? 0;
   const timestamp = String(Math.floor(T0.getTime() / 1000) + shift);
+  const nonce = crypto.randomUUID();
   const headers = new Map<string, string>([
     ["x-bot-timestamp", timestamp],
-    ["x-bot-signature", signBotRequest(SECRET, { timestamp, method: "POST", path, body: rawBody })],
+    ["x-bot-signature", signBotRequest(SECRET, { timestamp, nonce, method: "POST", path, body: rawBody })],
+    ["x-bot-nonce", nonce],
   ]);
   if (typeof body.inboundWamid === "string") headers.set("idempotency-key", body.inboundWamid);
   return handleBot(

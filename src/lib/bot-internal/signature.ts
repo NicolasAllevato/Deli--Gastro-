@@ -81,8 +81,10 @@ export function verifyBotRequest(input: VerifyInput): SignatureCheck {
   if (skew > SIGNATURE_WINDOW_SECONDS) return { ok: false, reason: "stale" };
   if (skew < -SIGNATURE_WINDOW_SECONDS) return { ok: false, reason: "future" };
 
+  // El nonce es obligatorio: sin él una llamada capturada se podría repetir dentro de la ventana.
   const nonce = input.nonce ?? null;
-  if (nonce !== null && !NONCE_RE.test(nonce)) return { ok: false, reason: "bad_signature" };
+  if (nonce === null) return { ok: false, reason: "missing_headers" };
+  if (!NONCE_RE.test(nonce)) return { ok: false, reason: "bad_signature" };
   const parts: SignatureParts = { timestamp, nonce, method: input.method, path: input.path, body: input.body };
   // Se prueban todos los secretos sin cortar antes: el tiempo no revela cuál coincidió.
   let match = false;

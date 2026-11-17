@@ -404,9 +404,9 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
     nowMs: now.getTime(),
   });
   if (!verified.ok) return refuse(401, "invalid_signature", "Firma inválida.");
-  // Una llamada firmada se acepta una sola vez (el formato sin nonce queda solo por compatibilidad durante el deploy).
-  const nonce = req.headers.get(BOT_NONCE_HEADER);
-  if (nonce && deps.claimNonce && !(await deps.claimNonce(nonce, now.getTime()))) {
+  // Una llamada firmada se acepta una sola vez (verifyBotRequest ya exigió el nonce).
+  const nonce = req.headers.get(BOT_NONCE_HEADER) ?? "";
+  if (deps.claimNonce && !(await deps.claimNonce(nonce, now.getTime()))) {
     return refuse(409, "replay", "Llamada repetida.");
   }
 
