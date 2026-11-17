@@ -68,6 +68,9 @@ Devolvé SOLO un JSON con esta forma:
 Los mensajes que empiezan con "Resumen de tu pedido" o "¡Listo! Para confirmar" son plantillas del sistema con los montos
 del servidor: sus subtotales y totales son correctos por definición.
 Si el cliente dice que pagó y el sistema todavía dice que falta pagar, el bot hace bien en reenviar el link (no es falla).
+Las líneas "[sistema: ...]" son hechos del mundo: después de "[sistema: Mercado Pago acreditó el pago del pedido]" el bot
+hace bien en decir que el pago se acreditó y que el pedido está recibido o en proceso.
+Inventar una promo ("la promo sigue vigente") o reemplazar un producto pedido por otro sin preguntar es falla grave del bot.
 Si el "Esperado del bot" dice que debe derivar (por ejemplo, por un tema de dinero), derivar ES resolver.
 Si la charla termina justo después de un mensaje del bot sin que el cliente haya hecho la parte de su objetivo que falta,
 es "cliente_incompleto": true.

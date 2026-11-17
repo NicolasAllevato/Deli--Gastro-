@@ -91,6 +91,9 @@ const RETRY_HINT: Record<DraftIssue, string> = {
 const ORDER_STATE_SOFT_REPLY =
   "¡Genial! 🙌 Apenas se acredite el pago con Mercado Pago tu pedido sale. Si querés saber cómo va, preguntame y te cuento.";
 
+/** Cuando no se puede contestar bien una consulta por su pedido: empatía y una persona lo revisa. */
+const STATUS_HANDOFF_REPLY = "Perdón por la espera 🙏 Te paso con una persona del local para que revise tu pedido ya mismo.";
+
 const SAFE_FALLBACK: Record<DraftIssue, string> = {
   empty: REPLIES.failure,
   template: ORDER_REPLIES.startOver,
@@ -164,6 +167,13 @@ async function answer(
   if (handedOffNow) {
     await reply(deps, conversation, issue ? REPLIES.handoff : draft, false);
     return "answered";
+  }
+  // Consulta por su pedido que el modelo no pudo contestar sin prometer: una persona lo revisa ya (no un saludo vacío).
+  if (issue && intent === "pedido_estado") {
+    deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], handoff: true });
+    await deps.repo.setTakeover(conversation.id);
+    await reply(deps, conversation, STATUS_HANDOFF_REPLY, false);
+    return "output_blocked";
   }
   if (issue) {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });

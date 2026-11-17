@@ -11,6 +11,10 @@ import {
 import type { OrdersClient, OrderResponse } from "../workers/whatsapp-bot/src/orders/client.ts";
 import { respond, MAX_STEPS } from "../workers/whatsapp-bot/src/ai/responder.ts";
 import { toolsForIntent } from "../workers/whatsapp-bot/src/guardrails.ts";
+import { toolsFor } from "../workers/whatsapp-bot/src/bot/tools.ts";
+import { buildResponderPrompt } from "../workers/whatsapp-bot/src/bot/prompts.ts";
+import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
+import { fakeOrders, openSimDb, seedWorld } from "../scripts/simulador/mundo.ts";
 
 const SUMMARY = `${QUOTE_MARKER}:\n• 1 x Muzza — $12.500\nTotal: $14.000\nRespondé SÍ para continuar al pago.`;
 
@@ -211,6 +215,42 @@ describe("ronda 3", () => {
     assert.equal(r.ok, false);
     assert.match(r.error, /link de pago/);
     assert.equal(t.state.fixedReply, null);
+  });
+});
+
+describe("ronda 4", () => {
+  function statusTool(data: Record<string, unknown>) {
+    const ok = { ok: true, status: 200, data: { ok: true, ...data } } as OrderResponse;
+    const t: OrderTurn = {
+      client: { status: async () => ok } as unknown as OrdersClient, repo: {} as OrderTurn["repo"],
+      conversation: { id: "c1", phone: "1", clientId: null } as unknown as OrderTurn["conversation"], inboundWamid: "w", inboundText: "ya pagué",
+      hasAudio: false, lastBotMessage: null, appUrl: "https://x.test", hours: { open: "00:00", close: "23:59" }, state: newOrderState(),
+    };
+    const tool = toolsFor("pedido_estado", {} as never, t.conversation, settingsFromConfig({}), Date.now, t).find((x) => x.name === "order_status");
+    assert.ok(tool);
+    return tool.run({});
+  }
+  it("order_status dice explícito si el pago se acreditó o falta pagar", async () => {
+    assert.equal(((await statusTool({ found: true, status: "Recibidos" })) as { payment: string }).payment, "acreditado");
+    assert.match(((await statusTool({ found: true, awaiting_payment: true })) as { payment: string }).payment, /falta pagar/);
+    assert.equal(((await statusTool({ found: false })) as { payment?: string }).payment, undefined);
+  });
+  it("el prompt prohíbe inventar promos y reemplazar productos", () => {
+    const p = buildResponderPrompt(settingsFromConfig({}), "consulta_menu", null, false);
+    assert.match(p, /nunca digas que sigue vigente/);
+    assert.match(p, /nunca lo reemplaces por otro producto/);
+  });
+  it("mundo simulado: 'ya pagué' acredita solo si había un link pendiente", async () => {
+    const db = openSimDb(":memory:");
+    seedWorld(db);
+    const o = fakeOrders(db);
+    assert.equal(o.markPaid("c1"), false);
+    const id = (db.raw.prepare("SELECT id FROM products LIMIT 1").get() as { id: string }).id;
+    await o.quote({ conversationId: "c1", inboundWamid: "w", items: [{ product_id: id, qty: 1 }], address: "Santa Fe 1234" });
+    await o.confirm({ conversationId: "c1", inboundWamid: "w2", payment_method: "Mercado Pago" });
+    assert.equal(o.markPaid("c1"), true);
+    const st = await o.status({ conversationId: "c1", inboundWamid: "w3" });
+    assert.ok(st.ok && st.data.status === "Recibidos");
   });
 });
 

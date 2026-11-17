@@ -44,6 +44,14 @@ function orderTools(order: OrderTurn): BotTool[] {
   ];
 }
 
+/** Deja explícito si el pago ya se acreditó (pedido encontrado y sin pago pendiente): el modelo lo puede decir tal cual. */
+function describePayment(data: unknown): unknown {
+  if (typeof data !== "object" || data === null) return data;
+  const d = data as Record<string, unknown>;
+  if (d.found !== true) return d;
+  return { ...d, payment: d.awaiting_payment === true ? "pendiente: falta pagar con el link" : "acreditado" };
+}
+
 /** Herramientas de solo lectura y traspaso; con el flag de pedidos, `get_menu` incluye el id y `order_status` va por la app. */
 function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number, order?: OrderTurn): BotTool[] {
   return [
@@ -82,7 +90,7 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
       run: async () => {
         if (order) {
           const viaApp = await runStatus(order);
-          if (viaApp !== LEGACY_STATUS) return viaApp;
+          if (viaApp !== LEGACY_STATUS) return describePayment(viaApp);
           // Fuera de la allowlist de pedidos: se consulta como antes, directo en la base.
         }
         // Siempre el cliente de ESTA conversación: el modelo no elige de quién es el pedido.
