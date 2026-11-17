@@ -29,6 +29,45 @@ const OP_WORDS: Record<"confirm" | "cancel", ReadonlySet<string>> = {
   cancel: new Set(["cancela", "cancelalo", "cancelar", "cancelo", "cancelado", "anula", "anulalo", "anular", "seguro"]),
 };
 const MAX_AFFIRMATION_WORDS = 8;
+/** Largo máximo de un SÍ con frase o pregunta al final ("SÍ! 😊 ¿Me mandás el link?"). */
+const MAX_AFFIRMATION_CHARS = 200;
+
+/**
+ * Palabras que, después del SÍ, indican un cambio o una duda: el mensaje deja de ser una confirmación limpia
+ * ("si, agregá una coca", "sí pero sin cebolla", "sí, mejor mañana"). Exactas o por prefijo.
+ */
+const CHANGE_WORDS: ReadonlySet<string> = new Set([
+  "no", "pero", "sin", "otra", "otro", "otras", "otros", "mas", "ademas", "tambien", "mejor", "despues", "todavia", "vez",
+  "pedir", "pido", "pedime", "pedimos", "pediria", "espera", "esperate", "espere", "aguanta", "aguarda", "manana",
+]);
+/** Para cancelar alcanza con que no dude ni pida otra cosa ("SÍ, CANCELÁ YA, NO QUIERO ESPERAR MÁS" sigue siendo SÍ). */
+const CANCEL_DOUBTS: ReadonlySet<string> = new Set([
+  "pero", "mejor", "todavia", "despues", "espera", "esperate", "espere", "aguanta", "aguarda", "pedir", "pido", "pedime", "otra", "otro",
+]);
+const CHANGE_PREFIXES: readonly string[] =["agreg", "cambi", "sacal", "saca", "saque", "quit", "sumal", "suma"];
+/** Palabras propias de la OTRA operación (confirmar no acepta "cancelá" y al revés). */
+const OTHER_OP_PREFIXES: Record<"confirm" | "cancel", readonly string[]> = {
+  confirm: ["cancel", "anul"],
+  cancel: ["confirm", "pag"],
+};
+
+const hasPrefix = (word: string, prefixes: readonly string[]): boolean => prefixes.some((p) => word.startsWith(p));
+
+/** Cancelar con un "no quiero esperar" sigue siendo SÍ; "no lo canceles" o "no sé" no. */
+function negatesCancel(words: readonly string[]): boolean {
+  return words.some((w, i) => w === "no" && /^(cancel|anul|lo|la|se|quiero$|estoy)/.test(words[i + 1] ?? "") &&
+    !(words[i + 1] === "quiero" && /^(esper|perder)/.test(words[i + 2] ?? "")));
+}
+
+function restIsClean(rest: readonly string[], op: "confirm" | "cancel" | null): boolean {
+  const other = op ? OTHER_OP_PREFIXES[op] : [...OTHER_OP_PREFIXES.confirm, ...OTHER_OP_PREFIXES.cancel];
+  for (const w of rest) {
+    // Números (cantidades, direcciones) o pedir otra cosa: es un pedido nuevo, no un SÍ al resumen.
+    if (/\d/.test(w) || hasPrefix(w, other) || hasPrefix(w, CHANGE_PREFIXES)) return false;
+    if (op === "cancel" ? CANCEL_DOUBTS.has(w) : CHANGE_WORDS.has(w)) return false;
+  }
+  return op !== "cancel" || !negatesCancel(rest);
+}
 
 /** Textos de plantilla: el modelo nunca puede mandar un mensaje que los contenga (el cuerpo guardado es la única "marca"). */
 export const TEMPLATE_MARKERS: readonly string[] = [QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para"];
@@ -101,7 +140,21 @@ export function pendingOperation(lastBot: string | null): "confirm" | "cancel" |
   if (lastBot.startsWith(CANCEL_MARKER) || lastBot.startsWith(RETRY_CANCEL)) return "cancel";
   return null;
 }
-const MAX_AFFIRMATION_CHARS = 60;
+/** Texto libre del modelo que solo le pide al cliente que responda SÍ al resumen (no cambia nada del pedido). */
+const ASKS_FOR_YES = /\bsi\b[^\n]{0,60}\bresumen\b|\bresumen\b[^\n]{0,60}\bsi\b/;
+
+/**
+ * Último mensaje del bot que decide qué habilita un SÍ (más nuevo primero). Se saltea UN texto libre del modelo
+ * que solo pidió "respondé SÍ al resumen": así el SÍ que sigue confirma ese resumen en vez de empezar de cero.
+ */
+export function lastDecisiveBotMessage(outNewestFirst: readonly string[]): string | null {
+  const [latest, previous] = outNewestFirst;
+  if (latest === undefined) return null;
+  if (pendingOperation(latest) === null && ASKS_FOR_YES.test(foldText(latest)) && previous !== undefined && pendingOperation(previous) !== null) {
+    return previous;
+  }
+  return latest;
+}
 
 /** Minúsculas, sin tildes ni puntuación, espacios colapsados. */
 export function normalizeAnswer(text: string): string {
@@ -114,17 +167,49 @@ export function normalizeAnswer(text: string): string {
     .trim();
 }
 
+/** Cláusulas del mensaje (separadas por puntuación) y si la primera termina en pregunta. Los emojis se ignoran. */
+function clauses(text: string): { parts: string[][]; firstIsQuestion: boolean } {
+  const raw = text.split(/([.,;:!?¡¿\n]+)/);
+  const parts: string[][] = [];
+  let firstIsQuestion = false;
+  for (let i = 0; i < raw.length; i += 2) {
+    const words = normalizeAnswer(raw[i]).split(" ").filter(Boolean);
+    if (words.length === 0) continue;
+    if (parts.length === 0) firstIsQuestion = /\?/.test(raw[i + 1] ?? "") || /¿\s*$/.test(raw[i - 1] ?? "");
+    parts.push(words);
+  }
+  return { parts, firstIsQuestion };
+}
+
 /**
- * Afirmación inequívoca: empieza con SÍ/dale/confirmo y el resto es solo relleno permitido para esa operación
- * ("SÍ, CANCELA TODO.", "sí porfa", "SÍ, todo bien!"). Preguntas, textos largos y cualquier palabra fuera de la
- * lista blanca ("si no", "si pero sin cebolla", "no sé") nunca cuentan. `op` null = solo relleno común.
+ * Afirmación: la primera cláusula es un SÍ limpio (SÍ/dale/confirmo + relleno permitido para esa operación) y lo que
+ * sigue no pide cambios ni niega ("SÍ! 😊 ¿Me mandás el link?", "Sí, confirmo el pedido! ¿Cuánto tardan?",
+ * "SÍ, CANCELA TODO."). Nunca cuentan: un SÍ preguntado ("sí?", "¿dale?"), un SÍ con cambios ("si, agregá una coca",
+ * "si pero sin cebolla"), negaciones ("si no", "no sé") ni palabras de la otra operación. `op` null = solo relleno común.
  */
 export function isAffirmation(text: string, op: "confirm" | "cancel" | null = null): boolean {
-  if (text.length > MAX_AFFIRMATION_CHARS || text.includes("?") || text.includes("¿")) return false;
-  const words = normalizeAnswer(text).split(" ").filter(Boolean);
-  if (words.length === 0 || words.length > MAX_AFFIRMATION_WORDS || !AFFIRMATION_STARTS.has(words[0])) return false;
+  if (text.length > MAX_AFFIRMATION_CHARS || /^\s*¿/.test(text)) return false;
+  const { parts, firstIsQuestion } = clauses(text);
+  const [first, ...others] = parts;
+  if (!first || firstIsQuestion || first.length > MAX_AFFIRMATION_WORDS || !AFFIRMATION_STARTS.has(first[0])) return false;
   const extra = op ? OP_WORDS[op] : null;
-  return words.slice(1).every((w) => AFFIRMATION_FILLER.has(w) || (extra?.has(w) ?? false));
+  if (!first.slice(1).every((w) => AFFIRMATION_FILLER.has(w) || (extra?.has(w) ?? false))) return false;
+  return restIsClean(others.flat(), op);
+}
+
+/** El mensaje trae además una pregunta ("¿cuánto tardan?"): la respuesta fija la contesta al final. */
+export function trailingQuestion(text: string): "demora" | "pago" | "otra" | null {
+  if (!/[?¿]/.test(text) && !/\b(cuando|cuanto|como|donde)\b/.test(normalizeAnswer(text))) return null;
+  const n = normalizeAnswer(text);
+  if (/\b(tard|demor|cuando (me )?(lo )?(llega|traen|mandan)|llega)/.test(n)) return "demora";
+  if (/\b(link|pag|mercado ?pago|tarjeta)/.test(n)) return "pago";
+  return "otra";
+}
+
+/** Texto libre que promete hacer algo después ("un momento", "voy a intentar de nuevo"): nunca llega, se reintenta. */
+export function promisesLater(draft: string): boolean {
+  const f = foldText(draft).replace(/\s+/g, " ");
+  return /\bun (momento|segundo|minuto)\b|\b(dame|aguarda(me)?|espera(me)?) un\b|\bvoy a (intentar|volver a|verificar|revisar|cotizar|enviar|mandar|chequear|consultar|confirmar|pasar|derivar|pedir ayuda)|\bya te (lo |la )?(mando|envio|paso el link)/.test(f);
 }
 
 export const money = (n: number): string => `$${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
@@ -159,6 +244,9 @@ export function renderPaymentMessage(paymentUrl: string, total: number | null): 
 
 export const ORDER_REPLIES = {
   cancelled: "Listo, cancelamos tu pedido.",
+  noOrderHandoff: "No encontré un pedido en curso a tu nombre 😕. Te paso con una persona del local para que lo revise con vos.",
+  draftDropped: "Listo, dejamos ese pedido sin confirmar: no se cobró nada. Si querés, armamos otro cuando quieras.",
+  alreadyCancelled: "Tu pedido ya está cancelado. Si querés, armamos uno nuevo.",
   unavailable: "Tuve un problema, probá de nuevo en un momento.",
   retryLater: "Reintentá en un momento.",
   humanHas: "Ya te está atendiendo una persona del local, en breve te responde.",
@@ -218,6 +306,8 @@ export interface OrderTurnState {
   quoted: boolean;
   /** Respuesta fija que reemplaza el texto del modelo. */
   fixedReply: string | null;
+  /** El flujo derivó a una persona en este turno: la respuesta fija sale igual (sin el rechequeo de pausa). */
+  handedOff?: boolean;
 }
 
 export interface OrderTurn {
@@ -231,6 +321,8 @@ export interface OrderTurn {
   hasAudio: boolean;
   /** Último mensaje que el bot le mandó al cliente. */
   lastBotMessage: string | null;
+  /** Hay un resumen reciente sin link de pago todavía (pedido armado pero no confirmado). */
+  recentQuote?: boolean;
   appUrl: string;
   hours: { open: string; close: string };
   state: OrderTurnState;
@@ -241,13 +333,28 @@ export const newOrderState = (): OrderTurnState => ({ quoted: false, fixedReply:
 const common = (t: OrderTurn) => ({ conversationId: t.conversation.id, inboundWamid: t.inboundWamid });
 const SENT = { ok: false, note: "El cliente ya recibió la respuesta. No agregues nada más." } as const;
 
-function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm" | "cancel" | "status"): typeof SENT {
+/** Deriva a una persona con un mensaje fijo (el cliente nunca queda sin saber qué pasa). */
+async function handOff(t: OrderTurn, message: string): Promise<typeof SENT> {
+  await t.repo.setTakeover(t.conversation.id);
+  t.state.handedOff = true;
+  t.state.fixedReply = message;
+  return SENT;
+}
+
+const HANDOFF_SUFFIX = "Te paso con una persona del local para ver cómo lo resolvemos.";
+
+async function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm" | "cancel" | "status"): Promise<typeof SENT> {
   // Fallo transitorio de confirm/cancel: se ofrece reintentar con un SÍ (la plantilla dice cuál operación).
   if ((op === "confirm" || op === "cancel") && isTransient(response)) {
     t.state.fixedReply = `${op === "confirm" ? RETRY_CONFIRM : RETRY_CANCEL} ${RETRY_SUFFIX}`;
     return SENT;
   }
-  t.state.fixedReply = errorReply(response, { appUrl: t.appUrl, hours: t.hours, op });
+  const message = errorReply(response, { appUrl: t.appUrl, hours: t.hours, op });
+  // Cancelar rechazado (ya en preparación, fuera de término, sin pedido): se explica y se deriva enseguida.
+  if (op === "cancel" && (REASON_CODES.has(response.code) || response.status === 404)) {
+    return handOff(t, message === ORDER_REPLIES.noOrder ? ORDER_REPLIES.noOrderHandoff : `${message} ${HANDOFF_SUFFIX}`);
+  }
+  t.state.fixedReply = message;
   return SENT;
 }
 
@@ -336,6 +443,9 @@ export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
   const asked = pendingOperation(t.lastBotMessage) === "cancel";
   const confirmedNow = asked && !t.hasAudio && isAffirmation(t.inboundText, "cancel") && args.confirmed === true;
   if (!confirmedNow) {
+    // Antes de preguntar se mira el pedido: sin pedido, cancelado o ya en preparación no tiene sentido preguntar.
+    const blocked = await cancelPrecheck(t);
+    if (blocked) return blocked;
     // Primero se pregunta con plantilla fija; recién el mensaje siguiente del cliente puede cancelar.
     t.state.fixedReply = CANCEL_PROMPT;
     return { ok: false, note: "Se le preguntó al cliente si confirma la cancelación. Esperá su respuesta." };
@@ -344,6 +454,31 @@ export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!response.ok) return fail(t, response, "cancel");
   t.state.fixedReply = ORDER_REPLIES.cancelled;
   return { ok: true, note: "Ya se le avisó al cliente que el pedido quedó cancelado." };
+}
+
+/** Estados de un pedido ya hecho que todavía se pueden cancelar desde el bot (el servidor igual lo valida). */
+const CANCELLABLE = /^(recibid|cotizad|esperando|pendiente)/i;
+
+/** Mira el pedido antes de preguntar si cancela. Devuelve la respuesta ya armada cuando no hay nada que preguntar. */
+async function cancelPrecheck(t: OrderTurn): Promise<typeof SENT | null> {
+  const response = await t.client.status(common(t)).catch(() => null);
+  if (!response?.ok) return null; // Sin estado (red, piloto): se pregunta igual y el servidor decide.
+  const data = response.data;
+  if (data.found === false) {
+    // Solo había un resumen sin confirmar: no hay nada que cancelar ni cobrar, se descarta sin derivar.
+    if (t.recentQuote) {
+      t.state.fixedReply = ORDER_REPLIES.draftDropped;
+      return SENT;
+    }
+    return handOff(t, ORDER_REPLIES.noOrderHandoff);
+  }
+  if (data.awaiting_payment === true || typeof data.status !== "string") return null;
+  if (/^cancel/i.test(data.status)) {
+    t.state.fixedReply = ORDER_REPLIES.alreadyCancelled;
+    return SENT;
+  }
+  if (CANCELLABLE.test(data.status)) return null;
+  return handOff(t, `Tu pedido ya está "${oneLine(data.status, 40)}" y por acá no lo puedo cancelar. ${HANDOFF_SUFFIX}`);
 }
 
 /** Camino determinista: el cliente respondió SÍ a la pregunta de cancelación. */

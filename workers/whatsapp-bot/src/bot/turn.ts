@@ -19,8 +19,8 @@ import type { OrdersClient } from "../orders/client.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
-  ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices,
-  pendingOperation, type OrderTurn,
+  ORDER_STATE_SAFE_REPLY, asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
+  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -75,6 +75,42 @@ function historyMessages(items: { direction: "in" | "out"; body: string }[]): Ch
   return items.map((m) => (m.direction === "in" ? { role: "user", content: wrapUntrusted(m.body) } : { role: "assistant", content: m.body }));
 }
 
+/** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
+type DraftIssue = "empty" | "template" | "state" | "price" | "promise" | "blocked";
+
+const RETRY_HINT: Record<DraftIssue, string> = {
+  empty: "Tu respuesta anterior quedó vacía. Respondé ahora al cliente en 1 a 3 líneas.",
+  template: "No escribas resúmenes de pedido ni pidas que respondan SÍ: para cotizar llamá quote_order y el sistema manda el resumen.",
+  state: "No digas que el pedido está confirmado, pagado o en camino: eso lo informa solo el sistema.",
+  price: "No escribas montos calculados por vos: usá price_text/total_text tal cual o llamá quote_order.",
+  promise: "No prometas hacerlo después ni digas «un momento»: hacelo ahora con las herramientas o decí qué dato falta.",
+  blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
+};
+
+const SAFE_FALLBACK: Record<DraftIssue, string> = {
+  empty: REPLIES.failure,
+  template: ORDER_REPLIES.startOver,
+  state: ORDER_STATE_SAFE_REPLY,
+  price: PRICE_SAFE_REPLY,
+  promise: ORDER_REPLIES.startOver,
+  blocked: REPLIES.failure,
+};
+
+async function draftIssue(draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, order?: OrderTurn): Promise<DraftIssue | null> {
+  if (!draft.trim()) return "empty";
+  if (order && imitatesTemplate(draft)) return "template";
+  if (intent !== "pedido_estado" && claimsOrderState(draft)) return "state";
+  if (draft.includes("$")) {
+    const [menu, zones] = await Promise.all([deps.repo.menu(), deps.repo.zones()]);
+    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder])];
+    if (unknownPrices(draft, allowed).length > 0) return "price";
+  }
+  if (promisesLater(draft)) return "promise";
+  const appHost = new URL(deps.appUrl).host;
+  const check = withPrivacy(draft, inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] }));
+  return check.verdict === "block" ? "blocked" : null;
+}
+
 async function answer(
   turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps, order?: OrderTurn,
 ): Promise<TurnOutcome> {
@@ -93,66 +129,53 @@ async function answer(
       await deps.repo.setTakeover(id);
     },
   };
-  const draft = await respond(deps.run, {
-    system: buildResponderPrompt(settings, intent, conversation.displayName, suspicious, knowledge, lessons),
-    history: historyMessages(history),
-    userText: wrapUntrusted(turnText),
-    tools: suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order),
-  });
+  const system = buildResponderPrompt(settings, intent, conversation.displayName, suspicious, knowledge, lessons);
+  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order);
+  const ask = (extra?: string) =>
+    respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history), userText: wrapUntrusted(turnText), tools });
 
-  // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
-  if (order?.state.fixedReply) {
-    await reply(deps, conversation, order.state.fixedReply);
-    return "answered";
-  }
-
-  // El modelo preguntó a mano si cancela (en vez de cancel_order): se manda la plantilla oficial, que habilita el SÍ.
-  if (order && intent === "pedido_cancelar" && asksCancelConfirmation(draft)) {
-    await reply(deps, conversation, CANCEL_PROMPT);
-    return "answered";
-  }
-
-  // Con pedidos encendidos, un texto libre del modelo no puede imitar una plantilla (resumen, cancelar, reintento):
-  // esos textos habilitan un SÍ posterior y solo los manda el Worker.
-  if (order && imitatesTemplate(draft)) {
-    deps.log("[whatsapp-bot] el modelo imitó una plantilla de pedidos", { conversation: conversation.id });
-    await reply(deps, conversation, ORDER_REPLIES.unavailable);
-    return "output_blocked";
-  }
-
-  // Confirmado / pagado / en camino solo lo dicen las plantillas o order_status (intención pedido_estado).
-  if (intent !== "pedido_estado" && claimsOrderState(draft)) {
-    deps.log("[whatsapp-bot] el modelo afirmó un estado del pedido", { conversation: conversation.id, intent });
-    await reply(deps, conversation, ORDER_STATE_SAFE_REPLY);
-    return "output_blocked";
-  }
-
-  // Precios: todo monto del texto libre tiene que existir en el menú o en las zonas (o ser hasta 20 unidades).
-  if (draft.includes("$")) {
-    const [menu, zones] = await Promise.all([deps.repo.menu(), deps.repo.zones()]);
-    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder])];
-    const wrong = unknownPrices(draft, allowed);
-    if (wrong.length > 0) {
-      deps.log("[whatsapp-bot] precio fuera del menú", { conversation: conversation.id, intent, prices: wrong.slice(0, 5) });
-      await reply(deps, conversation, PRICE_SAFE_REPLY);
-      return "output_blocked";
+  let draft = await ask();
+  let issue: DraftIssue | null = null;
+  // Un reintento con la corrección: el cliente no recibe el mensaje genérico si el modelo lo puede arreglar.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
+    if (order?.state.fixedReply) {
+      await reply(deps, conversation, order.state.fixedReply, !order.state.handedOff && !handedOffNow);
+      return "answered";
     }
+    // El modelo preguntó a mano si cancela (en vez de cancel_order): se manda la plantilla oficial, que habilita el SÍ.
+    if (order && intent === "pedido_cancelar" && asksCancelConfirmation(draft)) {
+      await reply(deps, conversation, CANCEL_PROMPT);
+      return "answered";
+    }
+    issue = await draftIssue(draft, intent, conversation, deps, order);
+    // Sin problemas, o derivó en este turno (sale su mensaje si es válido, si no el aviso de traspaso).
+    if (!issue || handedOffNow) break;
+    deps.log("[whatsapp-bot] borrador descartado", { conversation: conversation.id, intent, issue, attempt });
+    if (attempt === 0) draft = await ask(RETRY_HINT[issue]);
   }
 
-  const appHost = new URL(deps.appUrl).host;
-  const check = withPrivacy(draft, inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] }));
   if (handedOffNow) {
-    await reply(deps, conversation, draft && check.verdict !== "block" ? draft : REPLIES.handoff, false);
+    await reply(deps, conversation, issue ? REPLIES.handoff : draft, false);
     return "answered";
   }
-  if (!draft || check.verdict === "block") {
-    deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: check.reasons, empty: !draft });
-    await reply(deps, conversation, REPLIES.failure);
-    await deps.repo.setTakeover(conversation.id);
+  if (issue) {
+    deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });
+    await reply(deps, conversation, SAFE_FALLBACK[issue]);
+    if (issue === "empty" || issue === "blocked") await deps.repo.setTakeover(conversation.id);
     return "output_blocked";
   }
   await reply(deps, conversation, draft);
   return "answered";
+}
+
+/** Un SÍ con pregunta ("¿cuánto tardan?") recibe la plantilla de pago y además la respuesta a su pregunta. */
+function withFollowUp(base: string, text: string, op: "confirm" | "cancel", settings: BotSettings): string {
+  if (op !== "confirm" || !base.startsWith("¡Listo! Para confirmar")) return base;
+  const q = trailingQuestion(text);
+  if (q === "demora") return `${base}\nLa demora estimada es de ${settings.estimatedMinutes} minutos desde que se acredita el pago.`;
+  if (q === "otra") return `${base}\nSi tenés otra consulta, escribime y te ayudo.`;
+  return base;
 }
 
 export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> {
@@ -201,13 +224,17 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     return "blocked";
   }
 
-  const lastBot = (await deps.repo.history(conversation.id, 4)).filter((m) => m.direction === "out").at(-1)?.body ?? null;
+  const outNewestFirst = (await deps.repo.history(conversation.id, 8)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
+  const lastBot = lastDecisiveBotMessage(outNewestFirst);
+  // Resumen vigente: el último mensaje "de sistema" del bot es un resumen (todavía sin link de pago ni cancelación).
+  const lastSystem = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
+  const recentQuote = lastSystem?.startsWith(QUOTE_MARKER) ?? false;
   const wamid = turn.wamids.at(-1);
   const order: OrderTurn | undefined =
     settings.ordersEnabled && deps.orders && wamid
       ? {
           client: deps.orders, repo: deps.repo, conversation, inboundWamid: wamid, inboundText: text,
-          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, appUrl: deps.appUrl, hours: settings.hours, state: newOrderState(),
+          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, recentQuote, appUrl: deps.appUrl, hours: settings.hours, state: newOrderState(),
         }
       : undefined;
 
@@ -217,7 +244,8 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     const direct = pending === "confirm" ? confirmAfterSummary : pending === "cancel" ? cancelAfterPrompt : null;
     if (direct) {
       await direct(order);
-      await reply(deps, conversation, order.state.fixedReply ?? REPLIES.failure);
+      const base = order.state.fixedReply ?? REPLIES.failure;
+      await reply(deps, conversation, withFollowUp(base, text, pending, settings), !order.state.handedOff);
       return "answered";
     }
   }

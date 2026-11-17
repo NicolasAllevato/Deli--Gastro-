@@ -58,6 +58,7 @@ function loadRegressions(): Promise<RegressionCase[]> | RegressionCase[] {
 async function simulate(scenario: Scenario, index: number): Promise<ConversationResult> {
   const phone = `549117${String(index).padStart(7, "0")}`;
   const conversation = await inbound.upsertConversation(phone, scenario.persona.split(",")[0]);
+  if (scenario.seedPaidMinutes !== undefined) orders.seedPaid(conversation.id, scenario.seedPaidMinutes);
   const transcript: TranscriptLine[] = [];
   const sent: string[] = [];
   const logs: string[] = [];
@@ -77,9 +78,10 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
   };
   try {
     for (let turn = 0; turn < scenario.maxTurns; turn++) {
-      const next = turn === 0 && scenario.opener
-        ? { message: scenario.opener, done: false }
-        : parseClientTurn(await chatJson(run, clientSystem(scenario), clientUser(transcript), 200));
+      const askClient = async () => parseClientTurn(await chatJson(run, clientSystem(scenario), clientUser(transcript), 200));
+      let next = turn === 0 && scenario.opener ? { message: scenario.opener, done: false, parsed: true } : await askClient();
+      // Un JSON roto del cliente simulado no corta la charla: se le vuelve a pedir una vez.
+      if (next.done && !next.message && !next.parsed) next = await askClient();
       if (next.done) break;
       transcript.push({ role: "cliente", text: next.message });
       const wamid = `sim-in-${index}-${++seq}`;

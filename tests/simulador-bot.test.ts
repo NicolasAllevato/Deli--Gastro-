@@ -83,27 +83,30 @@ describe("juez", () => {
   it("una queja sin derivar no es éxito aunque diga resuelto", () => {
     assert.equal(parseVerdict(raw, { type: "queja_reclamo", mustHandoff: true })?.exito, false);
   });
-  it("separa fallas del entorno de las del bot (no se aprenden)", () => {
+  it("el mensaje fijo de error y las respuestas vacías son fallas del bot (no se esconden como entorno)", () => {
     const failureReply = { ...falla, respuesta_mala: "Perdón, tuve un problema para responderte. Ya le avisamos al local" };
     const envByJudge = { ...falla, tipo: "otro", correccion: "Revisar herramienta", causa: "entorno" };
     const raw2 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [failureReply, envByJudge, { ...falla, tipo: "tono_frio", correccion: "Sé cálido." }] });
     const v = parseVerdict(raw2, { type: "pedido_cambios", mustHandoff: false });
     assert.ok(v);
-    assert.equal(v.fallas.length, 1);
-    assert.equal(v.fallas[0].tipo, "tono_frio");
-    assert.equal(v.fallasEntorno.length, 2);
-    assert.equal(v.entorno, true);
-    // Con señales técnicas en los logs, un "no_derivo" se atribuye al entorno.
-    const v2 = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [{ ...falla, tipo: "no_derivo" }] }), { type: "queja_reclamo", mustHandoff: true }, true);
-    assert.equal(v2?.fallas.length, 0);
-    assert.equal(v2?.entorno, true);
+    // Sin [sim] en los logs, "entorno" no alcanza: las tres cuentan como del bot.
+    assert.equal(v.fallas.length, 3);
+    assert.equal(v.fallasEntorno.length, 0);
+    assert.equal(v.entorno, false);
+    assert.equal(v.exito, false);
+  });
+  it("con un error real de la simulación ([sim]) la falla de entorno no se aprende ni cuenta", () => {
+    const env = { ...falla, tipo: "otro", correccion: "x", causa: "entorno" };
+    const v = parseVerdict(JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 3, fallas: [env] }), { type: "pedido_cambios", mustHandoff: false }, true);
+    assert.equal(v?.fallas.length, 0);
+    assert.equal(v?.fallasEntorno.length, 1);
+    assert.equal(v?.entorno, true);
   });
   it("los hechos observados ganan: si derivó, no hay 'no_derivo' y la queja queda resuelta", () => {
     const raw3 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [{ ...falla, tipo: "no_derivo" }, { ...falla, correccion: "x", causa: "cliente" }] });
     const v = parseVerdict(raw3, { type: "queja_reclamo", mustHandoff: true }, false, { handedOff: true });
     assert.equal(v?.derivo, true);
     assert.equal(v?.fallas.length, 0);
-    assert.equal(v?.fallasEntorno.length, 1);
     assert.equal(v?.exito, true);
   });
   it("'no_derivo' no cuenta en escenarios que no requieren derivar", () => {
@@ -111,8 +114,18 @@ describe("juez", () => {
     assert.equal(v?.fallas.length, 0);
     assert.equal(v?.exito, true);
   });
-  it("detecta señales técnicas en los logs", () => {
-    assert.equal(environmentSignals(['[whatsapp-bot] respuesta bloqueada {"empty":true}']), true);
+  it("cliente simulado que no completó su objetivo: fuera de la tasa solo si el bot no falló", () => {
+    const base = { resuelto: false, derivo: false, invento_precios: false, empatia: 4, cliente_incompleto: true };
+    const sinFalla = parseVerdict(JSON.stringify({ ...base, fallas: [] }), { type: "cancelacion", mustHandoff: false });
+    assert.equal(sinFalla?.entorno, true);
+    assert.equal(sinFalla?.clienteIncompleto, true);
+    const conFalla = parseVerdict(JSON.stringify({ ...base, fallas: [falla] }), { type: "cancelacion", mustHandoff: false });
+    assert.equal(conFalla?.entorno, false);
+    assert.equal(conFalla?.clienteIncompleto, false);
+  });
+  it("detecta solo errores propios de la simulación en los logs", () => {
+    assert.equal(environmentSignals(['[whatsapp-bot] respuesta bloqueada {"empty":true}']), false);
+    assert.equal(environmentSignals(["[sim] el mundo simulado falló"]), true);
     assert.equal(environmentSignals([]), false);
   });
   it("JSON roto o incompleto → null", () => {
@@ -137,9 +150,10 @@ describe("juez", () => {
 
 describe("cliente simulado", () => {
   it("parsea el próximo mensaje o el fin", () => {
-    assert.deepEqual(parseClientTurn('{"mensaje":"hola","fin":false}'), { message: "hola", done: false });
+    assert.deepEqual(parseClientTurn('{"mensaje":"hola","fin":false}'), { message: "hola", done: false, parsed: true });
     assert.equal(parseClientTurn('{"mensaje":"","fin":true}').done, true);
     assert.equal(parseClientTurn("roto").done, true);
+    assert.equal(parseClientTurn("roto").parsed, false);
   });
 });
 

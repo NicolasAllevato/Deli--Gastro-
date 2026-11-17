@@ -16,7 +16,7 @@ export interface ResponderInput {
 }
 
 /** Vueltas máximas modelo → herramienta → modelo: corta bucles y acota el costo. */
-export const MAX_STEPS = 4;
+export const MAX_STEPS = 5;
 const MAX_TOOL_RESULT_CHARS = 6000;
 
 function toolSpec(tool: BotTool) {
@@ -46,7 +46,10 @@ export async function respond(run: RunModel, input: ResponderInput, model: strin
   const tools = input.tools.map(toolSpec);
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const raw = await run(model, { messages, ...(tools.length > 0 ? { tools } : {}), max_tokens: 600, temperature: 0.2 });
+    // La última vuelta va sin herramientas: el modelo tiene que contestar con texto (nunca queda vacío por agotar pasos).
+    const last = step === MAX_STEPS - 1;
+    const toolOpts = tools.length > 0 ? { tools, ...(last ? { tool_choice: "none" } : {}) } : {};
+    const raw = await run(model, { messages, ...toolOpts, max_tokens: 600, temperature: 0.2 });
     const calls = responseToolCalls(raw);
     if (calls.length === 0) return cleanReply(responseText(raw));
 

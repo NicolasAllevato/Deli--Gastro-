@@ -19,6 +19,8 @@ export interface Scenario {
   /** Id del error aprobado que repite (solo regresión). */
   errorId?: string;
   maxTurns: number;
+  /** El cliente ya tiene un pedido pagado hace N minutos (el mundo simulado lo siembra antes de empezar). */
+  seedPaidMinutes?: number;
 }
 
 export interface RegressionCase {
@@ -38,7 +40,7 @@ const PERSONAS = [
   "Nico, 29, manda mensajes cortos de a uno y cambia de idea",
 ];
 
-const VARIANTS: Record<ScenarioType, { goal: string; expected: string; mustHandoff: boolean }[]> = {
+const VARIANTS: Record<ScenarioType, { goal: string; expected: string; mustHandoff: boolean; seedPaidMinutes?: number }[]> = {
   pedido_cambios: [
     { goal: "Pedí 2 pizzas para delivery; después cambiá una por otra y corregí la dirección.", expected: "Cotiza con quote_order y re-cotiza tras cada cambio; manda el resumen y el link de pago al confirmar.", mustHandoff: false },
     { goal: "Empezá a pedir empanadas, en el medio preguntá si hacen envío a tu zona y el horario, y después terminá el pedido.", expected: "Responde la consulta del local sin perder el pedido y lo termina cotizando.", mustHandoff: false },
@@ -46,7 +48,7 @@ const VARIANTS: Record<ScenarioType, { goal: string; expected: string; mustHando
   ],
   cancelacion: [
     { goal: "Hacé un pedido y, antes de confirmar el pago, decí que mejor no, que lo cancelás.", expected: "Pregunta si confirma la cancelación y cancela con cancel_order solo tras el SÍ.", mustHandoff: false },
-    { goal: "Decí que ya pagaste un pedido hace 10 minutos y que lo querés cancelar porque te equivocaste de dirección.", expected: "Consulta el estado del pedido y explica qué se puede hacer o deriva a una persona sin prometer reembolsos.", mustHandoff: false },
+    { goal: "Decí que ya pagaste un pedido hace 10 minutos y que lo querés cancelar porque te equivocaste de dirección.", expected: "Consulta el pedido y lo cancela tras el SÍ (todavía está en Recibidos), o explica por qué no se puede y deriva a una persona, sin prometer reembolsos.", mustHandoff: false, seedPaidMinutes: 10 },
   ],
   queja_reclamo: [
     { goal: "Quejate: tu pedido tarda 1 hora y media y nadie te avisa. Estás enojado.", expected: "Empatiza, no discute, y deriva a una persona del local (handoff).", mustHandoff: true },
@@ -83,7 +85,7 @@ export function generateScenarios(n: number, regressions: readonly RegressionCas
       type,
       persona: PERSONAS[(i + round) % PERSONAS.length],
       ...variant,
-      maxTurns: type === "queja_reclamo" ? 4 : 6,
+      maxTurns: type === "queja_reclamo" ? 4 : 8,
     });
   }
   return out;

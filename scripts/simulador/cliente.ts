@@ -20,12 +20,12 @@ export function clientUser(transcript: readonly TranscriptLine[]): string {
   return `Conversación hasta ahora:\n${chat}\n\nEscribí tu próximo mensaje.`;
 }
 
-export function parseClientTurn(raw: string): { message: string; done: boolean } {
+export function parseClientTurn(raw: string): { message: string; done: boolean; parsed: boolean } {
   try {
     const v = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { mensaje?: unknown; fin?: unknown };
     const message = typeof v.mensaje === "string" ? v.mensaje.trim().slice(0, 800) : "";
-    return { message, done: v.fin === true || !message };
+    return { message, done: v.fin === true || !message, parsed: true };
   } catch {
-    return { message: "", done: true };
+    return { message: "", done: true, parsed: false };
   }
 }

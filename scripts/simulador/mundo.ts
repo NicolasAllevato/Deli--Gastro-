@@ -122,40 +122,69 @@ export function menuText(db: { raw: DatabaseSync }): string {
   return rows.map((r) => `- ${r.name}: $${(r.price_cents / 100).toLocaleString("es-AR")}`).join("\n");
 }
 
-/** Pedidos en memoria por conversación: cotiza con los precios del menú local, nunca escribe pedidos. */
-export function fakeOrders(db: { raw: DatabaseSync }): OrdersClient {
-  const state = new Map<string, "cotizado" | "esperando_pago" | "cancelado">();
+/** Estado de un pedido simulado. `pagado` = ya pagado y en "Recibidos" (como un pedido real recién pagado). */
+type FakeState = "cotizado" | "esperando_pago" | "pagado" | "cancelado";
+
+export interface FakeOrders extends OrdersClient {
+  /** Siembra un pedido ya pagado hace `minutesAgo` minutos (escenario "ya pagué y quiero cancelar"). */
+  seedPaid(conversationId: string, minutesAgo: number): void;
+}
+
+/**
+ * Pedidos en memoria por conversación: cotiza con los precios del menú local, nunca escribe pedidos.
+ * Códigos y mensajes iguales a los del servidor real (src/lib/bot-internal + order-actions): así el bot ve lo mismo.
+ */
+export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
+  const state = new Map<string, { s: FakeState; at: number }>();
   const ok = (data: Record<string, unknown>): OrderResponse => ({ ok: true, status: 200, data: { ok: true, ...data } });
   const fail = (status: number, code: string, error: string): OrderResponse => ({ ok: false, kind: "api", status, code, error });
+  const set = (id: string, s: FakeState) => state.set(id, { s, at: Date.now() });
   return {
+    seedPaid(conversationId, minutesAgo) {
+      state.set(conversationId, { s: "pagado", at: Date.now() - minutesAgo * 60_000 });
+    },
     async quote(body) {
-      if (!body.address?.trim()) return fail(400, "missing_address", "Falta la dirección.");
+      if (!body.address?.trim()) return fail(400, "invalid", "Falta la dirección.");
       const lines = [];
       for (const item of body.items ?? []) {
         const p = db.raw.prepare("SELECT name, price_cents FROM products WHERE id = ? AND is_active = 1").get(item.product_id) as
           | { name: string; price_cents: number }
           | undefined;
-        if (!p) return fail(400, "unknown_product", `Producto inexistente: ${item.product_id}`);
+        if (!p) return fail(409, "product_unavailable", "Ese producto no está disponible.");
         lines.push({ name: p.name, qty: item.qty, price: p.price_cents / 100 });
       }
-      if (lines.length === 0) return fail(400, "empty_order", "El pedido está vacío.");
+      if (lines.length === 0) return fail(400, "invalid", "El pedido está vacío.");
       const subtotal = lines.reduce((s, l) => s + l.qty * l.price, 0);
-      state.set(body.conversationId, "cotizado");
+      // Una cotización nueva no pisa un pedido ya pagado (en el real, el pagado sigue y esto es un borrador aparte).
+      if (state.get(body.conversationId)?.s !== "pagado") set(body.conversationId, "cotizado");
       return ok({ lines, subtotal, delivery_fee: 1500, total: subtotal + 1500, resolved_address: body.address.trim() });
     },
     async confirm(body) {
-      if (state.get(body.conversationId) !== "cotizado") return fail(409, "no_quote", "No hay cotización vigente.");
-      state.set(body.conversationId, "esperando_pago");
+      if (state.get(body.conversationId)?.s !== "cotizado") return fail(409, "no_draft", "No hay un resumen vigente.");
+      set(body.conversationId, "esperando_pago");
       return ok({ awaiting_payment: true, payment_url: "https://mpago.la/simulacion", total: null });
     },
     async cancel(body) {
-      if (!state.has(body.conversationId)) return fail(404, "no_order", "No hay pedido en curso.");
-      state.set(body.conversationId, "cancelado");
-      return ok({});
+      const cur = state.get(body.conversationId);
+      if (cur?.s === "esperando_pago") {
+        set(body.conversationId, "cancelado");
+        return ok({ note: "Se canceló el pago pendiente. No se cobró nada." });
+      }
+      if (cur?.s === "pagado") {
+        if (Date.now() - cur.at > 15 * 60_000) return fail(409, "rejected", "Pasaron más de 15 minutos: ya no se puede cancelar.");
+        set(body.conversationId, "cancelado");
+        return ok({});
+      }
+      if (cur?.s === "cancelado") return fail(409, "rejected", "El pedido ya está cancelado.");
+      return fail(409, "rejected", "No encontré un pedido para cancelar.");
     },
     async status(body) {
-      const s = state.get(body.conversationId);
-      return s ? ok({ found: true, status: s, awaiting_payment: s === "esperando_pago", payment_url: s === "esperando_pago" ? "https://mpago.la/simulacion" : null }) : ok({ found: false });
+      const cur = state.get(body.conversationId);
+      // Un resumen sin confirmar no es un pedido (igual que el servidor real).
+      if (!cur || cur.s === "cotizado") return ok({ found: false });
+      if (cur.s === "esperando_pago") return ok({ found: true, awaiting_payment: true, total: null, payment_url: "https://mpago.la/simulacion" });
+      const minutes = Math.round((Date.now() - cur.at) / 60_000);
+      return ok({ found: true, order_code: "#SIM00001", status: cur.s === "pagado" ? "Recibidos" : "Cancelado", items: "pedido simulado", total: 15800, courier: null, minutes_since_order: minutes });
     },
   };
 }
