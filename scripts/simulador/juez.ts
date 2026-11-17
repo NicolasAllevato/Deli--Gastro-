@@ -1,9 +1,10 @@
 /**
  * Juez LLM: evalúa una conversación simulada. El parser no confía en el modelo: valida con zod y descarta lo inválido.
  */
-import { z } from "zod";
-import { ERROR_TIPOS, normalizeKey, sugerenciaKey, errorKey, type ErrorInput, type SugerenciaInput } from "../../src/lib/data/kb-aprendizaje.ts";
-import { KB_CATEGORIAS } from "../../src/lib/data/kb-negocio.ts";
+import type { ErrorInput, SugerenciaInput } from "../../src/lib/data/kb-aprendizaje.ts";
+import { extractJson, failureSchema, JUDGE_JSON_SHAPE, suggestionSchema, verdictSchema } from "../../src/lib/data/kb-juez.ts";
+
+export { dedupeFailures, dedupeSuggestions } from "../../src/lib/data/kb-juez.ts";
 import type { Scenario } from "./escenarios.ts";
 import { QUOTE_MARKER, unknownPrices } from "../../workers/whatsapp-bot/src/orders/flow.ts";
 
@@ -11,33 +12,6 @@ export interface TranscriptLine {
   role: "cliente" | "bot";
   text: string;
 }
-
-const failureSchema = z.object({
-  tipo: z.enum(ERROR_TIPOS),
-  mensaje_cliente: z.string().min(1).max(1000),
-  respuesta_mala: z.string().max(1000).default(""),
-  motivo: z.string().min(1).max(500),
-  correccion: z.string().min(1).max(300),
-  causa: z.enum(["bot", "entorno", "cliente"]).catch("bot"),
-});
-
-const suggestionSchema = z.object({
-  categoria: z.enum(KB_CATEGORIAS),
-  tema: z.string().min(1).max(120),
-  contenido: z.string().min(1).max(1000),
-  evidencia: z.string().max(2000).default(""),
-});
-
-const verdictSchema = z.object({
-  resuelto: z.boolean(),
-  derivo: z.boolean(),
-  invento_precios: z.boolean(),
-  empatia: z.number().min(1).max(5),
-  no_entendidas: z.array(z.string().max(200)).max(20).default([]),
-  fallas: z.array(z.unknown()).max(10).default([]),
-  sugerencias: z.array(z.unknown()).max(10).default([]),
-  cliente_incompleto: z.boolean().default(false),
-});
 
 export interface Verdict {
   resuelto: boolean;
@@ -61,10 +35,7 @@ export interface Verdict {
 export const JUDGE_SYSTEM = `Sos un evaluador estricto de un asistente de WhatsApp de un local de comida argentino.
 Recibís el escenario (objetivo del cliente y lo esperado del bot), el menú real y la conversación.
 Devolvé SOLO un JSON con esta forma:
-{"resuelto":bool,"derivo":bool,"invento_precios":bool,"empatia":1-5,"no_entendidas":["palabra o frase del cliente que el bot no entendió"],
- "fallas":[{"tipo":"precio_inventado|no_derivo|no_entendio|tono_frio|no_resolvio|otro","mensaje_cliente":"mensaje exacto del cliente","respuesta_mala":"respuesta exacta del bot","motivo":"por qué está mal","correccion":"regla corta e imperativa, una línea, para que no vuelva a pasar (sin datos personales)"}],
- "sugerencias":[{"categoria":"vocabulario|faq|politica|promo|otro","tema":"para vocabulario: cómo lo dice el cliente; para faq: la pregunta","contenido":"a qué se refiere / respuesta sugerida (sin inventar precios)","evidencia":"frase del cliente"}],
- "cliente_incompleto":bool}
+${JUDGE_JSON_SHAPE}
 Los mensajes que empiezan con "Resumen de tu pedido" o "¡Listo! Para confirmar" son plantillas del sistema con los montos
 del servidor: sus subtotales y totales son correctos por definición.
 Si el cliente dice que pagó y el sistema todavía dice que falta pagar, el bot hace bien en reenviar el link (no es falla).
@@ -103,17 +74,6 @@ export function buildJudgeInput(scenario: Scenario, menu: string, transcript: re
     "Logs técnicos del bot (vacío = sin errores):",
     logs.length ? logs.slice(0, 20).join("\n") : "(ninguno)",
   ].join("\n");
-}
-
-function extractJson(raw: string): unknown {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return null;
-  }
 }
 
 /** Parsea y valida la salida del juez; null si no sirve. Las fallas/sugerencias inválidas se descartan una por una. */
@@ -198,26 +158,4 @@ export function parseVerdict(
     exito,
     clienteIncompleto,
   };
-}
-
-/** Deduplica por la misma clave que usa la base (así el informe cuenta igual que kb_errores/kb_sugerencias). */
-export function dedupeFailures(items: readonly ErrorInput[]): Array<ErrorInput & { veces: number }> {
-  const map = new Map<string, ErrorInput & { veces: number }>();
-  for (const it of items) {
-    const key = errorKey(it);
-    const prev = map.get(key);
-    map.set(key, prev ? { ...prev, veces: prev.veces + 1 } : { ...it, veces: 1 });
-  }
-  return [...map.values()].sort((a, b) => b.veces - a.veces);
-}
-
-export function dedupeSuggestions(items: readonly SugerenciaInput[]): Array<SugerenciaInput & { veces: number }> {
-  const map = new Map<string, SugerenciaInput & { veces: number }>();
-  for (const it of items) {
-    if (!normalizeKey(it.tema)) continue;
-    const key = sugerenciaKey(it);
-    const prev = map.get(key);
-    map.set(key, prev ? { ...prev, veces: prev.veces + 1 } : { ...it, veces: 1 });
-  }
-  return [...map.values()].sort((a, b) => b.veces - a.veces);
 }

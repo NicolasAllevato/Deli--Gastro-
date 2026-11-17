@@ -219,6 +219,33 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
         : null;
     },
 
+    async customerProfile(phone) {
+      const tail = phoneTail(phone);
+      if (tail.length !== 10) return null;
+      // Todo por phone_digits: el perfil es siempre del mismo teléfono de la conversación, nunca de otro cliente.
+      const owned = "SELECT id FROM clients WHERE phone_digits = ? AND is_anonymous = 0";
+      const head = await db
+        .prepare(
+          `SELECT (SELECT name FROM clients WHERE phone_digits = ? AND is_anonymous = 0 ORDER BY created_at LIMIT 1) AS name,
+             (SELECT count(*) FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado') AS order_count,
+             (SELECT delivery_address FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado'
+                AND delivery_address IS NOT NULL AND trim(delivery_address) <> '' ORDER BY created_at DESC LIMIT 1) AS last_address`,
+        )
+        .bind(tail, tail, tail)
+        .first<{ name: string | null; order_count: number; last_address: string | null }>();
+      const orderCount = Number(head?.order_count ?? 0);
+      if (!head || (!head.name && orderCount === 0)) return null;
+      const { results } = await db
+        .prepare(
+          `SELECT oi.name AS name, sum(oi.qty) AS qty FROM order_items oi
+           WHERE oi.order_id IN (SELECT id FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado' ORDER BY created_at DESC LIMIT 20)
+           GROUP BY oi.name ORDER BY qty DESC, oi.name LIMIT 3`,
+        )
+        .bind(tail)
+        .all<{ name: string; qty: number }>();
+      return { name: head.name, orderCount, topProducts: results.map((r) => r.name), lastAddress: head.last_address };
+    },
+
     async setTakeover(conversationId) {
       await db.prepare("UPDATE wa_conversations SET human_takeover = 1 WHERE id = ?").bind(conversationId).run();
     },

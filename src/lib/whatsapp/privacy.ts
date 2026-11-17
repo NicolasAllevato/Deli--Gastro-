@@ -101,6 +101,52 @@ export function redactPii(text: string): string {
   return out;
 }
 
+export interface MaskContext {
+  /** Nombres propios conocidos del cliente (perfil de WhatsApp, ficha de cliente). */
+  names?: readonly (string | null | undefined)[];
+  /** Direcciones conocidas del cliente (ficha, pedidos): se reemplazan literalmente. */
+  addresses?: readonly (string | null | undefined)[];
+}
+
+const STREET_CUE = /\b(?:av(?:enida)?|calle|pasaje|pje|bv|boulevard|bulevar|diagonal|diag|ruta|camino)\.?\s+(?:[\p{L}.'°º]+\s+){0,4}\d{1,5}\b(?:\s*(?:piso|p|dpto|depto|dto|torre|lote|casa)\.?\s*\w{1,4})*/giu;
+const ADDRESS_CUE = /\b(direcci[oó]n|domicilio|vivo en|estoy en|mand[aá](?:lo|melo)? a|envi[aá](?:lo|melo)? a|traelo a|entregar en|entre calles)\b\s*:?\s*[^\n.!?]{3,80}/giu;
+const CAPITALIZED_ADDRESS = /\b(?:\p{Lu}[\p{L}.]+\s+){1,4}\d{3,5}\b/gu;
+const NAME_CUE = /\b(me llamo|mi nombre es|soy)\s+(\p{Lu}[\p{L}]+(?:\s+\p{Lu}[\p{L}]+)?)/gu;
+const DNI_NUMBER = /\b(dni|documento|d\.n\.i\.?)\b\D{0,25}\d{1,2}\.?\d{3}\.?\d{3}\b/giu;
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const fold = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/**
+ * Enmascara una transcripción ANTES de mandarla a un modelo externo: emails, tarjetas, CBU/CVU, DNI, teléfonos,
+ * direcciones y nombres propios del cliente. Prefiere enmascarar de más (un número de calle) a filtrar un dato.
+ */
+export function maskTranscriptPii(raw: string, ctx: MaskContext = {}): string {
+  let out = raw.replace(EMAIL, "[email]");
+  out = out.replace(CARD_CANDIDATE, (m) => (passesLuhn(m.replace(/\D/g, "")) ? "[tarjeta]" : m));
+  out = out.replace(/(?<!\d)\d{22}(?!\d)/g, "[cbu]");
+  out = out.replace(DNI_NUMBER, "[dni]");
+  for (const a of ctx.addresses ?? []) {
+    const t = a?.trim();
+    if (t && t.length >= 5) out = out.replace(new RegExp(escapeRe(t), "giu"), "[direccion]");
+  }
+  out = out.replace(STREET_CUE, "[direccion]");
+  out = out.replace(ADDRESS_CUE, (_m, cue: string) => `${cue} [direccion]`);
+  out = out.replace(CAPITALIZED_ADDRESS, "[direccion]");
+  out = out.replace(/\+?\d[\d\s().-]{5,}\d/g, (m) => (m.replace(/\D/g, "").length >= 7 ? "[telefono]" : m));
+  out = out.replace(NAME_CUE, (_m, cue: string) => `${cue} [nombre]`);
+  const parts = new Set<string>();
+  for (const n of ctx.names ?? []) {
+    for (const p of (n ?? "").split(/\s+/)) if (p.replace(/[^\p{L}]/gu, "").length >= 3) parts.add(p.replace(/[^\p{L}'-]/gu, ""));
+  }
+  for (const p of parts) {
+    const pattern = [...fold(p)].map((c) => (/[a-z]/i.test(c) ? `${escapeRe(c)}[\\u0300-\\u036f]?` : escapeRe(c))).join("");
+    // Sin importar acentos ("Martin" también tapa "Martín"): se compara en NFD y se vuelve a NFC.
+    out = out.normalize("NFD").replace(new RegExp(`(?<![\\p{L}\\u0300-\\u036f])${pattern}(?![\\p{L}])`, "giu"), "[nombre]").normalize("NFC");
+  }
+  return out;
+}
+
 /** Mensaje de error apto para logs (sin el objeto entero, que puede traer el cuerpo de la respuesta de Meta). */
 export function safeError(error: unknown): string {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "error desconocido";

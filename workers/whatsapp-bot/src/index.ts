@@ -20,6 +20,7 @@ import { loadD1BotSecrets, type BotSecrets } from "./secrets-d1.ts";
 import { safeError, workerLog } from "./privacy.ts";
 import { d1Ledger, handleDeadTurn, onceSend, turnKey } from "./turn-ledger.ts";
 import { REPLIES } from "./bot/prompts.ts";
+import { openAiJudge, runNightlyLearning } from "./learning/nightly.ts";
 
 export { ConversationBuffer } from "./conversation-buffer.ts";
 
@@ -44,6 +45,8 @@ export interface Env {
   SETTINGS_ENC_KEY?: string;
   /** Secret (wrangler secret put BOT_INTERNAL_SECRET, >= 32 caracteres, igual al de Vercel). Sin él los pedidos quedan apagados. */
   BOT_INTERNAL_SECRET?: string;
+  /** Secret (wrangler secret put OPENAI_API_KEY). Solo para el aprendizaje nocturno; sin él el cron no hace nada. */
+  OPENAI_API_KEY?: string;
 }
 
 const WEBHOOK_PATH = "/webhook";
@@ -266,7 +269,21 @@ async function consumeDeadTurns(batch: MessageBatch<InboundTurn>, env: Env): Pro
   }
 }
 
+/** Cron nocturno (etapa 3): analiza las conversaciones del día y deja aprendizajes pendientes. Solo con D1. */
+async function nightlyLearning(env: Env): Promise<void> {
+  if (!isD1(env)) {
+    workerLog("[whatsapp-bot] aprendizaje nocturno: requiere DATA_BACKEND=d1, no se analiza nada");
+    return;
+  }
+  const key = env.OPENAI_API_KEY?.trim();
+  await runNightlyLearning({ db: d1Db(env), judge: key ? openAiJudge(key) : null, log: workerLog });
+}
+
 export default {
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(nightlyLearning(env).catch((error: unknown) => console.error("[whatsapp-bot] aprendizaje nocturno", safeError(error))));
+  },
+
   async queue(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
     if (batch.queue === DEAD_LETTER_QUEUE) {
       await consumeDeadTurns(batch, env);

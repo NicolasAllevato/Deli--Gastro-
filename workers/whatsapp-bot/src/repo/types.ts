@@ -85,6 +85,20 @@ export interface OrderInfo {
   createdAt: Date;
 }
 
+/**
+ * Perfil del cliente habitual (etapa 2), derivado en vivo de clients/orders/order_items por los últimos 10 dígitos
+ * del teléfono. Solo se usa en la conversación de ese mismo teléfono. Sin medio de pago, a propósito.
+ */
+export interface CustomerProfile {
+  name: string | null;
+  /** Pedidos no cancelados. */
+  orderCount: number;
+  /** Hasta 3 productos más pedidos (por cantidad) en los últimos 20 pedidos. */
+  topProducts: string[];
+  /** Dirección del último pedido no cancelado con dirección. Nunca se usa sin que el cliente la confirme. */
+  lastAddress: string | null;
+}
+
 /** Acceso a la base del bot (respondedores). SQL en producción, memoria en los tests. */
 export interface BotRepo {
   getConversation(phone: string): Promise<BotConversation | null>;
@@ -99,6 +113,8 @@ export interface BotRepo {
   /** Correcciones de errores aprobados (kb_errores): "Errores a evitar" en el prompt. Opcional como `knowledge`. */
   lessons?(): Promise<string[]>;
   latestOrder(clientId: string): Promise<OrderInfo | null>;
+  /** Perfil del cliente habitual de ESE teléfono; null si es nuevo. Opcional: sin él, nada cambia. */
+  customerProfile?(phone: string): Promise<CustomerProfile | null>;
   setTakeover(conversationId: string): Promise<void>;
   /** Alta/baja de promociones para todas las filas de clientes con ese teléfono; devuelve cuántas cambió. */
   setMarketingOptIn(phone: string, optIn: boolean): Promise<number>;

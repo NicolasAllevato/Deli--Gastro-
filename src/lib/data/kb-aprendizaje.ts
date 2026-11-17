@@ -21,8 +21,21 @@ export interface KbSugerencia {
   contenido: string;
   evidencia: string;
   veces: number;
+  origen: KbOrigen;
   updated_at: string;
 }
+
+export const KB_ORIGENES = ["simulacion", "conversacion"] as const;
+export type KbOrigen = (typeof KB_ORIGENES)[number];
+
+/** Cómo se registra lo aprendido: de dónde viene y cuántas veces apareció en la corrida (dedupe previo). */
+export interface RecordOptions {
+  origen?: KbOrigen;
+  veces?: number;
+}
+
+const vecesOf = (o: RecordOptions): number => Math.max(1, Math.min(10_000, Math.trunc(o.veces ?? 1)));
+const origenOf = (o: RecordOptions): KbOrigen => (o.origen === "conversacion" ? "conversacion" : "simulacion");
 
 export interface KbError {
   id: string;
@@ -35,6 +48,7 @@ export interface KbError {
   veces: number;
   estado: "pendiente" | "aprobada" | "rechazada" | "desactivada";
   ultima_prueba: "ok" | "falla" | null;
+  origen: KbOrigen;
   updated_at: string;
 }
 
@@ -72,7 +86,7 @@ const clip = (s: string | undefined, max: number): string => (s ?? "").replace(/
 
 // --- Escrituras del simulador (deduplican y suman `veces`). ---------------------------------------------------
 
-export async function recordSugerencia(db: SqlDatabase, actor: Actor, id: string, s: SugerenciaInput): Promise<void> {
+export async function recordSugerencia(db: SqlDatabase, actor: Actor, id: string, s: SugerenciaInput, opts: RecordOptions = {}): Promise<void> {
   requireStaff(actor);
   if (!(KB_CATEGORIAS as readonly string[]).includes(s.categoria)) throw new Error("Categoría inválida");
   const tema = clip(s.tema, 120);
@@ -80,14 +94,15 @@ export async function recordSugerencia(db: SqlDatabase, actor: Actor, id: string
   if (!tema || !contenido) throw new Error("Sugerencia vacía");
   await db
     .prepare(
-      `INSERT INTO kb_sugerencias (id, clave, categoria, tema, contenido, evidencia) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT (clave) DO UPDATE SET veces = veces + 1, updated_at = ?`,
+      `INSERT INTO kb_sugerencias (id, clave, origen, categoria, tema, contenido, evidencia, veces) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (clave) DO UPDATE SET veces = veces + excluded.veces, updated_at = ?`,
     )
-    .bind(id, sugerenciaKey(s), s.categoria, tema, contenido, clip(s.evidencia, 2000), nowIso())
+    .bind(id, sugerenciaKey(s), origenOf(opts), s.categoria, tema, contenido, clip(s.evidencia, 2000), vecesOf(opts), nowIso())
     .run();
 }
 
-export async function recordError(db: SqlDatabase, actor: Actor, id: string, e: ErrorInput): Promise<void> {
+/** Requiere la migración 0013 (columna `origen` en kb_errores). */
+export async function recordError(db: SqlDatabase, actor: Actor, id: string, e: ErrorInput, opts: RecordOptions = {}): Promise<void> {
   requireStaff(actor);
   if (!(ERROR_TIPOS as readonly string[]).includes(e.tipo)) throw new Error("Tipo inválido");
   const mensaje = clip(e.mensaje_cliente, 1000);
@@ -96,10 +111,10 @@ export async function recordError(db: SqlDatabase, actor: Actor, id: string, e: 
   if (!mensaje || !motivo || !correccion) throw new Error("Error incompleto");
   await db
     .prepare(
-      `INSERT INTO kb_errores (id, clave, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (clave) DO UPDATE SET veces = veces + 1, updated_at = ?`,
+      `INSERT INTO kb_errores (id, clave, origen, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (clave) DO UPDATE SET veces = veces + excluded.veces, updated_at = ?`,
     )
-    .bind(id, errorKey(e), clip(e.escenario, 60) || "otro", e.tipo, mensaje, clip(e.respuesta_mala, 1000), motivo, correccion, nowIso())
+    .bind(id, errorKey(e), origenOf(opts), clip(e.escenario, 60) || "otro", e.tipo, mensaje, clip(e.respuesta_mala, 1000), motivo, correccion, vecesOf(opts), nowIso())
     .run();
 }
 
@@ -115,7 +130,7 @@ export async function setRegressionResult(db: SqlDatabase, actor: Actor, id: str
 export async function listSugerencias(db: SqlDatabase, actor: Actor): Promise<KbSugerencia[]> {
   requireStaff(actor);
   const { results } = await db
-    .prepare(`SELECT id, estado, categoria, tema, contenido, evidencia, veces, updated_at FROM kb_sugerencias ORDER BY estado = 'pendiente' DESC, veces DESC, updated_at DESC LIMIT 300`)
+    .prepare(`SELECT id, estado, categoria, tema, contenido, evidencia, veces, origen, updated_at FROM kb_sugerencias ORDER BY estado = 'pendiente' DESC, veces DESC, updated_at DESC LIMIT 300`)
     .all<KbSugerencia>();
   return results;
 }
@@ -123,7 +138,7 @@ export async function listSugerencias(db: SqlDatabase, actor: Actor): Promise<Kb
 export async function listErrores(db: SqlDatabase, actor: Actor): Promise<KbError[]> {
   requireStaff(actor);
   const { results } = await db
-    .prepare(`SELECT id, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces, estado, ultima_prueba, updated_at FROM kb_errores ORDER BY estado = 'pendiente' DESC, veces DESC, updated_at DESC LIMIT 300`)
+    .prepare(`SELECT id, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces, estado, ultima_prueba, origen, updated_at FROM kb_errores ORDER BY estado = 'pendiente' DESC, veces DESC, updated_at DESC LIMIT 300`)
     .all<KbError>();
   return results;
 }
@@ -132,7 +147,7 @@ export async function listErrores(db: SqlDatabase, actor: Actor): Promise<KbErro
 export async function regressionCases(db: SqlDatabase, actor: Actor): Promise<KbError[]> {
   requireStaff(actor);
   const { results } = await db
-    .prepare(`SELECT id, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces, estado, ultima_prueba, updated_at FROM kb_errores WHERE estado = 'aprobada' ORDER BY veces DESC LIMIT 100`)
+    .prepare(`SELECT id, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces, estado, ultima_prueba, origen, updated_at FROM kb_errores WHERE estado = 'aprobada' ORDER BY veces DESC LIMIT 100`)
     .all<KbError>();
   return results;
 }
@@ -151,7 +166,7 @@ export type Decision = z.infer<typeof decisionSchema>;
 /** Aprueba una sugerencia: la copia a kb_negocio (activa) y la marca aprobada. Devuelve false si no estaba pendiente. */
 export async function approveSugerencia(db: SqlDatabase, actor: Actor, id: string, newKbId: string): Promise<boolean> {
   requireStaff(actor);
-  const row = await db.prepare(`SELECT id, estado, categoria, tema, contenido, evidencia, veces, updated_at FROM kb_sugerencias WHERE id = ?`).bind(id).first<KbSugerencia>();
+  const row = await db.prepare(`SELECT id, estado, categoria, tema, contenido, evidencia, veces, origen, updated_at FROM kb_sugerencias WHERE id = ?`).bind(id).first<KbSugerencia>();
   if (!row || row.estado !== "pendiente") return false;
   await db.batch([
     db.prepare("INSERT INTO kb_negocio (id, categoria, tema, contenido) VALUES (?, ?, ?, ?)").bind(newKbId, row.categoria, row.tema, row.contenido),

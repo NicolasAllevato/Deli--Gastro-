@@ -55,6 +55,7 @@ max_retries = 3
 # Secrets (no van en este archivo; se cargan con `npx wrangler secret put <NOMBRE>`):
 #   BOT_INTERNAL_SECRET  Fase 5. Firma las llamadas a /api/internal/bot/*. Idéntico al de Vercel (Production y Preview),
 #                        >= 32 caracteres, sin BOM ni espacios. Sin él, el bot deriva los pedidos a la web.
+#   OPENAI_API_KEY       Aprendizaje nocturno (cron). Sin él el cron no analiza nada.
 # Migración a D1 (docs/migracion-supabase-d1.md): base deli-gastro. Solo se usa si DATA_BACKEND es "dual" o "d1".
 [[d1_databases]]
 binding = "D1"
@@ -67,6 +68,11 @@ database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
 #   WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN
 DATA_BACKEND = "d1"
 APP_URL = "https://opsyndely.la-gambeta.com"
+
+# Etapa 3: aprendizaje nocturno desde conversaciones reales, 06:00 UTC (03:00 AR). Necesita el secret OPENAI_API_KEY
+# (sin él no hace nada) y la migración d1/migrations/0013 aplicada.
+[triggers]
+crons = ["0 6 * * *"]
 
 [observability]
 enabled = true
