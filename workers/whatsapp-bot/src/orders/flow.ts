@@ -211,7 +211,18 @@ export function trailingQuestion(text: string): "demora" | "pago" | "otra" | nul
 
 /** "Ya pagué", "hice el pago": siempre es una consulta de estado del pedido. */
 export function saysPaid(text: string): boolean {
-  return /\b(ya )?(pague|pagamos|hice el pago|realice el pago|transferi)\b|\bya (lo )?pag/.test(normalizeAnswer(text));
+  return /\b(ya )?(pague|pagamos|hice el pago|realice el pago|transferi)\b|\bya (lo )?pag|\b(ya |se )acredit/.test(normalizeAnswer(text));
+}
+
+/**
+ * Mensaje de cierre o de "avisame cuando salga" (gracias, genial, espero que llegue, me avisan...). Sin pedidos ni
+ * cambios ni preguntas por el estado puntual: se contesta con calidez desde una plantilla, sin afirmar estados.
+ */
+export function isClosingMessage(text: string): boolean {
+  const n = normalizeAnswer(text);
+  if (!n || n.split(" ").length > 30) return false;
+  if (/\b(cambi|cancel|agreg|direcci|quiero|pedir|cuanto|tarda|demora|ya sali|donde esta|no lleg)/.test(n)) return false;
+  return /^(gracias|genial|perfecto|dale|ok|buenisimo|joya|barbaro|de una|listo|uh|ay|bueno)\b|\b(me avisan|avisen|avisame|avisenme|me avisas|me podes avisar|pueden avisarme|espero (que |q )?llegue|estare atent|estoy atent|que llegue|gracias)\b/.test(n);
 }
 
 /** Texto libre que promete hacer algo después ("un momento", "voy a intentar de nuevo"): nunca llega, se reintenta. */

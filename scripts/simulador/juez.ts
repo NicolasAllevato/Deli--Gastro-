@@ -166,7 +166,7 @@ export function parseVerdict(
     // "precio_inventado" contra el hecho medido: sin montos inventados en el código, es un error del juez.
     if (rest.tipo === "precio_inventado" && facts.pricesInvented === false) return [];
     // "Confirmó sin pago" cuando el pago SÍ se acreditó en el mundo: error del juez, no del bot.
-    if (facts.paymentAccredited && /sin (que )?(se )?(haya )?(acredit|pag)|sin pago|no se (ha|había) acreditado|no reconoce que el pago/i.test(rest.motivo)) return [];
+    if (facts.paymentAccredited && /acredit|sin pago|sin (que )?(se )?(haya )?pag|mensaje de pago|no reconoce que el pago/i.test(rest.motivo)) return [];
     // "entorno" solo vale con una señal real de la simulación en los logs; si no, es del bot (no se aflojan fallas).
     // "cliente" (el simulado abandonó) no se aprende.
     if (causa === "cliente") return [];

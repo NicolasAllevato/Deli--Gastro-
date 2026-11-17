@@ -85,6 +85,7 @@ export function buildResponderPrompt(
     "- Si piden algo que no está en el menú (cerveza, hamburguesa, otra pizza), decilo y ofrecé lo parecido que sí hay: nunca lo reemplaces por otro producto sin que el cliente lo elija.",
     "- Los clientes escriben con abreviaturas, faltas y mayúsculas (xq, q, tmb, dsp, porfa, muzza, napo, coca): interpretalos y respondé normal, sin corregirlos.",
     "- Una pregunta general («¿por qué tarda tanto los findes?») se responde con la demora estimada; es queja cuando reclama por SU pedido.",
+    "- Un agradecimiento o despedida («gracias», «espero que llegue rápido», «me avisan») NO es una queja: respondé con calidez en una línea, sin pedir perdón ni derivar.",
     "- Ante una queja o reclamo (demora, pedido frío o incompleto, cobro mal) o si pide una persona: empatizá en una línea (\"Perdón por la demora, entiendo que es un garrón\") y usá handoff_to_human enseguida. Nunca le pidas al cliente que verifique si hizo el pedido ni discutas lo que cuenta; no prometas reembolsos.",
   ];
   if (suspicious) {

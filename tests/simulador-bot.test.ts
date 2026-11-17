@@ -176,6 +176,9 @@ describe("juez: pago acreditado en el mundo", () => {
     const raw = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [f] });
     const ok = parseVerdict(raw, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: true });
     assert.equal(ok?.fallas.length, 0);
+    const otraForma = { ...f, motivo: "El bot no debería confirmar el pedido hasta que se acredite el pago." };
+    const raw2 = JSON.stringify({ resuelto: false, derivo: false, invento_precios: false, empatia: 4, fallas: [otraForma] });
+    assert.equal(parseVerdict(raw2, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: true })?.fallas.length, 0);
     const sinPago = parseVerdict(raw, { type: "jerga_errores", mustHandoff: false }, false, { paymentAccredited: false });
     assert.equal(sinPago?.fallas.length, 1);
   });

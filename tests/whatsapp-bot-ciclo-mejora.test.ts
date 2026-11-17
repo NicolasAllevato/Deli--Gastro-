@@ -12,7 +12,8 @@ import type { OrdersClient, OrderResponse } from "../workers/whatsapp-bot/src/or
 import { respond, MAX_STEPS } from "../workers/whatsapp-bot/src/ai/responder.ts";
 import { toolsForIntent } from "../workers/whatsapp-bot/src/guardrails.ts";
 import { toolsFor } from "../workers/whatsapp-bot/src/bot/tools.ts";
-import { afterPaymentHandoff, lastQuoteAddress, PAID_CHANGE_HANDOFF, PAYMENT_PENDING_HANDOFF } from "../workers/whatsapp-bot/src/bot/turn.ts";
+import { afterPaymentHandoff, closingAfterPayment, CLOSING_PAID, CLOSING_PENDING, lastQuoteAddress, PAID_CHANGE_HANDOFF, PAYMENT_PENDING_HANDOFF } from "../workers/whatsapp-bot/src/bot/turn.ts";
+import { isClosingMessage } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { buildResponderPrompt } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { fakeOrders, openSimDb, seedWorld } from "../scripts/simulador/mundo.ts";
@@ -286,6 +287,41 @@ describe("ronda 5: después del link de pago", () => {
     const quote = `${QUOTE_MARKER}:\n• 1 x Muzza — $12.500\nDirección: AVENIDA SANTA FE 1234, PALERMO\nPago: Mercado Pago`;
     assert.equal(lastQuoteAddress(["Listo, dejamos ese pedido sin confirmar", quote]), "AVENIDA SANTA FE 1234, PALERMO");
     assert.equal(lastQuoteAddress(["hola"]), null);
+  });
+});
+
+describe("ronda 6: cierres con calidez y sin afirmar estados", () => {
+  function turnWith(status: Record<string, unknown>, recentPayment = true): OrderTurn {
+    const ok = { ok: true, status: 200, data: { ok: true, ...status } } as OrderResponse;
+    return {
+      client: { status: async () => ok } as unknown as OrdersClient, repo: {} as OrderTurn["repo"],
+      conversation: { id: "c1", phone: "1" } as OrderTurn["conversation"], inboundWamid: "w", inboundText: "", hasAudio: false,
+      lastBotMessage: null, recentPayment, appUrl: "https://x.test", hours: { open: "00:00", close: "23:59" }, state: newOrderState(),
+    };
+  }
+  it("reconoce cierres y pedidos de aviso, no cambios ni reclamos", () => {
+    for (const t of [
+      "Gracias! Estoy con mucha hambre, así que espero que llegue rápido! 😋🍕", "cuando salga el pedido me avisan por favor 😂🍕",
+      "¿Pueden avisarme cuando salga el delivery? así no me pierdo el momento! 😅", "Perfecto, muchas gracias por la info. Estaré atenta. 😊",
+    ]) assert.equal(isClosingMessage(t), true, t);
+    for (const t of ["gracias, pero quiero cambiar la dirección", "ya pasaron 40 min y no llegó", "gracias! cuánto tarda?", "quiero pedir otra"]) {
+      assert.equal(isClosingMessage(t), false, t);
+    }
+  });
+  it("pagado: agradece y avisa que le escriben cuando salga; pendiente: sale cuando se acredite", async () => {
+    const msg = "cuando salga el pedido me avisan por favor 😂🍕";
+    assert.equal(await closingAfterPayment(turnWith({ found: true, status: "Recibidos" }), "saludo", msg), CLOSING_PAID);
+    assert.equal(await closingAfterPayment(turnWith({ found: true, awaiting_payment: true }), "saludo", msg), CLOSING_PENDING);
+    assert.equal(await closingAfterPayment(turnWith({ found: true, status: "Recibidos" }, false), "saludo", msg), null);
+    // "Ya pagué" no es un cierre: va a la consulta de estado.
+    assert.equal(await closingAfterPayment(turnWith({ found: true, status: "Recibidos" }), "saludo", "listo, ya pagué, gracias!"), null);
+    for (const r of [CLOSING_PAID, CLOSING_PENDING]) assert.doesNotMatch(r, /perd[oó]n|en camino ya|est[aá] en camino\b/i);
+  });
+  it("'ya acreditó el pago' cuenta como aviso de pago", () => {
+    assert.equal(saysPaid("Listo, ya acreditó el pago. ¿Me pueden confirmar el pedido?"), true);
+  });
+  it("el prompt aclara que un gracias no es una queja", () => {
+    assert.match(buildResponderPrompt(settingsFromConfig({}), "saludo", null, false), /NO es una queja/);
   });
 });
 

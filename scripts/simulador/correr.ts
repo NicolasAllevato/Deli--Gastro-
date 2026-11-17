@@ -96,7 +96,7 @@ async function simulate(scenario: Scenario, index: number): Promise<Conversation
       }
       transcript.push({ role: "cliente", text: next.message });
       // "Ya pagué": en el mundo simulado el pago se acredita (si había un link pendiente).
-      if (/pagu[eé]|ya (lo )?pag|hice el pago|realic[eé] el pago|confirm[eé] el pago|ya transfer/i.test(next.message) && orders.markPaid(conversation.id)) {
+      if (/pagu[eé]|ya (lo )?pag|hice el pago|realic[eé] el pago|confirm[eé] el pago|ya (se )?acredit|ya transfer/i.test(next.message) && orders.markPaid(conversation.id)) {
         // El juez tiene que ver el hecho del mundo: Mercado Pago acreditó el pago (si no, cree que el bot inventa).
         transcript.push({ role: "bot", text: "[sistema: Mercado Pago acreditó el pago del pedido]" });
       }

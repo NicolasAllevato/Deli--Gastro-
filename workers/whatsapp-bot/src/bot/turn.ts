@@ -20,7 +20,7 @@ import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, runCancel, saysPaid, type OrderTurn,
+  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -294,6 +294,12 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     await reply(deps, conversation, disabledReply(deps.appUrl));
     return "order_redirect";
   }
+  // Cierre o "me avisan cuando salga" después del link de pago: calidez + el estado real (sin inventarlo).
+  const closing = order ? await closingAfterPayment(order, intent, text) : null;
+  if (closing) {
+    await reply(deps, conversation, closing);
+    return "answered";
+  }
   const early = order ? await afterPaymentHandoff(order, intent, text, outNewestFirst) : null;
   if (early) {
     await deps.repo.setTakeover(conversation.id);
@@ -301,6 +307,18 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     return "answered";
   }
   return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst));
+}
+
+export const CLOSING_PAID = "¡Gracias a vos! 😊 Tu pago ya está acreditado: te avisamos por acá cuando tu pedido salga 🛵";
+export const CLOSING_PENDING = "¡Gracias! 😊 Apenas se acredite el pago con Mercado Pago tu pedido sale, y te avisamos por acá cuando esté en camino 🛵";
+
+/** Respuesta fija y cálida a un cierre después del link de pago, según el estado real del pago. */
+export async function closingAfterPayment(order: OrderTurn, intent: Intent, text: string): Promise<string | null> {
+  if (!order.recentPayment || !isClosingMessage(text) || saysPaid(text)) return null;
+  if (!(["saludo", "otro", "pedido_estado", "pedido_confirmar", "consulta_local"] as Intent[]).includes(intent)) return null;
+  const st = await order.client.status({ conversationId: order.conversation.id, inboundWamid: order.inboundWamid }).catch(() => null);
+  if (!st?.ok || st.data.found !== true) return null;
+  return st.data.awaiting_payment === true ? CLOSING_PENDING : CLOSING_PAID;
 }
 
 export const PAID_CHANGE_HANDOFF = "Como tu pedido ya está pagado, el cambio lo hace una persona del local 🙏 Ya te paso con alguien para actualizarlo.";
