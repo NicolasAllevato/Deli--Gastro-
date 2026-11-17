@@ -48,6 +48,17 @@ interface GraphError {
   error?: { message?: string };
 }
 
+/** Meta: "Recipient phone number not in allowed list" (lista de destinatarios del número de prueba). */
+const NOT_ALLOWED_CODE = "131030";
+
+/**
+ * Celulares de Argentina: WhatsApp los informa con el 9 (549 + 10 dígitos), pero la lista de destinatarios
+ * permitidos del número de prueba de Meta los guarda sin el 9. Devuelve la variante sin 9, o null.
+ */
+export function argentinaWithoutNine(to: string): string | null {
+  return /^549\d{10}$/.test(to) ? `54${to.slice(3)}` : null;
+}
+
 /** Cliente mínimo de la WhatsApp Cloud API. `fetchImpl` se inyecta para poder probarlo. */
 export function createWhatsAppClient(creds: WhatsAppCredentials, fetchImpl: typeof fetch = fetch) {
   const authHeaders = { Authorization: `Bearer ${creds.accessToken}` };
@@ -69,6 +80,18 @@ export function createWhatsAppClient(creds: WhatsAppCredentials, fetchImpl: type
   }
 
   async function send(to: string, message: Record<string, unknown>): Promise<string> {
+    try {
+      return await sendOnce(to, message);
+    } catch (error: unknown) {
+      const alt = argentinaWithoutNine(to);
+      if (alt && error instanceof WhatsAppApiError && error.message.includes(NOT_ALLOWED_CODE)) {
+        return sendOnce(alt, message);
+      }
+      throw error;
+    }
+  }
+
+  async function sendOnce(to: string, message: Record<string, unknown>): Promise<string> {
     const json = await call<{ messages?: Array<{ id: string }> }>(`${GRAPH_URL}/${creds.phoneNumberId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
