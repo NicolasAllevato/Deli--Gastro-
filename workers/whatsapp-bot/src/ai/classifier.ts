@@ -1,4 +1,4 @@
-import { MODELS, responseText, type RunModel } from "./models.ts";
+import { MODELS, responseText, runWithFallback, type RunModel } from "./models.ts";
 
 export const INTENTS = [
   "consulta_local",
@@ -35,16 +35,33 @@ Intenciones:
 - pedido_cancelar: quiere cancelar
 - humano: queja o pide hablar con una persona
 - saludo: saludo o agradecimiento
-- otro: sin sentido o fuera de tema`;
+- otro: sin sentido o fuera de tema
+
+Vocabulario rioplatense (son comidas y pedidos, no otra cosa):
+- "muzza"/"muza" = pizza de muzzarella; "napo" = napolitana; "fugazzeta"/"fuga", "calabresa", "4 quesos", "de jamón", "de jamón y morrón" = gustos de pizza o empanada.
+- "una grande", "una chica", "media muzza y media napo", "una de jamón" = pizzas; "fainá" = porción de fainá; "docena"/"media docena" = empanadas.
+- "para llevar", "retiro", "paso a buscar" = retiro en el local; "envío", "me lo mandás", "delivery" = envío a domicilio.
+Ejemplos:
+- "quería pedirte una muzza grande" → pedido_nuevo
+- "me mandás una docena de empanadas de carne?" → pedido_nuevo
+- "dame una de jamón y una fainá" → pedido_nuevo
+- "media muzza media napo para llevar" → pedido_nuevo
+- "cuánto sale la fugazzeta?" → consulta_menu
+- "qué tenés?" / "pasame la carta" / "qué pizzas hay?" → consulta_menu
+- "tienen empanadas?" → consulta_menu
+- "hacen envío a Palermo?" / "hasta qué hora están?" → consulta_local
+- "hola" / "buenas" / "buen día" → saludo`;
 
 const SCHEMA = {
   type: "json_schema",
   json_schema: {
     name: "intent",
+    strict: true,
     schema: {
       type: "object",
       properties: { intent: { type: "string", enum: INTENTS }, confidence: { type: "number" } },
       required: ["intent", "confidence"],
+      additionalProperties: false,
     },
   },
 };
@@ -63,12 +80,14 @@ export function parseClassification(raw: string): Classification {
 }
 
 /** Clasifica el turno (texto ya envuelto con `wrapUntrusted`). */
+export const CLASSIFIER_PROMPT = SYSTEM;
+
 export async function classify(run: RunModel, wrappedText: string, lastBotMessage: string | null): Promise<Classification> {
   const messages = [{ role: "system", content: SYSTEM }];
   if (lastBotMessage) messages.push({ role: "assistant", content: lastBotMessage });
   messages.push({ role: "user", content: wrappedText });
   try {
-    const raw = await run(MODELS.classifier, { messages, response_format: SCHEMA, max_tokens: 100, temperature: 0 });
+    const raw = await runWithFallback(run, MODELS.classifier, MODELS.classifierFallback, { messages, response_format: SCHEMA, max_tokens: 100, temperature: 0 });
     return parseClassification(responseText(raw));
   } catch {
     return FALLBACK;

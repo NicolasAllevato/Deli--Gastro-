@@ -12,9 +12,10 @@ import { inspectInbound, inspectOutbound, wrapUntrusted } from "../guardrails.ts
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
-import { buildResponderPrompt, closedTicketReply, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
+import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
-import { isNewConversation, promosForToday, renderGreeting } from "./greeting.ts";
+import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
+import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import { withPrivacy } from "../privacy.ts";
@@ -31,6 +32,8 @@ export interface TurnDeps {
   transcribe: (mediaId: string) => Promise<string | null>;
   /** Envía un texto por la Cloud API y devuelve el wamid. */
   send: (phone: string, text: string) => Promise<string>;
+  /** Envía un documento (la carta en PDF) por link público y devuelve el wamid. Sin él no se manda la carta. */
+  sendDocument?: (phone: string, url: string, filename: string, caption?: string) => Promise<string>;
   /** URL pública de la app (links permitidos en las respuestas). */
   appUrl: string;
   /** Cliente firmado de los endpoints de pedidos; sin él (o con el flag apagado) los pedidos se derivan a la web. */
@@ -90,8 +93,9 @@ async function resolveAudios(turn: InboundTurn, deps: TurnDeps, settings: BotSet
   return text;
 }
 
-function historyMessages(items: { direction: "in" | "out"; body: string }[]): ChatMessage[] {
-  return items.map((m) => (m.direction === "in" ? { role: "user", content: wrapUntrusted(m.body) } : { role: "assistant", content: m.body }));
+/** Historial para el modelo, sin los mensajes viejos del bot que son plantillas obsoletas (no los imita). */
+export function historyMessages(items: { direction: "in" | "out"; body: string }[], ordersEnabled = false): ChatMessage[] {
+  return items.filter((m) => m.direction === "in" || !isStaleBotMessage(m.body, ordersEnabled)).map((m) => (m.direction === "in" ? { role: "user", content: wrapUntrusted(m.body) } : { role: "assistant", content: m.body }));
 }
 
 /** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
@@ -174,7 +178,7 @@ async function answer(
   const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, knowledge, lessons, profile);
   const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard);
   const ask = (extra?: string) =>
-    respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history), userText: wrapUntrusted(turnText), tools });
+    respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history, settings.ordersEnabled), userText: wrapUntrusted(turnText), tools });
 
   let draft = await ask();
   let issue: DraftIssue | null = null;
@@ -345,8 +349,8 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const { intent, confidence } = classified;
 
   if (intent === "humano") return escalate(deps, conversation, settings, text, REPLIES.handoff);
-  // Charla nueva (el bot nunca respondió o pasaron más de 6 h): primero el saludo por nombre con las promos de hoy.
-  if (await shouldGreet(deps, conversation.id)) {
+  // Charla nueva (el bot no respondió en 2 h, o el cliente solo saluda y no se lo saludó hace poco): saludo por nombre con las promos de hoy.
+  if (await shouldGreet(deps, conversation.id, text, outNewestFirst)) {
     const promos = promosForToday(await deps.repo.menu().catch(() => []), new Date());
     await reply(deps, conversation, renderGreeting(settings, conversation.displayName, promos));
     if (confidence < MIN_CONFIDENCE || GREETING_ONLY.includes(intent)) return "greeted";
@@ -377,14 +381,31 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     await reply(deps, conversation, early, false);
     return "answered";
   }
+  if (intent === "consulta_menu" && asksFullMenu(text) && inbound.verdict !== "suspicious") await sendMenuPdf(deps, conversation, settings);
   return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst));
 }
 
 /** Sin `lastOutboundAt` en el repo (backend viejo) no hay saludo aparte; si la lectura falla, tampoco (no se repite). */
-async function shouldGreet(deps: TurnDeps, conversationId: string): Promise<boolean> {
+async function shouldGreet(deps: TurnDeps, conversationId: string, text: string, recentOutbound: readonly string[]): Promise<boolean> {
   if (!deps.repo.lastOutboundAt) return false;
   const last = await deps.repo.lastOutboundAt(conversationId).catch(() => undefined);
-  return last !== undefined && isNewConversation(last, Date.now());
+  return last !== undefined && shouldGreetNow(last, Date.now(), text, recentOutbound);
+}
+
+/** Ruta pública de la carta en PDF (la arma la app con los productos visibles en el portal). */
+export const MENU_PDF_PATH = "/api/public/carta.pdf";
+export const MENU_PDF_NOTE = "📄 Te mandé la carta en PDF.";
+
+/** Pide la carta completa: se manda el PDF antes de la respuesta del modelo. Si falla, sigue sin PDF. */
+async function sendMenuPdf(deps: TurnDeps, conversation: BotConversation, settings: BotSettings): Promise<void> {
+  if (!deps.sendDocument) return;
+  try {
+    const name = settings.businessName.replace(/[^\p{L}\p{N} .'-]/gu, "").trim().slice(0, 60) || "Menú";
+    const wamid = await deps.sendDocument(conversation.phone, `${deps.appUrl}${MENU_PDF_PATH}`, `Carta ${name}.pdf`, `Carta de ${name}`);
+    await deps.repo.saveOutbound(conversation.id, wamid, MENU_PDF_NOTE);
+  } catch (error: unknown) {
+    deps.log("[whatsapp-bot] no se pudo mandar la carta en PDF", { conversation: conversation.id, error: error instanceof Error ? error.message : "error" });
+  }
 }
 
 export const CLOSING_PAID = "¡Gracias a vos! 😊 Tu pago ya está acreditado: te avisamos por acá cuando tu pedido salga 🛵";

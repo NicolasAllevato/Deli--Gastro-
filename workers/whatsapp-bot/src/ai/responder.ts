@@ -1,4 +1,4 @@
-import { MODELS, responseText, responseToolCalls, type ChatMessage, type RunModel } from "./models.ts";
+import { MODELS, responseText, responseToolCalls, runWithFallback, type ChatMessage, type RunModel } from "./models.ts";
 
 export interface BotTool {
   name: string;
@@ -6,6 +6,8 @@ export interface BotTool {
   parameters: Record<string, unknown>;
   /** Recibe los argumentos ya parseados (sin validar: cada herramienta valida los suyos). */
   run: (args: unknown) => Promise<unknown>;
+  /** Tope propio del resultado (p. ej. el menú completo); sin él, MAX_TOOL_RESULT_CHARS. */
+  maxResultChars?: number;
 }
 
 export interface ResponderInput {
@@ -17,7 +19,9 @@ export interface ResponderInput {
 
 /** Vueltas máximas modelo → herramienta → modelo: corta bucles y acota el costo. */
 export const MAX_STEPS = 5;
-const MAX_TOOL_RESULT_CHARS = 6000;
+export const MAX_TOOL_RESULT_CHARS = 6000;
+/** Techo absoluto para cualquier herramienta (acota tokens aunque una herramienta pida más). */
+export const MAX_TOOL_RESULT_CAP = 24_000;
 
 function toolSpec(tool: BotTool) {
   return { type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } };
@@ -34,14 +38,16 @@ async function runTool(tools: BotTool[], name: string, rawArgs: string): Promise
     return JSON.stringify({ error: "Argumentos inválidos." });
   }
   try {
-    return JSON.stringify(await tool.run(args)).slice(0, MAX_TOOL_RESULT_CHARS);
+    return JSON.stringify(await tool.run(args)).slice(0, Math.min(tool.maxResultChars ?? MAX_TOOL_RESULT_CHARS, MAX_TOOL_RESULT_CAP));
   } catch (error: unknown) {
     return JSON.stringify({ error: error instanceof Error ? error.message : "Error de la herramienta." });
   }
 }
 
 /** Bucle de herramientas: devuelve el texto final para el cliente (vacío si el modelo no respondió). */
-export async function respond(run: RunModel, input: ResponderInput, model: string = MODELS.responder): Promise<string> {
+export async function respond(
+  run: RunModel, input: ResponderInput, model: string = MODELS.responder, fallback: string = MODELS.responderFallback,
+): Promise<string> {
   const messages: ChatMessage[] = [{ role: "system", content: input.system }, ...input.history, { role: "user", content: input.userText }];
   const tools = input.tools.map(toolSpec);
 
@@ -49,7 +55,7 @@ export async function respond(run: RunModel, input: ResponderInput, model: strin
     // La última vuelta va sin herramientas: el modelo tiene que contestar con texto (nunca queda vacío por agotar pasos).
     const last = step === MAX_STEPS - 1;
     const toolOpts = tools.length > 0 ? { tools, ...(last ? { tool_choice: "none" } : {}) } : {};
-    const raw = await run(model, { messages, ...toolOpts, max_tokens: 600, temperature: 0.2 });
+    const raw = await runWithFallback(run, model, fallback, { messages, ...toolOpts, max_tokens: 600, temperature: 0.2 });
     const calls = responseToolCalls(raw);
     if (calls.length === 0) return cleanReply(responseText(raw));
 

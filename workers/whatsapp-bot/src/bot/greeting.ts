@@ -7,15 +7,33 @@ import { money } from "../orders/flow.ts";
 import { openNow, type BotSettings } from "./settings.ts";
 
 /** Si pasó más que esto desde el último mensaje del bot, la charla se considera nueva y se saluda de nuevo. */
-export const GREETING_GAP_MS = 6 * 60 * 60 * 1000;
+export const GREETING_GAP_MS = 2 * 60 * 60 * 1000;
 export const MAX_PROMOS = 5;
 const TZ = "America/Argentina/Buenos_Aires";
 
 const fold = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-/** true = hay que saludar: el bot nunca respondió en esta conversación o su último mensaje es de hace más de 6 h. */
+/** true = hay que saludar: el bot nunca respondió en esta conversación o su último mensaje es de hace más de 2 h. */
 export function isNewConversation(lastOutboundAt: Date | null, now: number): boolean {
   return lastOutboundAt === null || now - lastOutboundAt.getTime() > GREETING_GAP_MS;
+}
+
+/** El turno es solo un saludo ("hola", "buenas", "buen día", "holaa!!"), sin pedido ni pregunta. */
+export function isPureGreeting(text: string): boolean {
+  const t = fold(text).replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  return /^(ho+la+s?|bue+n[ao]s?|bue+n dia|bue+nos dias|bue+nas (tardes|noches)|que tal|hey|holi|hola que tal|hola buenas|hola buen dia|hola buenas (tardes|noches))( (como (andas|estas|va|andan)|todo bien))?$/.test(t);
+}
+
+/** Lo que manda `renderGreeting`: sirve para saber si el bot ya saludó hace poco. */
+export const isGreetingMessage = (body: string): boolean => /^¡Hola(, [^!]+)?! 👋/.test(body);
+
+/**
+ * Saludo por nombre al empezar una charla: la última respuesta del bot es de hace más de 2 h (o nunca respondió),
+ * o el cliente manda solo un saludo y el bot no saludó en los mensajes recientes (`recentOutbound`, ≤ 2 h).
+ */
+export function shouldGreetNow(lastOutboundAt: Date | null, now: number, text: string, recentOutbound: readonly string[]): boolean {
+  if (isNewConversation(lastOutboundAt, now)) return true;
+  return isPureGreeting(text) && !recentOutbound.some(isGreetingMessage);
 }
 
 /** Primer nombre del cliente ("Tata Pérez" → "Tata"); null si no hay un nombre usable. */

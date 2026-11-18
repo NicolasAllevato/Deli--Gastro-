@@ -107,6 +107,10 @@ export function createWhatsAppClient(creds: WhatsAppCredentials, fetchImpl: type
     sendText: (to: string, body: string) =>
       send(to, { type: "text", text: { body, preview_url: false } }),
 
+    /** Documento por link público (p. ej. la carta en PDF); misma ventana de 24 h y mismo reintento sin el 9. */
+    sendDocument: (to: string, link: string, filename: string, caption?: string) =>
+      send(to, { type: "document", document: { link, filename, ...(caption ? { caption } : {}) } }),
+
     /** Plantilla aprobada; `bodyParams` completan {{1}}, {{2}}... del cuerpo. */
     sendTemplate: (to: string, name: string, language: string, bodyParams: readonly string[] = []) =>
       send(to, {

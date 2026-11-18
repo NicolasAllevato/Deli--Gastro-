@@ -10,6 +10,7 @@ import { createOrdersClient } from "./orders/client.ts";
 import { audioTranscriber, whatsappClient } from "./bot/channels.ts";
 import { sqlBotRepo } from "./repo/bot.ts";
 import type { RunModel } from "./ai/models.ts";
+import { openAiRunModel, routedRunModel } from "./ai/openai.ts";
 import type { BufferedMessage } from "./batching.ts";
 import type { ConversationBuffer, InboundTurn } from "./conversation-buffer.ts";
 import { mirrorBotRepo, mirrorInboundRepo } from "./repo/d1-mirror.ts";
@@ -45,7 +46,7 @@ export interface Env {
   SETTINGS_ENC_KEY?: string;
   /** Secret (wrangler secret put BOT_INTERNAL_SECRET, >= 32 caracteres, igual al de Vercel). Sin él los pedidos quedan apagados. */
   BOT_INTERNAL_SECRET?: string;
-  /** Secret (wrangler secret put OPENAI_API_KEY). Solo para el aprendizaje nocturno; sin él el cron no hace nada. */
+  /** Secret (wrangler secret put OPENAI_API_KEY). Clasificador y respondedor (gpt-4o-mini) y aprendizaje nocturno; sin él el bot usa Workers AI. */
   OPENAI_API_KEY?: string;
 }
 
@@ -210,7 +211,9 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       return;
     }
     const wa = whatsappClient(secrets.accessToken, secrets.phoneNumberId);
-    const run: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
+    const workersAi: RunModel = (model, input) => env.AI.run(model as Parameters<Ai["run"]>[0], input as never);
+    // OpenAI primero; si falla o falta la clave, cada llamada cae sola al modelo de respaldo de Workers AI (runWithFallback).
+    const run = routedRunModel(workersAi, openAiRunModel(env.OPENAI_API_KEY?.trim() ?? ""));
     const deps = {
       repo: sql
         ? mirrorBotRepo(sqlBotRepo(sql, workerLog), env, sqlMirrorReader(sql))
@@ -218,6 +221,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       run,
       transcribe: audioTranscriber(env.AI, wa),
       send: (phone: string, text: string) => wa.sendText(phone, text),
+      sendDocument: (phone: string, url: string, filename: string, caption?: string) => wa.sendDocument(phone, url, filename, caption),
       appUrl: env.APP_URL,
       orders: ordersClientFor(env),
       log: workerLog,
@@ -228,7 +232,12 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       try {
         // Con D1, cada respuesta del turno sale una sola vez aunque la cola lo reintente.
         const send = ledger ? onceSend(deps.send, ledger, turnKey(message.body)) : deps.send;
-        const outcome = await processTurn(message.body, { ...deps, send });
+        // La carta en PDF lleva su propio registro (clave aparte) para no mandarse dos veces si la cola reintenta.
+        const sendDocument = ledger
+          ? (phone: string, url: string, filename: string, caption?: string) =>
+              onceSend((p) => deps.sendDocument(p, url, filename, caption), ledger, `${turnKey(message.body)}:doc`)(phone, url)
+          : deps.sendDocument;
+        const outcome = await processTurn(message.body, { ...deps, send, sendDocument });
         console.log("[whatsapp-bot] turno", outcome);
         message.ack();
       } catch (error: unknown) {
