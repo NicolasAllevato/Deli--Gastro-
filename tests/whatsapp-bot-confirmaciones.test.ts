@@ -117,7 +117,7 @@ describe("turno completo", () => {
   });
   it("el modelo no puede decir que el pedido está confirmado", async () => {
     const w = await world("pedido_confirmar", [], "¡Perfecto! Tu pedido está confirmado.");
-    await w.send("sí, todo bien");
+    await w.send("perfecto, todo bien");
     // El modelo insiste (también en el reintento): sale un reemplazo fijo que no afirma ningún estado.
     assert.equal(w.sent.length, 1);
     assert.doesNotMatch(w.sent[0], /confirmad|pagad|en camino/i);
