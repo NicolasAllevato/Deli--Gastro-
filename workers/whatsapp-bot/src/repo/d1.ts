@@ -8,7 +8,7 @@ import type { SqlDatabase } from "../../../../src/lib/data/sql.ts";
 import { fromCents } from "../../../../src/lib/data/money.ts";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import { phoneTail, resolveMatches } from "./phone-tail.ts";
-import type { BotRepo, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
+import type { BotRepo, CartaSeccion, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
 
 type Log = (message: string, detail?: unknown) => void;
 type ConvRow = { id: string; client_phone: string; silenced: number };
@@ -16,6 +16,57 @@ type ConvRow = { id: string; client_phone: string; silenced: number };
 const MENU_LIMIT = 200;
 const KNOWLEDGE_LIMIT = 80;
 const now = () => new Date().toISOString();
+
+type CartaRow = {
+  sid: string; titulo: string; columnas: string; estilo: string; snota: string | null;
+  nombre: string; nota: string | null;
+  p1: string | null; p1_price: number | null; p2: string | null; p2_price: number | null;
+};
+
+/** Carta estructurada (migración 0015) con precios vivos de productos activos. Sin la tabla: carta vacía. */
+async function cartaD1(db: SqlDatabase): Promise<CartaSeccion[]> {
+  let rows: CartaRow[];
+  try {
+    rows = (
+      await db
+        .prepare(
+          `SELECT s.id AS sid, s.titulo, s.columnas, s.estilo, s.nota AS snota, i.nombre, i.nota,
+                  p1.id AS p1, p1.price_cents AS p1_price, p2.id AS p2, p2.price_cents AS p2_price
+           FROM carta_secciones s
+           JOIN carta_items i ON i.seccion_id = s.id AND i.activo = 1
+           LEFT JOIN products p1 ON p1.id = i.producto_id AND p1.is_active = 1
+           LEFT JOIN products p2 ON p2.id = i.producto_id_2 AND p2.is_active = 1
+           WHERE s.activo = 1 ORDER BY s.orden, s.titulo, i.orden, i.nombre LIMIT ?`,
+        )
+        .bind(MENU_LIMIT)
+        .all<CartaRow>()
+    ).results;
+  } catch (err: unknown) {
+    if (err instanceof Error && /no such table/i.test(err.message)) return [];
+    throw err;
+  }
+  const out: CartaSeccion[] = [];
+  const bySection = new Map<string, CartaSeccion>();
+  for (const r of rows) {
+    let s = bySection.get(r.sid);
+    if (!s) {
+      let columnas: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(r.columnas);
+        if (Array.isArray(parsed)) columnas = parsed.filter((c): c is string => typeof c === "string").slice(0, 2);
+      } catch {
+        columnas = [];
+      }
+      s = { titulo: r.titulo, columnas, estilo: r.estilo === "gustos" ? "gustos" : "lista", nota: r.snota, items: [] };
+      bySection.set(r.sid, s);
+      out.push(s);
+    }
+    const ref = (id: string | null, cents: number | null) => (id && cents !== null ? { id, price: fromCents(cents) } : null);
+    const productos = [ref(r.p1, r.p1_price), ref(r.p2, r.p2_price)].slice(0, Math.max(1, s.columnas.length));
+    s.items = [...s.items, { nombre: r.nombre, nota: r.nota, productos }];
+  }
+  return out;
+}
 
 /** Conversaciones con los mismos 10 dígitos, la de actividad más reciente primero. */
 async function matching(db: SqlDatabase, phone: string) {
@@ -185,6 +236,10 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
         .bind(MENU_LIMIT)
         .all<{ id: string; name: string; description: string | null; price_cents: number; category: string | null }>();
       return results.map((r) => ({ id: r.id, name: r.name, description: r.description, price: fromCents(r.price_cents), category: r.category ?? "Otros" }));
+    },
+
+    async carta() {
+      return cartaD1(db);
     },
 
     async zones() {

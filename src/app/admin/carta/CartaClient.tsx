@@ -7,6 +7,7 @@ import { buttonClasses } from "@/lib/buttonClasses";
 import { formatMoney } from "@/lib/orders";
 import type { Category, Product } from "@/types/catalog";
 import { PhotosModal } from "./PhotosModal";
+import { CartaEstructurada } from "./CartaEstructurada";
 
 interface Preview {
   creates: Array<{ line: number; name: string; price: number; categoryName: string | null }>;
@@ -197,6 +198,8 @@ export default function CartaClient({ initialProducts, categories }: Props) {
           )}
         </section>
       )}
+
+      <CartaEstructurada products={[...products].sort((a, b) => a.name.localeCompare(b.name, "es"))} />
 
       <PhotosModal
         open={photosOpen}

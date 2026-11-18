@@ -4,7 +4,7 @@
  * y el corte a 6000 caracteres dejaba solo la primera categoría (Bebidas): el bot decía que no había pizzas.
  * Todo puro: lo usan las herramientas y los tests.
  */
-import type { MenuItem } from "../repo/types.ts";
+import type { CartaSeccion, MenuItem } from "../repo/types.ts";
 import { money } from "../orders/flow.ts";
 
 /** Tope del resultado de get_menu: entra un menú de ~150 productos con margen. */
@@ -27,7 +27,7 @@ export interface CompactCategory {
 }
 
 const EMOJIS: readonly [RegExp, string][] = [
-  [/pizza|muzza/, "🍕"],
+  [/pizza|muzza|faina/, "🍕"],
   [/empanada/, "🥟"],
   [/bebida|gaseosa|cerveza|vino|trago/, "🥤"],
   [/postre|helado|dulce/, "🍰"],
@@ -131,4 +131,104 @@ export function asksFullMenu(text: string): boolean {
   if (/pizz|empanad|bebida|postre|promo|cafe/.test(t)) return false;
   if (/\b(carta|menu)\b/.test(t)) return true;
   return /\bque (tenes|tienen|hay|venden|ofrecen)\b\s*(para comer|hoy)?\s*\??$/.test(t);
+}
+
+// --- carta estructurada (la carta impresa del local) -------------------------------------------------------
+
+export interface CartaVariante {
+  id: string;
+  name: string;
+  price_text: string;
+}
+
+export interface CartaBloque {
+  categoria: string;
+  emoji: string;
+  /** Bloque listo para copiar al cliente (una línea por producto, precios ya formateados). */
+  texto: string;
+  /** Variantes pedibles con su product_id (solo con pedidos encendidos). */
+  productos?: CartaVariante[];
+}
+
+const precioTexto = (p: { price: number } | null): string => (p ? money(p.price) : "consultar");
+
+/** Texto de una sección: "🍕 Pizzas (8 porciones / Porción)
+• Muzzarella — $25.000 / $3.600". */
+export function formatCartaSeccion(s: CartaSeccion): string {
+  const emoji = categoryEmoji(s.titulo);
+  if (s.estilo === "gustos") {
+    const unico = s.items.flatMap((i) => i.productos).find((p) => p !== null) ?? null;
+    const gustos = s.items.map((i) => i.nombre).join(", ");
+    return `${emoji} ${s.titulo} — ${unico ? `${money(unico.price)} c/u` : "consultar precio"}. Gustos: ${gustos}.`;
+  }
+  const head = `${emoji} ${s.titulo}${s.columnas.length ? ` (${s.columnas.join(" / ")})` : ""}`;
+  const lines = s.items.map((i) => {
+    const cols = Math.max(1, s.columnas.length);
+    const prices = Array.from({ length: cols }, (_, c) => precioTexto(i.productos[c] ?? null)).join(" / ");
+    return `• ${i.nombre}${i.nota ? ` (${i.nota})` : ""} — ${prices}`;
+  });
+  return [head, ...lines].join("\n");
+}
+
+function variantes(s: CartaSeccion): CartaVariante[] {
+  return s.items.flatMap((i) =>
+    i.productos.flatMap((p, c) => {
+      if (!p) return [];
+      const label = s.estilo === "gustos" ? `${s.titulo.replace(/s$/i, "")} de ${i.nombre}` : s.columnas.length > 1 ? `${i.nombre} (${s.columnas[c]})` : i.nombre;
+      return [{ id: p.id, name: label, price_text: money(p.price) }];
+    }),
+  );
+}
+
+function bloque(s: CartaSeccion, withIds: boolean): CartaBloque {
+  const b: CartaBloque = { categoria: s.titulo, emoji: categoryEmoji(s.titulo), texto: formatCartaSeccion(s) };
+  return withIds ? { ...b, productos: variantes(s) } : b;
+}
+
+const linkedIds = (carta: readonly CartaSeccion[]): Set<string> =>
+  new Set(carta.flatMap((s) => s.items.flatMap((i) => i.productos.flatMap((p) => (p ? [p.id] : [])))));
+
+/** get_menu con carta: las secciones de la carta y, aparte, lo que no está en ella (promos, etc.) por categoría. */
+export function cartaMenuForModel(carta: readonly CartaSeccion[], menu: readonly MenuItem[], withIds: boolean): Record<string, unknown> {
+  const linked = linkedIds(carta);
+  const resto = menu.filter((p) => !linked.has(p.id));
+  return {
+    carta: carta.map((s) => bloque(s, withIds)),
+    otras_categorias: groupMenu(resto, withIds),
+    nota: "Para mostrar una sección copiá su 'texto' tal cual. Para cotizar usá el id de 'productos'.",
+  };
+}
+
+/** Secciones de la carta para una consulta ("pizzas" → Pizzas + Pizzas especiales + Fainá). */
+const CARTA_SYNONYMS: readonly [RegExp, RegExp][] = [
+  [/^pizz?as?$|^pizzeria$|^muzzas?$/, /pizz|faina/],
+  [/^empanadas?$/, /empanad/],
+  [/^bebidas?$|^gaseosas?$|^tomar$|^cervezas?$/, /bebida/],
+  [/^postres?$|^dulces?$/, /postre/],
+  [/^cafe(teria)?$|^desayunos?$|^meriendas?$/, /desayuno|merienda|cafe/],
+  [/^faina$/, /faina/],
+];
+
+export function cartaSectionsFor(carta: readonly CartaSeccion[], query: string): CartaSeccion[] {
+  const q = queryWords(query);
+  if (!q) return [];
+  const syn = CARTA_SYNONYMS.find(([re]) => re.test(q))?.[1];
+  if (syn) {
+    const hits = carta.filter((s) => syn.test(fold(s.titulo)));
+    if (hits.length > 0) return hits;
+  }
+  const singular = q.replace(/(es|s)$/, "");
+  return carta.filter((s) => fold(s.titulo).includes(singular));
+}
+
+/** get_categoria con carta; null si la consulta no corresponde a ninguna sección (se usa la búsqueda de siempre). */
+export function cartaCategoryForModel(carta: readonly CartaSeccion[], query: string, withIds: boolean): Record<string, unknown> | null {
+  const secciones = cartaSectionsFor(carta, query);
+  if (secciones.length === 0) return null;
+  return {
+    encontrado: true,
+    consulta: query.slice(0, 60),
+    secciones: secciones.map((s) => bloque(s, withIds)),
+    nota: "Respondé copiando el 'texto' de cada sección tal cual (todas las líneas).",
+  };
 }

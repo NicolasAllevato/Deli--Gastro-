@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import { ImageIcon, Search, X } from "lucide-react";
+import { FileText, ImageIcon, Search, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/orders";
 import { AddToCartButton } from "./AddToCartButton";
@@ -59,7 +59,17 @@ export function MenuSection({ categories, products, paused }: Props) {
     <section aria-labelledby="menu-title" className="px-5 fade-up-4">
       <div className="flex items-end justify-between gap-3 mb-4">
         <h3 id="menu-title" className="font-headline text-xl font-black text-gray-800">Menú</h3>
-        <span className="text-xs font-bold text-gray-500">{visible.length} {visible.length === 1 ? "producto" : "productos"}</span>
+        <div className="flex items-center gap-3">
+          <a
+            href="/carta.pdf"
+            target="_blank"
+            rel="noopener"
+            className="neumorphic rounded-full px-3 py-1.5 text-xs font-bold text-brand-orange inline-flex items-center gap-1.5"
+          >
+            <FileText size={14} aria-hidden /> Ver carta (PDF)
+          </a>
+          <span className="text-xs font-bold text-gray-500">{visible.length} {visible.length === 1 ? "producto" : "productos"}</span>
+        </div>
       </div>
 
       {/* Buscador + categorías: quedan visibles al bajar por el menú */}

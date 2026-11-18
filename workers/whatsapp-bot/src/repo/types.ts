@@ -63,6 +63,21 @@ export interface MenuItem {
   category: string;
 }
 
+/** Línea de la carta estructurada (carta impresa): precio vivo del producto vinculado; null = sin precio. */
+export interface CartaLinea {
+  nombre: string;
+  nota: string | null;
+  productos: ({ id: string; price: number } | null)[];
+}
+
+export interface CartaSeccion {
+  titulo: string;
+  columnas: string[];
+  estilo: "lista" | "gustos";
+  nota: string | null;
+  items: CartaLinea[];
+}
+
 export interface ZoneInfo {
   name: string;
   fee: number;
@@ -115,6 +130,8 @@ export interface BotRepo {
   inboundCounts(conversationId: string): Promise<{ lastMinute: number; lastDay: number }>;
   config(): Promise<Record<string, unknown>>;
   menu(): Promise<MenuItem[]>;
+  /** Carta estructurada activa (vacía = no hay, se usa el menú por categorías). Opcional como `knowledge`. */
+  carta?(): Promise<CartaSeccion[]>;
   zones(): Promise<ZoneInfo[]>;
   /** Base de conocimiento activa. Opcional: sin la tabla (backend Supabase, tests viejos) no hay conocimiento extra. */
   knowledge?(): Promise<KnowledgeEntry[]>;
