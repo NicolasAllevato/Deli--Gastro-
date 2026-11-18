@@ -95,6 +95,11 @@ function fromActionError(err: ActionError, fallback: number): BotResponse {
   return reply(status, { ok: false, code: err.code ?? "rejected", error: err.error });
 }
 
+/** Medios de pago que acepta el bot. Tarjeta/Transferencia no: no hay cómo verificarlos por chat. */
+export const BOT_PAYMENT_METHODS = ["Efectivo", "Mercado Pago"] as const;
+export type BotPaymentMethod = (typeof BOT_PAYMENT_METHODS)[number];
+const isBotPaymentMethod = (m: string): m is BotPaymentMethod => (BOT_PAYMENT_METHODS as readonly string[]).includes(m);
+
 // --- Interruptores y topes (se leen de la base en CADA llamada, sin caché) ---
 
 /**
@@ -332,11 +337,14 @@ async function runConfirm(ctx: Context, body: Parsed<"confirm">): Promise<BotRes
   if (gate) return gate;
   if (isBotSilenced(ctx.conversation)) return takeoverRefusal();
 
-  if (body.payment_method !== "Mercado Pago") {
-    return refuse(400, "payment_not_supported", "Por WhatsApp solo se puede pagar con Mercado Pago.");
+  if (!isBotPaymentMethod(body.payment_method)) {
+    return refuse(400, "payment_not_supported", "Por WhatsApp se puede pagar en efectivo o con Mercado Pago.");
   }
-  const lost = await pendingPaymentLink(ctx);
-  if (lost) return lost;
+  const method = body.payment_method;
+  if (method === "Mercado Pago") {
+    const lost = await pendingPaymentLink(ctx);
+    if (lost) return lost;
+  }
 
   const active = await activeOrders(db, ctx.conversation.client_id, ctx.now, config);
   if (active === null) return unavailable();
@@ -344,7 +352,9 @@ async function runConfirm(ctx: Context, body: Parsed<"confirm">): Promise<BotRes
 
   const result = await confirmOrder(
     { ...actionDeps(ctx, body.inboundWamid), checkDraft: draftValidator(ctx, body.inboundWamid) },
-    { payment_method: "Mercado Pago", notes: body.notes || undefined },
+    // Efectivo: el pedido se crea ya mismo (Recibidos, canal whatsapp), por el mismo camino que el portal.
+    // Mercado Pago: se abre el pago y el pedido se crea cuando se acredita.
+    { payment_method: method, notes: body.notes || undefined },
   );
   if (isActionError(result)) return fromActionError(result, 409);
   const response = reply(200, { ...result, ok: true });

@@ -246,6 +246,22 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       return { name: head.name, orderCount, topProducts: results.map((r) => r.name), lastAddress: head.last_address };
     },
 
+    async lastOutboundAt(conversationId) {
+      const row = await db
+        .prepare("SELECT max(created_at) AS at FROM wa_messages WHERE conversation_id = ? AND direction = 'out'")
+        .bind(conversationId)
+        .first<{ at: string | null }>();
+      return row?.at ? new Date(row.at) : null;
+    },
+
+    async createComplaint({ conversationId, phone, clientId, motivo }) {
+      const text = motivo.replace(/\s+/g, " ").trim().slice(0, 500) || "Reclamo sin detalle";
+      await db
+        .prepare("INSERT INTO reclamos (id, conversation_id, client_phone, client_id, motivo) VALUES (?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), conversationId, phone, clientId, text)
+        .run();
+    },
+
     async setTakeover(conversationId) {
       await db.prepare("UPDATE wa_conversations SET human_takeover = 1 WHERE id = ?").bind(conversationId).run();
     },

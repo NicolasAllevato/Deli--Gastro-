@@ -5,6 +5,8 @@ export interface BotSettings {
   active: boolean;
   transcribeAudio: boolean;
   name: string;
+  /** `agente_nombre` tal cual está cargado; null si falta (el saludo dice "Soy el asistente de ..."). */
+  agentName: string | null;
   tone: string;
   instructions: string;
   businessName: string;
@@ -25,6 +27,7 @@ export function settingsFromConfig(config: Record<string, unknown>): BotSettings
     active: config.agente_activo === true,
     transcribeAudio: config.agente_audios !== false,
     name: text(config.agente_nombre, "Deli", 40),
+    agentName: text(config.agente_nombre, "", 40) || null,
     tone: text(config.agente_tono, "cálido, cercano y breve", 200),
     instructions: text(config.agente_instrucciones, "", 1000),
     businessName: text(config.negocio_nombre, "Deli-Gastro", 80),

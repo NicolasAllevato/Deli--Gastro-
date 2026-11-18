@@ -25,7 +25,7 @@ const AFFIRMATION_FILLER: ReadonlySet<string> = new Set([
 ]);
 /** Palabras propias de cada operación: confirmar no acepta "cancelá" y cancelar no acepta "confirmo/pagar". */
 const OP_WORDS: Record<"confirm" | "cancel", ReadonlySet<string>> = {
-  confirm: new Set(["confirmar", "confirmalo", "adelante", "avanza", "avanzamos", "pagar", "pago", "correcto"]),
+  confirm: new Set(["confirmar", "confirmalo", "adelante", "avanza", "avanzamos", "pagar", "pago", "correcto", "efectivo", "mercado", "mp", "con", "en"]),
   cancel: new Set(["cancela", "cancelalo", "cancelar", "cancelo", "cancelado", "anula", "anulalo", "anular", "seguro"]),
 };
 const MAX_AFFIRMATION_WORDS = 8;
@@ -98,7 +98,7 @@ export const PRICE_SAFE_REPLY =
   "Perdón, para no pasarte un precio equivocado: decime qué te gustaría y te armo el resumen con el total exacto.";
 
 export const ORDER_STATE_SAFE_REPLY =
-  "Tu pedido se confirma recién cuando se acredita el pago con Mercado Pago. Si respondiste SÍ al resumen, te llega el link de pago; si no, decime y lo armamos.";
+  "Tu pedido se confirma cuando respondés SÍ al resumen (en efectivo) o cuando se acredita el pago con Mercado Pago. Si todavía no lo armamos, decime y lo hacemos.";
 
 /** true si el texto libre del modelo afirma un estado del pedido que solo puede informar el sistema. */
 export function claimsOrderState(draft: string): boolean {
@@ -251,9 +251,28 @@ export function renderQuoteSummary(data: Record<string, unknown>): string | null
     `Envío: ${money(fee)}`,
     `Total: ${money(total)}`,
     `Dirección: ${oneLine(address, 200)}`,
-    "Pago: Mercado Pago",
-    "Respondé SÍ para continuar al pago.",
+    PAYMENT_QUESTION,
   ].join("\n");
+}
+
+/** Pregunta del medio de pago al pie del resumen (el SÍ solo sigue siendo Mercado Pago, como antes). */
+export const PAYMENT_QUESTION =
+  "¿Pagás en efectivo o con Mercado Pago? Respondé SÍ EFECTIVO (pagás al recibir) o SÍ MERCADO PAGO (te mando el link). Con SÍ solo, va con Mercado Pago.";
+
+export type BotPaymentMethod = "Efectivo" | "Mercado Pago";
+
+/** Medio de pago elegido en el SÍ al resumen: "efectivo" → Efectivo; cualquier otro SÍ → Mercado Pago. */
+export function paymentFromAnswer(text: string): BotPaymentMethod {
+  return /\befectivo\b|\bcash\b/.test(normalizeAnswer(text)) ? "Efectivo" : "Mercado Pago";
+}
+
+/** Inicio de la confirmación de un pedido en efectivo (también marca de "ya no hay nada que confirmar"). */
+export const CASH_MARKER = "¡Listo! Tu pedido quedó confirmado";
+
+export function renderCashConfirmation(orderCode: string, total: number | null, minutes: number | null): string {
+  const amount = total !== null ? ` Total: ${money(total)}, en efectivo al recibir.` : " Pagás en efectivo al recibir.";
+  const eta = minutes ? `\nDemora estimada: unos ${minutes} minutos.` : "";
+  return `${CASH_MARKER} ✅ Número de pedido: ${oneLine(orderCode, 20)}.${amount}${eta}\nTe avisamos por acá cuando salga 🛵`;
 }
 
 export function renderPaymentMessage(paymentUrl: string, total: number | null): string {
@@ -276,7 +295,7 @@ export const ORDER_REPLIES = {
   startOver: "Decime qué querés pedir y la dirección de entrega, y te armo el resumen.",
   requote: "Ese resumen ya no está vigente. Decime de nuevo qué querés pedir y la dirección, y te armo uno nuevo.",
   invalidQuote: "No pude armar el resumen con esos datos. Decime qué productos querés y a qué dirección te lo mandamos.",
-  mpOnly: "Por WhatsApp solo se puede pagar con Mercado Pago.",
+  mpOnly: "Por WhatsApp se puede pagar en efectivo (al recibir) o con Mercado Pago.",
 } as const;
 
 export const disabledReply = (appUrl: string): string =>
@@ -348,6 +367,8 @@ export interface OrderTurn {
   recentPayment?: boolean;
   appUrl: string;
   hours: { open: string; close: string };
+  /** Demora estimada (minutos) para la confirmación de un pedido en efectivo. */
+  estimatedMinutes?: number;
   state: OrderTurnState;
 }
 
@@ -436,19 +457,26 @@ function confirmGate(t: OrderTurn): string | null {
 
 export async function runConfirm(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!ownKeys(args, ["payment_method", "notes"])) return { ok: false, error: "Argumentos inválidos." };
-  if (args.payment_method !== "Mercado Pago") {
+  const method = args.payment_method;
+  if (method !== "Mercado Pago" && method !== "Efectivo") {
     t.state.fixedReply = ORDER_REPLIES.mpOnly;
     return SENT;
   }
   const gate = confirmGate(t);
   if (gate) return { ok: false, error: gate };
   const notes = typeof args.notes === "string" && args.notes.trim() ? { notes: args.notes.trim().slice(0, 300) } : {};
-  const response = await t.client.confirm({ ...common(t), payment_method: "Mercado Pago", ...notes });
+  const response = await t.client.confirm({ ...common(t), payment_method: method, ...notes });
   return handleConfirm(t, response);
 }
 
 async function handleConfirm(t: OrderTurn, response: OrderResponse): Promise<unknown> {
   if (!response.ok) return fail(t, response, "confirm");
+  // Efectivo: el servidor ya creó el pedido (Recibidos) y devuelve su número.
+  if (typeof response.data.order_code === "string") {
+    const total = response.data.total;
+    t.state.fixedReply = renderCashConfirmation(response.data.order_code, isNum(total) ? total : null, t.estimatedMinutes ?? null);
+    return { ok: true, note: "La confirmación del pedido ya se le envía al cliente. No la repitas." };
+  }
   const { awaiting_payment: awaiting, payment_url: raw, total } = response.data;
   // El link es el del servidor (normalizado por URL), y solo si es https de Mercado Pago.
   const url = typeof raw === "string" ? trustedPaymentUrl(raw) : null;
@@ -461,7 +489,7 @@ async function handleConfirm(t: OrderTurn, response: OrderResponse): Promise<unk
 }
 
 /** Camino determinista: el cliente respondió SÍ al resumen. */
-export const confirmAfterSummary = (t: OrderTurn): Promise<unknown> => runConfirm(t, { payment_method: "Mercado Pago" });
+export const confirmAfterSummary = (t: OrderTurn): Promise<unknown> => runConfirm(t, { payment_method: paymentFromAnswer(t.inboundText) });
 
 export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!ownKeys(args, ["confirmed"])) return { ok: false, error: "Argumentos inválidos." };

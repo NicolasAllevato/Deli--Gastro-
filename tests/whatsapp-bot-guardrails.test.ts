@@ -125,7 +125,7 @@ describe("guardrails: delimitación y herramientas por intención", () => {
   });
 
   it("solo los pedidos tienen herramientas que escriben", () => {
-    assert.deepEqual(toolsForIntent("consulta_menu"), ["get_menu", "get_business_info", "quote_order"]);
+    assert.deepEqual(toolsForIntent("consulta_menu"), ["get_menu", "get_business_info", "get_promos_hoy", "quote_order"]);
     assert.ok(!toolsForIntent("saludo").includes("confirm_order"));
     assert.ok(toolsForIntent("pedido_confirmar").includes("confirm_order"));
     assert.deepEqual(toolsForIntent("otro"), []);

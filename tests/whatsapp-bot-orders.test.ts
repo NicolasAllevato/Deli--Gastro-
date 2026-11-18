@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createOrdersClient, signRequest, type OrdersClient, type OrderResponse, type OrderFailure } from "../workers/whatsapp-bot/src/orders/client.ts";
 import { signBotRequest, verifyBotRequest } from "../src/lib/bot-internal/signature.ts";
-import { isAffirmation, renderQuoteSummary, parseQuoteArgs, errorReply, imitatesTemplate, QUOTE_MARKER, CANCEL_MARKER, RETRY_CONFIRM, RETRY_CANCEL } from "../workers/whatsapp-bot/src/orders/flow.ts";
+import { isAffirmation, renderQuoteSummary, parseQuoteArgs, errorReply, imitatesTemplate, QUOTE_MARKER, CANCEL_MARKER, RETRY_CONFIRM, RETRY_CANCEL, CASH_MARKER, paymentFromAnswer, renderCashConfirmation } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { orderReply } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import "./helpers/alias.ts";
@@ -135,7 +135,7 @@ describe("fase 5: plantillas y esquemas", () => {
     assert.match(text!, /Envío: \$1\.500/);
     assert.match(text!, /Total: \$19\.500/);
     assert.match(text!, /Belgrano 123/);
-    assert.match(text!, /Respondé SÍ para continuar al pago/);
+    assert.match(text!, /¿Pagás en efectivo o con Mercado Pago\? Respondé SÍ EFECTIVO/);
     assert.doesNotMatch(text!, /IGNORAR/);
     assert.equal(renderQuoteSummary({ lines: [] }), null);
   });
@@ -304,9 +304,9 @@ describe("fase 5: pedidos con el flag encendido", () => {
     await processTurn(turn("si"), deps(s, model("pedido_confirmar", "ok", [confirmCall]).run));
     assert.deepEqual(s.calls, []);
     const t = setup({ enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "x" }] });
-    await processTurn(turn("hola"), deps(t, model("pedido_confirmar", "ok", [{ name: "confirm_order", arguments: { payment_method: "Efectivo" } }]).run));
+    await processTurn(turn("hola"), deps(t, model("pedido_confirmar", "ok", [{ name: "confirm_order", arguments: { payment_method: "Tarjeta" } }]).run));
     assert.deepEqual(t.calls, []);
-    assert.match(t.sent[0], /solo se puede pagar con Mercado Pago/);
+    assert.match(t.sent[0], /en efectivo \(al recibir\) o con Mercado Pago/);
   });
 
   it("SÍ literal tras el resumen confirma y manda EXACTAMENTE el payment_url del servidor", async () => {
@@ -316,6 +316,36 @@ describe("fase 5: pedidos con el flag encendido", () => {
     assert.deepEqual(s.calls, ["confirm"]);
     assert.ok(s.sent[0].includes(PAY));
     assert.match(s.sent[0], /\$19\.500/);
+  });
+
+  it("SÍ EFECTIVO tras el resumen crea el pedido al instante y confirma con número, total y demora", async () => {
+    const bodies: unknown[] = [];
+    const s = setup({
+      enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "Sí, efectivo" }],
+      orders: { confirm: async (body) => { bodies.push(body); return { ok: true, status: 200, data: { ok: true, order_code: "#AB12CD34", total: 19500, payment_method: "Efectivo" } }; } },
+    });
+    assert.equal(await processTurn(turn("Sí, efectivo"), deps(s, model("saludo", "x").run)), "answered");
+    assert.equal((bodies[0] as { payment_method: string }).payment_method, "Efectivo");
+    assert.ok(s.sent[0].startsWith(CASH_MARKER));
+    assert.match(s.sent[0], /#AB12CD34/);
+    assert.match(s.sent[0], /\$19\.500, en efectivo al recibir/);
+    assert.match(s.sent[0], /Demora estimada: unos 30 minutos/);
+    assert.doesNotMatch(s.sent[0], /mpago|link/i);
+  });
+
+  it("SÍ solo o SÍ MERCADO PAGO siguen yendo por Mercado Pago", async () => {
+    assert.equal(paymentFromAnswer("Sí!"), "Mercado Pago");
+    assert.equal(paymentFromAnswer("si, mercado pago"), "Mercado Pago");
+    assert.equal(paymentFromAnswer("SÍ EFECTIVO"), "Efectivo");
+    assert.equal(paymentFromAnswer("dale en efectivo"), "Efectivo");
+    for (const ok of ["SÍ EFECTIVO", "si, efectivo", "Sí, mercado pago", "dale en efectivo"]) assert.equal(isAffirmation(ok, "confirm"), true, ok);
+    assert.equal(isAffirmation("si efectivo pero sin cebolla", "confirm"), false);
+  });
+
+  it("después de la confirmación en efectivo un SÍ suelto no vuelve a confirmar", async () => {
+    const s = setup({ enabled: true, history: [{ direction: "out", body: renderCashConfirmation("#AB12CD34", 19500, 30) }, { direction: "in", body: "si" }] });
+    await processTurn(turn("si"), deps(s, model("saludo", "¡Gracias!").run));
+    assert.deepEqual(s.calls, []);
   });
 
   it("si el servidor devuelve un link que no es de Mercado Pago, no se le manda", async () => {

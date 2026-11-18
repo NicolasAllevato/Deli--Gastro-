@@ -99,6 +99,14 @@ export interface CustomerProfile {
   lastAddress: string | null;
 }
 
+export interface ComplaintInput {
+  conversationId: string;
+  phone: string;
+  clientId: string | null;
+  /** Lo que contó el cliente (se recorta a 500 caracteres). */
+  motivo: string;
+}
+
 /** Acceso a la base del bot (respondedores). SQL en producción, memoria en los tests. */
 export interface BotRepo {
   getConversation(phone: string): Promise<BotConversation | null>;
@@ -116,6 +124,13 @@ export interface BotRepo {
   /** Perfil del cliente habitual de ESE teléfono; null si es nuevo. Opcional: sin él, nada cambia. */
   customerProfile?(phone: string): Promise<CustomerProfile | null>;
   setTakeover(conversationId: string): Promise<void>;
+  /**
+   * Cuándo mandó el bot (o el local) el último mensaje de esta conversación; null si nunca. Decide el saludo de
+   * bienvenida. Opcional: sin él (backend viejo, tests) no se saluda aparte.
+   */
+  lastOutboundAt?(conversationId: string): Promise<Date | null>;
+  /** Ticket de reclamo (local cerrado: no hay a quién derivar). Opcional: sin él se deriva como siempre. */
+  createComplaint?(input: ComplaintInput): Promise<void>;
   /** Alta/baja de promociones para todas las filas de clientes con ese teléfono; devuelve cuántas cambió. */
   setMarketingOptIn(phone: string, optIn: boolean): Promise<number>;
   saveOutbound(conversationId: string, wamid: string, body: string): Promise<void>;

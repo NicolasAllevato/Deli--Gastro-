@@ -180,7 +180,7 @@ El Worker **no escribe pedidos por SQL**: llama a endpoints internos firmados de
 `src/lib/bot-internal/` (firma, esquemas, handlers testeables) y `src/app/api/internal/bot/{quote,confirm,cancel,status}/route.ts` (finos).
 
 ### Decisiones de la v1
-Solo pago con **Mercado Pago**; **sin canje de puntos**; el bot solo cancela pedidos en `Recibidos` y con confirmación explícita del cliente.
+Pago en **efectivo** (el pedido se crea al confirmar) o con **Mercado Pago** (se crea al acreditarse el pago); **sin canje de puntos**; el bot solo cancela pedidos en `Recibidos` y con confirmación explícita del cliente.
 
 ### Autenticación
 `POST` con headers `x-bot-timestamp` (segundos Unix) y `x-bot-signature` = HMAC-SHA256 hex, con `BOT_INTERNAL_SECRET`, de
@@ -205,6 +205,7 @@ Rotación: poner el nuevo en `BOT_INTERNAL_SECRET` y el viejo en `BOT_INTERNAL_S
 | `bot_max_total` | 80000 | Importe máximo por pedido (ARS, subtotal + envío). Default conservador para el piloto: se sube desde `global_config` |
 | `bot_max_active_orders` | 1 | Pedidos en curso del cliente (activos recientes + pago pendiente vigente) |
 | `bot_active_window_hours` | 3 | Un pedido activo más viejo que esto no cuenta (un «En Camino» olvidado no bloquea al cliente para siempre) |
+| `bot_orders_fudo_enabled` | ausente (= apagado) | Solo con `true` los pedidos del canal `whatsapp` crean la venta en Fudo (`src/lib/data/fudo-sales.ts`, `claimForSale`). Ausente o cualquier otro valor: el pedido del bot queda solo en la app (piloto de pruebas sin ventas reales en Fudo). El resto de los pedidos no cambia |
 
 Pasar un tope devuelve 422 `limit_exceeded` con mensaje en español para derivar a una persona. En `quote` el tope se evalúa
 **antes** de guardar el borrador (uno fuera de tope nunca se persiste) y en `confirm` sobre el borrador que realmente se reclama, antes del claim.
@@ -240,7 +241,7 @@ Si no se puede guardar el borrador, `quote` responde 503 `unavailable` en vez de
 
 ### Antes del piloto
 - `BOT_INTERNAL_SECRET` (≥ 32 caracteres) **idéntico** en Vercel (Production **y** Preview) y en el Worker, sin BOM ni espacios.
-- Cargar explícitos en `global_config`: `bot_orders_enabled`, `bot_orders_allowlist` (con los teléfonos del piloto), `bot_max_units`, `bot_max_total`, `bot_max_active_orders`.
+- Cargar explícitos en `global_config`: `bot_orders_enabled = true`, `bot_orders_allowlist = ["<teléfono del dueño>"]`, `bot_max_units`, `bot_max_total`, `bot_max_active_orders`. **Dejar `bot_orders_fudo_enabled` ausente** mientras se prueba (los pedidos del bot no van a Fudo).
 - Plantillas de Meta aprobadas (confirmación, seguimiento, link de pago).
 - Monitorear `payment_intents` con `refund_error` o `approved` sin `order_id`.
 
@@ -253,7 +254,7 @@ Hecho en `workers/whatsapp-bot/src`:
 - `orders/client.ts`: cliente firmado (Web Crypto, misma firma que `signature.ts`, con test de paridad), timestamp nuevo por intento, timeout 8 s, `Idempotency-Key` = wamid en confirm/cancel. `claim_lost` reintenta una vez; 429/5xx/red/timeout hasta 2 reintentos con backoff; 400/401/403/422/409 y `503 not_configured` no se reintentan.
 - `orders/flow.ts`: plantillas fijas (resumen, link de pago, pregunta de cancelar, errores por código) y compuertas. `bot/tools.ts`: `quote_order`, `confirm_order`, `cancel_order` y `order_status` (por la app) con esquemas estrictos; `get_menu` expone el `id` solo con el flag encendido.
 - `bot/turn.ts`: con `bot_orders_enabled` en `global_config` (mismo flag que el servidor) y `BOT_INTERNAL_SECRET` cargado, las intenciones de pedido ya no se derivan a la web. Con el flag apagado o sin secreto el camino es el de siempre (`orderReply`; sin secreto y con flag encendido, «no disponible, hacelo desde la web»).
-- El resumen lo envía el Worker desde los datos del servidor (el texto del modelo se descarta). El «SÍ» literal justo después del resumen confirma sin pasar por el clasificador. `confirm_order` exige: sin `quote_order` en el turno, último mensaje del cliente = afirmación literal corta (sí, dale, ok, listo, confirmo, de acuerdo; no audios, no preguntas), el último mensaje del bot es el resumen y `Mercado Pago`. Cancelar: el bot pregunta con plantilla y solo un SÍ posterior cancela. El link de pago solo se envía si es https de Mercado Pago.
+- El resumen lo envía el Worker desde los datos del servidor (el texto del modelo se descarta). El «SÍ» literal justo después del resumen confirma sin pasar por el clasificador. `confirm_order` exige: sin `quote_order` en el turno, último mensaje del cliente = afirmación literal corta (sí, dale, ok, listo, confirmo, de acuerdo; no audios, no preguntas), el último mensaje del bot es el resumen y `Efectivo` o `Mercado Pago` (`SÍ EFECTIVO` → efectivo; `SÍ` solo o `SÍ MERCADO PAGO` → Mercado Pago). Cancelar: el bot pregunta con plantilla y solo un SÍ posterior cancela. El link de pago solo se envía si es https de Mercado Pago.
 - Logs: `op`, `status`, `code` (sin datos personales).
 
 Falta (no se hizo ni se despliega desde el código):
@@ -275,9 +276,10 @@ Falta (no se hizo ni se despliega desde el código):
 Con el teléfono del dueño en `bot_orders_allowlist` y `bot_orders_enabled = true`:
 1. Escribir «hola»: responde saludo (sin pedido).
 2. «¿Qué pizzas tienen?»: lista el menú real.
-3. «Quiero 2 muzzas a Av. Corrientes 1234»: llega el resumen con plantilla fija (líneas, subtotal, envío, total, dirección, «Respondé SÍ para continuar al pago»).
+3. «Quiero 2 muzzas a Av. Corrientes 1234»: llega el resumen con plantilla fija (líneas, subtotal, envío, total, dirección y «¿Pagás en efectivo o con Mercado Pago? Respondé SÍ EFECTIVO o SÍ MERCADO PAGO»).
 4. Cambiar algo («mejor 3»): llega un resumen NUEVO (no un «listo, agregué»).
 5. Responder «sí»: llega el link de Mercado Pago (dominio mercadopago/mpago.la) y el total.
+5b. Repetir con «SÍ EFECTIVO»: llega «¡Listo! Tu pedido quedó confirmado ✅» con número, total y demora, y el pedido aparece en Recibidos (canal WhatsApp) sin venta en Fudo.
 6. Pagar en sandbox: llega el aviso «pedido confirmado» y el pedido aparece en Recibidos de `/admin/tablero`.
 7. Preguntar «¿cómo va mi pedido?»: informa el estado real.
 8. Pedir un pedido y no pagar; preguntar «no me llega el link»: reenvía el link vigente y dice que falta pagar (sin decir «confirmado»).
@@ -290,6 +292,11 @@ Con el teléfono del dueño en `bot_orders_allowlist` y `bot_orders_enabled = tr
 
 ### Diferido (revisión de experiencia)
 Resumen con tiempo estimado y notas, plantillas nuevas de Meta, alerta al local por takeover y pruebas contra Mercado Pago sandbox.
+
+### Saludo, promos del día y reclamos fuera de horario (2026-11-17)
+- **Saludo primero** (`bot/greeting.ts`, `bot/turn.ts`): si el bot nunca respondió en la conversación o su último mensaje saliente (`wa_messages`, `direction='out'`) es de hace más de **6 h**, manda un saludo fijo (sin modelo): «¡Hola, {primer nombre}! 👋 Soy {agente_nombre}, el asistente de {negocio_nombre}. Te ayudo con lo que necesites: consultame cualquier duda o armamos tu pedido. ¿Qué querés pedir hoy?» + promos de hoy. Nombre = `coalesce(clients.name, contact_name)`; sin nombre «¡Hola! 👋»; sin `agente_nombre` «Soy el asistente de …». Con el local cerrado no pregunta qué pedir: dice el horario. Nunca ofrece una persona. Si el primer mensaje es saludo, «quiero pedir» u otro poco claro, el turno termina con el saludo (sin el link a la web); si pregunta algo concreto, después del saludo se responde normal.
+- **Promos del día**: productos activos y visibles de la categoría «Promos» (`repo.menu()`), que nombran el día de hoy (hora de Argentina) o ningún día; «FINDE» = viernes a domingo; «X a Y» = rango; ALMUERZO antes de las 16, CENA desde las 18; nunca «SEÑA»/«SENA EVENTO» ni «Adicional». Máximo 5. Herramienta `get_promos_hoy` para «¿qué promos hay?». `kb_negocio` (promo) sigue igual.
+- **Quejas fuera de horario**: con el local cerrado no hay nadie, así que el bot **no** deriva ni pone `human_takeover`: registra un ticket en `reclamos` (migración D1 `0014_reclamos.sql`, **sin aplicar**) y avisa que el local lo contacta al abrir (con la hora de apertura). Se ven en `/admin/conocimiento` («Reclamos fuera de horario», abierto/resuelto). Dentro de horario la queja deriva a una persona como siempre.
 
 ### Corte de emergencia
 Dos formas, de la más rápida a la más fina: (1) borrar `BOT_INTERNAL_SECRET` en Vercel (y redeploy): todo el endpoint pasa a 503;
@@ -304,7 +311,7 @@ Códigos: `closed`, `no_draft`, `expired`, `not_confirmed`, `claim_lost`, `out_o
 | Endpoint | Cuerpo | Éxito |
 |---|---|---|
 | `quote` | `items[1..30]{product_id, qty 1..20}`, `address` (5..200) | `lines, subtotal, delivery_fee, total, zone, resolved_address`. Guarda el borrador (30 min) con el `inboundWamid` |
-| `confirm` | `payment_method` (solo `"Mercado Pago"`, otro → 400 `payment_not_supported`), `notes` ≤ 300. Header `Idempotency-Key` = `inboundWamid` | `awaiting_payment:true, payment_url, total`. El pedido se crea al acreditarse el pago |
+| `confirm` | `payment_method` (`"Efectivo"` o `"Mercado Pago"`, otro → 400 `payment_not_supported`), `notes` ≤ 300. Header `Idempotency-Key` = `inboundWamid` | Mercado Pago: `awaiting_payment:true, payment_url, total` (el pedido se crea al acreditarse el pago). Efectivo: `order_code, total, payment_method` (el pedido se crea ya en `Recibidos`, canal `whatsapp`, por `createDeliveryOrder`, el mismo camino que el portal) |
 | `cancel` | `confirmed: true` (si no → 400 `not_confirmed`). Header `Idempotency-Key` = `inboundWamid` | Cancela el pago pendiente o un pedido en `Recibidos` |
 | `status` | solo los comunes | `found`, estado del último pedido o pago pendiente |
 

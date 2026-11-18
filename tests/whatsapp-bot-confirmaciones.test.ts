@@ -75,7 +75,8 @@ async function world(intent: string, toolCalls: Array<{ name: string; arguments:
   const db = openSimDb(":memory:");
   seedWorld(db);
   const inbound = d1InboundRepo(db);
-  const repo = d1BotRepo(db);
+  // Charla ya empezada (sin saludo de bienvenida) y sin tickets: el reloj real no cambia el resultado.
+  const repo = { ...d1BotRepo(db), lastOutboundAt: async () => new Date(), createComplaint: undefined };
   const phone = "5491170000009";
   const conv = await inbound.upsertConversation(phone, "Juli");
   const sent: string[] = [];

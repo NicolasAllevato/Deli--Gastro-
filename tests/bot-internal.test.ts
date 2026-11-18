@@ -286,14 +286,27 @@ describe("topes y reglas de la v1", () => {
     assert.deepEqual([res.status, res.body.code], [422, "limit_exceeded"]);
   });
 
-  it("confirm solo acepta Mercado Pago", async () => {
+  it("confirm acepta Efectivo y Mercado Pago; Tarjeta y Transferencia no", async () => {
     const demo = newDemo();
     await call(demo, "quote", quoteBody(demo));
-    for (const method of ["Efectivo", "Tarjeta", "Transferencia"]) {
+    for (const method of ["Tarjeta", "Transferencia"]) {
       const res = await call(demo, "confirm", confirmBody({ payment_method: method }));
       assert.deepEqual([res.status, res.body.code], [400, "payment_not_supported"]);
     }
     assert.ok(draftOf(demo), "el borrador se conserva");
+  });
+
+  it("Efectivo crea el pedido al instante (Recibidos, canal whatsapp), sin pago pendiente", async () => {
+    const demo = newDemo();
+    assert.equal((await call(demo, "quote", quoteBody(demo))).status, 200);
+    const res = await call(demo, "confirm", confirmBody({ payment_method: "Efectivo" }));
+    assert.equal(res.status, 200);
+    assert.match(String(res.body.order_code), /^#[0-9A-F]{8}$/);
+    assert.equal(res.body.payment_method, "Efectivo");
+    assert.equal(demo.store.payment_intents.length, 0);
+    const order = demo.store.orders.at(-1) as { status: string; channel: string; payment_method: string };
+    assert.deepEqual([order.status, order.channel, order.payment_method], ["Recibidos", "whatsapp", "Efectivo"]);
+    assert.ok(!draftOf(demo), "el borrador se consume");
   });
 });
 
