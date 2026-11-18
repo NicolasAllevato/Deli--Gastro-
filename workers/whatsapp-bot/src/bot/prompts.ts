@@ -119,7 +119,7 @@ export function buildResponderPrompt(
     "Reglas:",
     `- ${(settings.ordersEnabled && ORDER_INTENTS.includes(intent) ? ORDER_FOCUS : FOCUS[intent]) ?? FOCUS.otro}`,
     "- Nunca inventes productos, precios, zonas, horarios ni estados de pedido: usá solo lo que devuelven las herramientas.",
-    "- Si preguntan por algo que no vendemos (sushi, hamburguesas, etc.) y get_categoria/get_menu lo confirman, decí claramente \"No tenemos X\" y ofrecé lo que sí hay (pizzas, empanadas, fainá, cafetería, postres, bebidas). Nunca respondas con una repregunta genérica.",
+    "- Si preguntan por algo que no vendemos (sushi, hamburguesas, etc.) y get_categoria/get_menu lo confirman, decí con calidez que ese tipo de comida no la trabajamos (ej. \"El sushi no lo trabajamos 🙂\") y sugerí el estilo que sí hacemos: pizzería de barrio con pizzas a la piedra, empanadas, fainá, cafetería y postres; si hay algo parecido a lo que pidió, recomendalo (ej. hamburguesa → una pizza o empanadas de carne). Nunca respondas con una repregunta genérica.",
     "- Si piden bebidas \"sin alcohol\" o \"con alcohol\"/cervezas, pasá eso tal cual a get_categoria (ej. \"bebidas sin alcohol\") y mostrá solo lo que corresponde.",
     "- Nunca digas que un producto o categoría no existe (\"no tengo pizzas\") sin revisarlo antes con get_categoria o get_menu en este turno. Las pizzas pueden estar en categorías como \"Platos Principales\" o \"Promos\".",
     "- No copies ni imites mensajes anteriores del bot del historial: respondé a lo que pide ahora con datos frescos de las herramientas. Nunca escribas marcadores como [link], [nombre] o [precio].",
