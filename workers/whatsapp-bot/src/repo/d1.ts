@@ -63,9 +63,10 @@ async function cartaD1(db: SqlDatabase): Promise<CartaSeccion[]> {
     }
     const ref = (id: string | null, cents: number | null) => (id && cents !== null ? { id, price: fromCents(cents) } : null);
     const productos = [ref(r.p1, r.p1_price), ref(r.p2, r.p2_price)].slice(0, Math.max(1, s.columnas.length));
-    s.items = [...s.items, { nombre: r.nombre, nota: r.nota, productos }];
+    // Sin producto (o inactivo) la línea no se ofrece: el bot no muestra lo que no se puede pedir.
+    if (productos.some((p) => p !== null)) s.items = [...s.items, { nombre: r.nombre, nota: r.nota, productos }];
   }
-  return out;
+  return out.filter((s) => s.items.length > 0);
 }
 
 /** Conversaciones con los mismos 10 dígitos, la de actividad más reciente primero. */

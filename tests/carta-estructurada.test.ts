@@ -59,7 +59,10 @@ describe("carta estructurada: datos", () => {
     let carta = await getCartaPublica(db, actors.anon);
     assert.deepEqual(carta.map((s) => s.titulo), ["Pizzas", "Empanadas"]);
     assert.deepEqual(carta[0].items[0].productos.map((p) => p?.precio), [25000, 3600]);
-    assert.deepEqual(carta[0].items[1].productos, [null, null]);
+    // "Pizza de cancha" no tiene producto: no sale al público, pero el admin la ve marcada.
+    assert.deepEqual(carta[0].items.map((i) => i.nombre), ["Muzzarella"]);
+    const admin = await getCartaAdmin(db, actors.admin);
+    assert.deepEqual(admin.secciones[0].items[1].productos, [null, null]);
     db.raw.prepare("UPDATE products SET price_cents = 2700000 WHERE id = 'p-gde-muzza'").run();
     carta = await getCartaPublica(db, actors.anon);
     assert.equal(carta[0].items[0].productos[0]?.precio, 27000);
@@ -103,8 +106,11 @@ describe("carta estructurada: datos", () => {
     const carta = await getCartaPublica(db, actors.anon);
     assert.equal(carta[0].titulo, "Pizzas");
     assert.equal(carta[0].items[0].productos[0]?.precio, 25000);
-    assert.equal(carta[0].items[1].productos[0], null);
-    assert.ok(carta.some((s) => s.titulo === "Bebidas"));
+    // Solo queda la línea con producto; el resto (sin productos en esta base) se oculta.
+    assert.deepEqual(carta.map((s) => s.items.map((i) => i.nombre)), [["Muzzarella"]]);
+    const admin = await getCartaAdmin(db, actors.admin);
+    assert.ok(admin.secciones.some((s) => s.titulo === "Bebidas" && s.items.some((i) => i.nombre === "Pepsi Chica")));
+    assert.ok(admin.secciones.some((s) => s.items.some((i) => i.nombre === "Medialuna de grasa" && i.producto_id === null)));
   });
 
   it("zod: ids repetidos, segundo producto sin segunda columna, campos extra y largos", () => {
@@ -226,6 +232,7 @@ describe("carta estructurada: bot", () => {
     await saveCarta(db, actors.admin, CARTA);
     const conCarta = await run(repo, "get_categoria", { categoria: "pizzas" });
     assert.match(JSON.stringify(conCarta.secciones), /Muzzarella — \$25\.000 \/ \$3\.600/);
+    assert.doesNotMatch(JSON.stringify(conCarta.secciones), /Pizza de cancha/);
     const menu = await run(repo, "get_menu", {});
     assert.ok(Array.isArray(menu.carta));
   });

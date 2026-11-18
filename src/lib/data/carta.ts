@@ -190,11 +190,14 @@ async function readCarta(db: SqlDatabase, publica: boolean): Promise<CartaSeccio
   });
 }
 
-/** Carta pública (PDF, bot): solo secciones y líneas activas; precio solo de productos activos. Vacía = sin carta. */
+/** Carta pública (PDF): secciones y líneas activas con al menos un precio de producto activo. Vacía = sin carta. */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- lectura pública: el actor queda por contrato de la capa
 export async function getCartaPublica(db: SqlDatabase, _actor: Actor): Promise<CartaSeccionVista[]> {
   try {
-    return (await readCarta(db, true)).filter((s) => s.items.length > 0);
+    // Líneas sin producto o con producto inactivo no se muestran al público (el admin las sigue viendo marcadas).
+    return (await readCarta(db, true))
+      .map((s) => ({ ...s, items: s.items.filter((i) => i.productos.some((p) => p !== null)) }))
+      .filter((s) => s.items.length > 0);
   } catch (err: unknown) {
     // Sin la migración 0015 aplicada: se sigue con la carta por categorías.
     if (err instanceof Error && /no such table/i.test(err.message)) return [];
