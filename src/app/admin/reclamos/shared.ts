@@ -20,7 +20,26 @@ export interface ReclamoItem {
   created_at: string;
   resolved_at: string | null;
   notified_at: string | null;
+  sugerencia: Sugerencia | null;
+  sugerencia_at: string | null;
+  sugerencia_error: string | null;
+  mensaje_resolucion: string | null;
+  notificacion_estado: "enviado" | "fallo" | null;
+  notificacion_error: string | null;
 }
+
+export interface Sugerencia {
+  diagnostico: string;
+  resolucion: { tipo: "disculpa" | "reenvio" | "puntos" | "descuento"; valor?: number | null; motivo: string };
+  mensaje: string;
+}
+
+export const SUGERENCIA_LABEL: Record<Sugerencia["resolucion"]["tipo"], string> = {
+  disculpa: "Disculpa",
+  reenvio: "Reenvío",
+  puntos: "Puntos",
+  descuento: "Descuento",
+};
 
 export interface ReclamoDetalleData extends ReclamoItem {
   eventos: { id: string; tipo: string; detalle: string; autor: string; created_at: string }[];

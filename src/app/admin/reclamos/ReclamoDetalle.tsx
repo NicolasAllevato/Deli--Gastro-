@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { formatDateTimeAR } from "@/lib/time-ar";
 import { CATEGORIA_LABEL } from "@/lib/reclamos/categoria";
-import { ESTADO_BADGE, ESTADO_LABEL, call, type ReclamoDetalleData } from "./shared";
+import { ESTADO_BADGE, ESTADO_LABEL, SUGERENCIA_LABEL, call, type ReclamoDetalleData, type Sugerencia } from "./shared";
 
 const fecha = (iso: string) => formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" });
 const money = (cents: number) => `$${(cents / 100).toLocaleString("es-AR")}`;
@@ -29,6 +29,7 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
   const [resolucion, setResolucion] = useState("");
   const [compTipo, setCompTipo] = useState<Compensacion>("");
   const [compValor, setCompValor] = useState("");
+  const [mensajeCliente, setMensajeCliente] = useState("");
 
   const [version, setVersion] = useState(0);
 
@@ -73,11 +74,27 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
       setError("Indicá un valor entero mayor a 0 para la compensación.");
       return;
     }
-    void act({ accion: "resolver", resolucion, compensacion }, () => {
+    const mensajeFinal = mensajeCliente.trim() || undefined;
+    void act({ accion: "resolver", resolucion, compensacion, ...(mensajeFinal ? { mensaje: mensajeFinal } : {}) }, () => {
       setResolucion("");
       setCompTipo("");
       setCompValor("");
+      setMensajeCliente("");
     });
+  }
+
+  /** Precarga el formulario de resolución con la sugerencia del agente (todo queda editable). */
+  function usarSugerencia(s: Sugerencia) {
+    const { tipo, valor, motivo } = s.resolucion;
+    setResolucion(`${SUGERENCIA_LABEL[tipo]}: ${motivo}`);
+    if ((tipo === "puntos" || tipo === "descuento") && valor) {
+      setCompTipo(tipo);
+      setCompValor(String(valor));
+    } else {
+      setCompTipo("");
+      setCompValor("");
+    }
+    setMensajeCliente(s.mensaje);
   }
 
   if (error && !r) return <p role="alert" className="text-sm font-bold text-red-600 p-4">{error}</p>;
@@ -134,6 +151,37 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
         </p>
       )}
 
+      <section aria-label="Sugerencia del agente" className="neumorphic-inset rounded-xl p-3 space-y-2">
+        <h4 className="text-xs font-bold text-gray-600">Sugerencia del agente</h4>
+        {r.sugerencia ? (
+          <>
+            <p className="text-sm text-gray-800">{r.sugerencia.diagnostico}</p>
+            <p className="text-xs text-gray-600">
+              <strong>{SUGERENCIA_LABEL[r.sugerencia.resolucion.tipo]}</strong>
+              {r.sugerencia.resolucion.valor ? ` ${r.sugerencia.resolucion.valor}${r.sugerencia.resolucion.tipo === "descuento" ? "%" : " puntos"}` : ""} · {r.sugerencia.resolucion.motivo}
+            </p>
+            <p className="text-xs text-gray-600 whitespace-pre-wrap">Mensaje: {r.sugerencia.mensaje}</p>
+          </>
+        ) : (
+          <p className="text-xs text-gray-500">{r.sugerencia_error ? `No se pudo generar: ${r.sugerencia_error}` : "Todavía sin sugerencia."}</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {r.sugerencia && r.estado !== "resuelto" && (
+            <Button size="sm" disabled={busy} onClick={() => usarSugerencia(r.sugerencia as Sugerencia)}>Usar sugerencia</Button>
+          )}
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act({ accion: "sugerir" })}>
+            {r.sugerencia ? "Sugerir de nuevo" : "Sugerir resolución"}
+          </Button>
+        </div>
+      </section>
+
+      {r.estado === "resuelto" && r.notificacion_estado === "fallo" && (
+        <div role="alert" className="neumorphic-inset rounded-xl p-3 space-y-2 text-xs text-red-600">
+          <p className="font-bold">No se pudo notificar al cliente: {r.notificacion_error}</p>
+          <Button size="sm" disabled={busy} onClick={() => void act({ accion: "renotificar" })}>Reintentar aviso</Button>
+        </div>
+      )}
+
       {error && <p role="alert" className="text-xs font-bold text-red-600">{error}</p>}
       {aviso && <p role="status" className="text-xs font-bold text-gray-700">{aviso}</p>}
 
@@ -156,7 +204,7 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
 
       {r.estado !== "resuelto" && (
         <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); resolver(); }}>
-          <label className="text-xs font-bold text-gray-600 block" htmlFor="reclamo-resolucion">Resolución (se le envía al cliente)</label>
+          <label className="text-xs font-bold text-gray-600 block" htmlFor="reclamo-resolucion">Resolución</label>
           <textarea id="reclamo-resolucion" className={inputClass} rows={2} maxLength={1000} value={resolucion} onChange={(e) => setResolucion(e.target.value)} />
           <div className="flex flex-wrap gap-2 items-end">
             <label className="text-xs text-gray-500 flex flex-col gap-1">
@@ -174,6 +222,10 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
               </label>
             )}
           </div>
+          <label className="text-xs font-bold text-gray-600 block" htmlFor="reclamo-mensaje-cliente">
+            Mensaje al cliente (vacío = se arma con la resolución y la compensación)
+          </label>
+          <textarea id="reclamo-mensaje-cliente" className={inputClass} rows={3} maxLength={1000} value={mensajeCliente} onChange={(e) => setMensajeCliente(e.target.value)} />
           <Button size="sm" type="submit" disabled={busy || !resolucion.trim()}>Resolver y avisar al cliente</Button>
         </form>
       )}

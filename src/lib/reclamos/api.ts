@@ -32,9 +32,15 @@ export interface ReclamosApiDeps {
   resolver(
     actor: Actor,
     id: string,
-    input: { resolucion: string; compensacion?: { tipo: "puntos" | "descuento"; valor: number } | null },
+    input: { resolucion: string; compensacion?: { tipo: "puntos" | "descuento"; valor: number } | null; mensaje?: string },
   ): Promise<{ reclamo: Reclamo; puntosAcreditados: number }>;
   enviar(actor: Actor, id: string, texto: string): Promise<EnvioResultado>;
+  /** Guarda si el aviso de resolución al cliente salió o falló (para mostrar "no se pudo notificar" y reintentar). */
+  marcarNotificacion(actor: Actor, id: string, ok: boolean, error?: string): Promise<void>;
+  /** Corre el agente de reclamos y guarda la sugerencia. */
+  sugerir(id: string): Promise<{ ok: true; sugerencia: unknown } | { ok: false; error: string }>;
+  /** Modo entrenamiento del bot (aviso en la página). */
+  entrenamiento(actor: Actor): Promise<boolean>;
   now?: () => Date;
 }
 
@@ -57,8 +63,12 @@ export async function listarReclamos(actor: Actor, params: URLSearchParams, deps
   if (!parsed.success) return { status: 400, body: { error: parsed.error.issues[0]?.message ?? "Filtros inválidos." } };
   try {
     const desde = new Date((deps.now?.() ?? new Date()).getTime() - 30 * 86_400_000).toISOString();
-    const [reclamos, porCategoria] = await Promise.all([deps.list(actor, parsed.data), deps.porCategoria(actor, desde)]);
-    return { status: 200, body: { reclamos, porCategoria } };
+    const [reclamos, porCategoria, modoEntrenamiento] = await Promise.all([
+      deps.list(actor, parsed.data),
+      deps.porCategoria(actor, desde),
+      deps.entrenamiento(actor),
+    ]);
+    return { status: 200, body: { reclamos, porCategoria, modoEntrenamiento } };
   } catch (err) {
     return errorResult(err, "list");
   }
@@ -84,6 +94,13 @@ export async function detalleReclamo(actor: Actor, id: string, deps: ReclamosApi
   }
 }
 
+/** Manda el aviso de resolución y deja registrado si salió. El reclamo queda resuelto igual (no se deshace). */
+async function notificar(actor: Actor, id: string, mensaje: string, deps: ReclamosApiDeps): Promise<Record<string, unknown>> {
+  const sent = await deps.enviar(actor, id, mensaje);
+  await deps.marcarNotificacion(actor, id, sent.ok, sent.ok ? undefined : sent.error);
+  return sent.ok ? { mensajeEnviado: true } : { mensajeEnviado: false, aviso: sent.error };
+}
+
 /** POST acción: tomar, reabrir, nota, responder (WhatsApp) o resolver (+ compensación + WhatsApp al cliente). */
 export async function accionReclamo(actor: Actor, id: string, body: unknown, deps: ReclamosApiDeps): Promise<ApiResult> {
   if (!isAdmin(actor)) return forbidden();
@@ -104,14 +121,29 @@ export async function accionReclamo(actor: Actor, id: string, body: unknown, dep
         const sent = await deps.enviar(actor, id, input.texto);
         return sent.ok ? { status: 200, body: { ok: true } } : { status: sent.status, body: { error: sent.error } };
       }
+      case "sugerir": {
+        const exists = await deps.get(actor, id);
+        if (!exists) return { status: 404, body: { error: "No se encontró el reclamo." } };
+        const r = await deps.sugerir(id);
+        return r.ok ? { status: 200, body: { ok: true, sugerencia: r.sugerencia } } : { status: 502, body: { error: r.error } };
+      }
       case "resolver": {
-        const { reclamo, puntosAcreditados } = await deps.resolver(actor, id, { resolucion: input.resolucion, compensacion: input.compensacion ?? null });
-        // La resolución ya quedó guardada: si el WhatsApp no sale (ventana vencida, sin conexión) se avisa pero no se deshace.
-        const sent = await deps.enviar(actor, id, mensajeResolucion(reclamo.numero, input.resolucion, input.compensacion ?? null));
-        return {
-          status: 200,
-          body: { ok: true, puntosAcreditados, mensajeEnviado: sent.ok, ...(sent.ok ? {} : { aviso: sent.error }) },
-        };
+        const compensacion = input.compensacion ?? null;
+        const actual = await deps.get(actor, id);
+        if (!actual) return { status: 404, body: { error: "No se encontró el reclamo." } };
+        // El mensaje SIEMPRE sale: el editado por el local o uno armado con la resolución y la compensación.
+        const mensaje = input.mensaje ?? mensajeResolucion(actual.numero, input.resolucion, compensacion);
+        const { puntosAcreditados } = await deps.resolver(actor, id, { resolucion: input.resolucion, compensacion, mensaje });
+        return { status: 200, body: { ok: true, puntosAcreditados, ...(await notificar(actor, id, mensaje, deps)) } };
+      }
+      case "renotificar": {
+        const actual = await deps.get(actor, id);
+        if (!actual) return { status: 404, body: { error: "No se encontró el reclamo." } };
+        if (actual.estado !== "resuelto" || !actual.mensaje_resolucion) {
+          return { status: 409, body: { error: "El reclamo no tiene un aviso de resolución para reenviar." } };
+        }
+        if (actual.notificacion_estado === "enviado") return { status: 409, body: { error: "El cliente ya fue notificado." } };
+        return { status: 200, body: { ok: true, ...(await notificar(actor, id, actual.mensaje_resolucion, deps)) } };
       }
     }
   } catch (err) {

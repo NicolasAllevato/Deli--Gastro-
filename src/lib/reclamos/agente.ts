@@ -167,3 +167,75 @@ export async function sugerirResolucion(c: ContextoAgente, deps: AgenteDeps): Pr
   }
   return normalizarSugerencia(raw, c.topes);
 }
+
+/* ------------------------------------------------------------ orquestación */
+
+/** Lo mínimo que hace falta de la capa de datos (ver `contextoAgente` en src/lib/data/reclamos.ts). */
+export interface DatosAgente {
+  reclamo: { numero: number; categoria: Categoria; motivo: string; foto_keys: string[]; created_at: string; client_name: string | null };
+  pedido: { id: string; status: string; items_desc: string; total_cents: number; created_at: string; delivered_at: string | null } | null;
+  pedidosCliente: number;
+  ultimosPedidos: { status: string; total_cents: number; created_at: string }[];
+  reclamosPrevios: { numero: number; categoria: string; estado: string; compensacion_tipo: string | null; compensacion_valor: number | null }[];
+  config: Topes;
+}
+
+export function contextoDesde(d: DatosAgente): ContextoAgente {
+  const pesos = (cents: number) => Math.round(cents) / 100;
+  const demora = d.pedido?.delivered_at ? Math.round((Date.parse(d.pedido.delivered_at) - Date.parse(d.pedido.created_at)) / 60_000) : null;
+  return {
+    numero: d.reclamo.numero,
+    categoria: d.reclamo.categoria,
+    motivo: d.reclamo.motivo,
+    fotos: d.reclamo.foto_keys.length,
+    creado: d.reclamo.created_at,
+    cliente: d.reclamo.client_name,
+    pedido: d.pedido
+      ? {
+          codigo: `#${d.pedido.id.slice(0, 8).toUpperCase()}`,
+          estado: d.pedido.status,
+          items: d.pedido.items_desc,
+          total: pesos(d.pedido.total_cents),
+          creado: d.pedido.created_at,
+          demoraMin: demora !== null && Number.isFinite(demora) && demora >= 0 ? demora : null,
+        }
+      : null,
+    historial: {
+      pedidos: d.pedidosCliente,
+      ultimosPedidos: d.ultimosPedidos.map((p) => ({ estado: p.status, total: pesos(p.total_cents), creado: p.created_at })),
+      reclamosPrevios: d.reclamosPrevios.map((r) => ({
+        numero: r.numero,
+        categoria: r.categoria,
+        estado: r.estado,
+        compensacion: r.compensacion_tipo ? `${r.compensacion_tipo} ${r.compensacion_valor ?? ""}`.trim() : null,
+      })),
+    },
+    topes: { maxPuntos: d.config.maxPuntos, maxDescuentoPct: d.config.maxDescuentoPct },
+  };
+}
+
+export interface EjecutarDeps {
+  datos(id: string): Promise<DatosAgente | null>;
+  apiKey(): Promise<string | null>;
+  guardar(id: string, r: { sugerencia: Sugerencia } | { error: string }): Promise<void>;
+  fetchImpl?: typeof fetch;
+}
+
+export type EjecucionResultado = { ok: true; sugerencia: Sugerencia } | { ok: false; error: string };
+
+/** Corre el agente y guarda el resultado (sugerencia o error). Nunca tira: el ticket no depende de esto. */
+export async function ejecutarAgente(id: string, deps: EjecutarDeps): Promise<EjecucionResultado> {
+  let error: string;
+  try {
+    const datos = await deps.datos(id);
+    if (!datos) return { ok: false, error: "No se encontró el reclamo." };
+    const sugerencia = await sugerirResolucion(contextoDesde(datos), { apiKey: (await deps.apiKey()) ?? "", fetchImpl: deps.fetchImpl });
+    await deps.guardar(id, { sugerencia });
+    return { ok: true, sugerencia };
+  } catch (e: unknown) {
+    error = e instanceof AgenteError ? e.message : "No se pudo generar la sugerencia.";
+    if (!(e instanceof AgenteError)) console.error("[reclamos] agente", e instanceof Error ? e.message : e);
+  }
+  await deps.guardar(id, { error }).catch(() => undefined);
+  return { ok: false, error };
+}

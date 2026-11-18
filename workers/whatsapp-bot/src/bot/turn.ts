@@ -18,7 +18,7 @@ import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
-import { attachPhotos, complaintUpdateReply, isComplaintReply, registerComplaint, withoutPhotoMarks, type TurnImage } from "./complaints.ts";
+import { attachPhotos, complaintUpdateReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
 import { esQueja } from "../../../../src/lib/reclamos/categoria.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
@@ -68,16 +68,24 @@ interface TurnExtras {
  * abierto -> reclamo + derivación a una persona; cerrado -> reclamo sin silenciar al bot. Un pedido de hablar con
  * una persona SIN queja, con el local abierto, solo deriva (como siempre).
  */
+/** Entrenamiento gana: los reclamos no se derivan aunque el local esté abierto. */
+function complaintMode(settings: BotSettings): ComplaintMode {
+  if (settings.trainingMode) return "entrenamiento";
+  return openNow(settings) ? "abierto" : "cerrado";
+}
+
 async function complaintFlow(
   deps: TurnDeps, conversation: BotConversation, settings: BotSettings, text: string, extras: TurnExtras, openReply: string = REPLIES.handoff,
 ): Promise<TurnOutcome> {
   const shopOpen = openNow(settings);
   const isComplaint = esQueja(text) || extras.images.length > 0;
   if (!shopOpen || isComplaint) {
-    const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, shopOpen, openAt: settings.hours.open });
+    const mode = complaintMode(settings);
+    const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, mode, openAt: settings.hours.open });
     if (done) {
-      if (shopOpen) await deps.repo.setTakeover(conversation.id);
-      await reply(deps, conversation, done.text, !shopOpen);
+      // Solo con el local abierto y fuera de entrenamiento el reclamo pasa a una persona.
+      if (mode === "abierto") await deps.repo.setTakeover(conversation.id);
+      await reply(deps, conversation, done.text, mode !== "abierto");
       return "ticket";
     }
     if (!shopOpen) {
@@ -319,7 +327,7 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   if (conversation.humanTakeover) {
     // Con una persona a cargo no se responde, pero las fotos se suman al reclamo abierto (sin mensaje).
     const open = images.length > 0 ? await deps.repo.openComplaint?.(conversation.id).catch(() => null) : null;
-    if (open) await attachPhotos(deps, open, images);
+    if (open && (await attachPhotos(deps, open, images)) > 0) await pingApp(deps, conversation.id, open.id, turn.wamids.at(-1));
     return "takeover";
   }
 
@@ -486,10 +494,10 @@ async function complaintFollowUp(deps: TurnDeps, conversation: BotConversation, 
   if (!onlyPhotos && !answersComplaint) return null;
   const open = await deps.repo.openComplaint(conversation.id).catch(() => null);
   if (!open) return null;
-  const shopOpen = openNow(settings);
-  const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, shopOpen, openAt: settings.hours.open });
+  const mode = complaintMode(settings);
+  const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, mode, openAt: settings.hours.open });
   if (!done) return null;
-  await reply(deps, conversation, done.ticket.created ? done.text : complaintUpdateReply(done.ticket.numero, shopOpen, settings.hours.open, onlyPhotos));
+  await reply(deps, conversation, done.ticket.created ? done.text : complaintUpdateReply(done.ticket.numero, mode, settings.hours.open, onlyPhotos));
   return "ticket";
 }
 

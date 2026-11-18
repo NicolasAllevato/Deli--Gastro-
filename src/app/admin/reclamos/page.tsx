@@ -32,6 +32,7 @@ export default function ReclamosPage() {
   });
   const [items, setItems] = useState<ReclamoItem[] | null>(null);
   const [porCategoria, setPorCategoria] = useState<Record<Categoria, number> | null>(null);
+  const [entrenamiento, setEntrenamiento] = useState(false);
   const [selected, setSelected] = useState<string | null>(() => queryParam("id"));
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -39,11 +40,12 @@ export default function ReclamosPage() {
   useEffect(() => {
     let alive = true;
     const qs = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v !== ""));
-    call<{ reclamos: ReclamoItem[]; porCategoria: Record<Categoria, number> }>(`/api/admin/reclamos?${qs}`)
+    call<{ reclamos: ReclamoItem[]; porCategoria: Record<Categoria, number>; modoEntrenamiento?: boolean }>(`/api/admin/reclamos?${qs}`)
       .then((data) => {
         if (!alive) return;
         setItems(data.reclamos);
         setPorCategoria(data.porCategoria);
+        setEntrenamiento(data.modoEntrenamiento === true);
         setError(null);
       })
       .catch((e: unknown) => {
@@ -78,6 +80,12 @@ export default function ReclamosPage() {
           ))}
         </ul>
       </header>
+
+      {entrenamiento && (
+        <p role="status" className="neumorphic rounded-2xl px-4 py-3 text-sm font-bold text-brand-orange">
+          Modo entrenamiento activo: los reclamos no se derivan
+        </p>
+      )}
 
       <section className="neumorphic rounded-2xl p-4 flex flex-wrap gap-3 items-end" aria-label="Filtros">
         <label className="text-xs text-gray-500 flex flex-col gap-1">

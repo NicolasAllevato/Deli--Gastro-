@@ -37,9 +37,12 @@ export function orderDayLabel(createdAt: Date, now: Date): string {
   return `del ${local.getUTCDate()}/${local.getUTCMonth() + 1}`;
 }
 
+/** abierto: deriva a una persona; cerrado: lo contactan al abrir; entrenamiento: no deriva, el local lo revisa. */
+export type ComplaintMode = "abierto" | "cerrado" | "entrenamiento";
+
 export interface ReplyParts {
   numero: number;
-  shopOpen: boolean;
+  mode: ComplaintMode;
   openAt: string;
   order: { code: string; day: string } | null;
   askDetail: boolean;
@@ -52,18 +55,21 @@ export function complaintReply(p: ReplyParts): string {
   if (p.askDetail) lines.push("Contame brevemente qué pasó.");
   if (p.order) lines.push(`¿Es por tu pedido ${p.order.code} ${p.order.day}?`);
   if (p.askPhoto) lines.push("Si podés, mandame una foto del pedido así lo vemos.");
-  lines.push(
-    p.shopOpen
-      ? `Ya lo registramos (reclamo #${p.numero}). Te escribe alguien del local.`
-      : `Lo registramos (reclamo #${p.numero}). Te contactamos cuando abramos a las ${p.openAt}.`,
-  );
+  lines.push(closingLine(p.mode, p.numero, p.openAt));
   return lines.join("\n");
 }
 
+function closingLine(mode: ComplaintMode, numero: number, openAt: string): string {
+  if (mode === "entrenamiento") return `Ya lo registramos (reclamo #${numero}). El local lo revisa y te escribimos por acá.`;
+  if (mode === "abierto") return `Ya lo registramos (reclamo #${numero}). Te escribe alguien del local.`;
+  return `Lo registramos (reclamo #${numero}). Te contactamos cuando abramos a las ${openAt}.`;
+}
+
 /** Mensaje cuando el cliente suma información o fotos a un reclamo que ya estaba abierto. */
-export function complaintUpdateReply(numero: number, shopOpen: boolean, openAt: string, onlyPhotos: boolean): string {
+export function complaintUpdateReply(numero: number, mode: ComplaintMode, openAt: string, onlyPhotos: boolean): string {
   const head = onlyPhotos ? `¡Gracias por la foto! La sumé al reclamo #${numero}.` : `Gracias, lo sumé a tu reclamo #${numero}.`;
-  return shopOpen ? `${head} Te escribe alguien del local.` : `${head} Te contactamos cuando abramos a las ${openAt}.`;
+  if (mode === "entrenamiento") return `${head} El local lo revisa y te escribimos por acá.`;
+  return mode === "abierto" ? `${head} Te escribe alguien del local.` : `${head} Te contactamos cuando abramos a las ${openAt}.`;
 }
 
 /** ¿El último mensaje del bot es el aviso de un reclamo? (el cliente está contestando sobre su reclamo). */
@@ -95,6 +101,16 @@ export async function attachPhotos(deps: ComplaintDeps, ticket: ComplaintTicket,
   return saved;
 }
 
+/**
+ * Avisa a la app que el reclamo es nuevo o cambió: la app manda el mail al local (una sola vez) y le pide al agente
+ * de reclamos una sugerencia nueva. Si falla, el reclamo queda igual y la sugerencia se pide desde el panel.
+ */
+export async function pingApp(deps: ComplaintDeps, conversationId: string, ticketId: string, inboundWamid: string | undefined): Promise<void> {
+  if (!inboundWamid || !deps.orders?.reclamo) return;
+  const sent = await deps.orders.reclamo({ conversationId, inboundWamid, reclamoId: ticketId }).catch(() => null);
+  if (!sent?.ok) deps.log("[whatsapp-bot] no se pudo avisar el reclamo a la app", { ticket: ticketId, code: sent && !sent.ok ? sent.code : "error" });
+}
+
 export interface Registered {
   ticket: ComplaintTicket;
   text: string;
@@ -107,7 +123,7 @@ export interface Registered {
 export async function registerComplaint(
   deps: ComplaintDeps,
   conversation: BotConversation,
-  input: { text: string; images: readonly TurnImage[]; inboundWamid: string | undefined; shopOpen: boolean; openAt: string },
+  input: { text: string; images: readonly TurnImage[]; inboundWamid: string | undefined; mode: ComplaintMode; openAt: string },
   now: Date = new Date(),
 ): Promise<Registered | null> {
   if (!deps.repo.createComplaint) return null;
@@ -125,22 +141,17 @@ export async function registerComplaint(
   if (!ticket) return null;
   const photos = await attachPhotos(deps, ticket, input.images);
 
-  if (ticket.created && input.inboundWamid && deps.orders?.reclamo) {
-    const sent = await deps.orders
-      .reclamo({ conversationId: conversation.id, inboundWamid: input.inboundWamid, reclamoId: ticket.id })
-      .catch(() => null);
-    if (!sent?.ok) deps.log("[whatsapp-bot] no se pudo avisar el reclamo al local", { ticket: ticket.id, code: sent && !sent.ok ? sent.code : "error" });
-  }
+  await pingApp(deps, conversation.id, ticket.id, input.inboundWamid);
 
   const text = ticket.created
     ? complaintReply({
         numero: ticket.numero,
-        shopOpen: input.shopOpen,
+        mode: input.mode,
         openAt: input.openAt,
         order: order ? { code: orderCode(order.id), day: orderDayLabel(order.createdAt, now) } : null,
         askDetail: faltaDetalle(clean),
         askPhoto: ticket.fotos + photos === 0,
       })
-    : complaintUpdateReply(ticket.numero, input.shopOpen, input.openAt, clean.length === 0 && photos > 0);
+    : complaintUpdateReply(ticket.numero, input.mode, input.openAt, clean.length === 0 && photos > 0);
   return { ticket, text };
 }

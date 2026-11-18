@@ -34,6 +34,13 @@ export interface Reclamo {
   updated_at: string;
   resolved_at: string | null;
   notified_at: string | null;
+  /** Sugerencia del agente de reclamos (JSON ya validado al guardarla); null = sin sugerencia. */
+  sugerencia: unknown;
+  sugerencia_at: string | null;
+  sugerencia_error: string | null;
+  mensaje_resolucion: string | null;
+  notificacion_estado: "enviado" | "fallo" | null;
+  notificacion_error: string | null;
 }
 
 export interface ReclamoEvento {
@@ -59,12 +66,13 @@ export interface ReclamoDetalle extends Reclamo {
 
 const COLS = `r.id, r.numero, r.conversation_id, r.client_phone, r.client_id, coalesce(c.name, w.contact_name) AS client_name,
   r.order_id, r.categoria, r.motivo, r.foto_keys, r.estado, r.resolucion, r.compensacion_tipo, r.compensacion_valor, r.notas,
-  r.created_at, r.updated_at, r.resolved_at, r.notified_at
+  r.created_at, r.updated_at, r.resolved_at, r.notified_at, r.sugerencia, r.sugerencia_at, r.sugerencia_error,
+  r.mensaje_resolucion, r.notificacion_estado, r.notificacion_error
   FROM reclamos r
   LEFT JOIN clients c ON c.id = r.client_id
   LEFT JOIN wa_conversations w ON w.id = r.conversation_id`;
 
-type Row = Omit<Reclamo, "foto_keys"> & { foto_keys: string };
+type Row = Omit<Reclamo, "foto_keys" | "sugerencia"> & { foto_keys: string; sugerencia: string | null };
 
 function parseKeys(raw: string): string[] {
   try {
@@ -75,7 +83,7 @@ function parseKeys(raw: string): string[] {
   }
 }
 
-const fromRow = (row: Row): Reclamo => ({ ...row, foto_keys: parseKeys(row.foto_keys) });
+const fromRow = (row: Row): Reclamo => ({ ...row, foto_keys: parseKeys(row.foto_keys), sugerencia: row.sugerencia ? safeJson(row.sugerencia) ?? null : null });
 
 /* ---------------------------------------------------------------- esquemas */
 
@@ -102,10 +110,14 @@ export const reclamoAccionSchema = z.discriminatedUnion("accion", [
   z.object({ accion: z.literal("reabrir") }).strict(),
   z.object({ accion: z.literal("nota"), texto: texto(1000) }).strict(),
   z.object({ accion: z.literal("responder"), texto: texto(1000) }).strict(),
+  z.object({ accion: z.literal("sugerir") }).strict(),
+  z.object({ accion: z.literal("renotificar") }).strict(),
   z
     .object({
       accion: z.literal("resolver"),
       resolucion: texto(1000),
+      /** Mensaje (editado) que se le manda al cliente; sin él se arma uno con la resolución y la compensación. */
+      mensaje: texto(1000).optional(),
       compensacion: z
         .discriminatedUnion("tipo", [
           // Hasta 10.000 puntos por reclamo: un tope que evita un cero de más por error.
@@ -317,7 +329,7 @@ export async function resolverReclamo(
   db: SqlDatabase,
   actor: Actor,
   id: string,
-  input: { resolucion: string; compensacion?: { tipo: CompensacionTipo; valor: number } | null },
+  input: { resolucion: string; compensacion?: { tipo: CompensacionTipo; valor: number } | null; mensaje?: string },
 ): Promise<ResolucionResultado> {
   requireStaff(actor);
   const actual = await db.prepare(`SELECT ${COLS} WHERE r.id = ?`).bind(id).first<Row>();
@@ -332,10 +344,11 @@ export async function resolverReclamo(
   const stmts: SqlStatement[] = [
     db
       .prepare(
-        `UPDATE reclamos SET estado = 'resuelto', resolucion = ?, compensacion_tipo = ?, compensacion_valor = ?, resolved_at = ?, updated_at = ?
+        `UPDATE reclamos SET estado = 'resuelto', resolucion = ?, compensacion_tipo = ?, compensacion_valor = ?, resolved_at = ?, updated_at = ?,
+           mensaje_resolucion = ?, notificacion_estado = NULL, notificacion_error = NULL
          WHERE id = ? AND estado <> 'resuelto'`,
       )
-      .bind(input.resolucion, comp?.tipo ?? null, comp?.valor ?? null, now, now, id),
+      .bind(input.resolucion, comp?.tipo ?? null, comp?.valor ?? null, now, now, input.mensaje ?? null, id),
     eventoStmt(db, id, "estado", `Resuelto: ${input.resolucion}`, "admin"),
   ];
   if (comp) {
@@ -365,6 +378,7 @@ export async function resolverReclamo(
     compensacion_valor: comp?.valor ?? null,
     resolved_at: now,
     updated_at: now,
+    mensaje_resolucion: input.mensaje ?? null,
   });
   return { reclamo, puntosAcreditados };
 }
@@ -440,15 +454,122 @@ export async function conversacionDeReclamo(
   return row ? { conversationId: row.conversation_id, phone: row.phone, lastInboundAt: row.last_inbound_at, numero: row.numero } : null;
 }
 
-/** Horario del local (mismas claves que usa el bot) para el SLA del panel. */
-export async function horarioLocal(db: SqlDatabase, actor: Actor): Promise<{ open: string; close: string; paused: boolean }> {
+export interface ConfigReclamos {
+  open: string;
+  close: string;
+  paused: boolean;
+  /** `bot_modo_entrenamiento`: los reclamos no se derivan a una persona. */
+  entrenamiento: boolean;
+  /** Topes del agente de reclamos (`reclamo_max_puntos`, `reclamo_max_descuento_pct`). */
+  maxPuntos: number;
+  maxDescuentoPct: number;
+}
+
+const DEFAULT_MAX_PUNTOS = 500;
+const DEFAULT_MAX_DESCUENTO_PCT = 20;
+
+/** Horario (mismas claves que el bot) para el SLA, modo entrenamiento y topes de compensación del agente. */
+export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<ConfigReclamos> {
   requireStaff(actor);
   const { results } = await db
-    .prepare("SELECT key, value FROM global_config WHERE key IN ('horario_apertura', 'horario_cierre', 'modo_pausa')")
+    .prepare(
+      `SELECT key, value FROM global_config
+       WHERE key IN ('horario_apertura', 'horario_cierre', 'modo_pausa', 'bot_modo_entrenamiento', 'reclamo_max_puntos', 'reclamo_max_descuento_pct')`,
+    )
     .all<{ key: string; value: string }>();
   const cfg = new Map(results.map((r) => [r.key, safeJson(r.value)]));
   const hhmm = (k: string, d: string) => (typeof cfg.get(k) === "string" ? (cfg.get(k) as string).slice(0, 5) : d);
-  return { open: hhmm("horario_apertura", "11:00"), close: hhmm("horario_cierre", "23:00"), paused: cfg.get("modo_pausa") === true };
+  const entero = (k: string, d: number, max: number) => {
+    const n = Number(cfg.get(k));
+    return Number.isInteger(n) && n >= 0 ? Math.min(n, max) : d;
+  };
+  const training = cfg.get("bot_modo_entrenamiento");
+  return {
+    open: hhmm("horario_apertura", "11:00"),
+    close: hhmm("horario_cierre", "23:00"),
+    paused: cfg.get("modo_pausa") === true,
+    entrenamiento: training === true || training === "true",
+    maxPuntos: entero("reclamo_max_puntos", DEFAULT_MAX_PUNTOS, 10_000),
+    maxDescuentoPct: entero("reclamo_max_descuento_pct", DEFAULT_MAX_DESCUENTO_PCT, 100),
+  };
+}
+
+export interface ContextoAgenteDatos {
+  reclamo: Reclamo;
+  pedido: (ReclamoPedido & { delivered_at: string | null }) | null;
+  pedidosCliente: number;
+  ultimosPedidos: { status: string; total_cents: number; created_at: string }[];
+  reclamosPrevios: { numero: number; categoria: string; estado: string; compensacion_tipo: string | null; compensacion_valor: number | null }[];
+  config: ConfigReclamos;
+}
+
+/** Datos para el agente de reclamos: ticket, pedido con hora de entrega, historial del cliente (mismo teléfono) y topes. */
+export async function contextoAgente(db: SqlDatabase, actor: Actor, id: string): Promise<ContextoAgenteDatos | null> {
+  requireStaff(actor);
+  const row = await db.prepare(`SELECT ${COLS} WHERE r.id = ?`).bind(id).first<Row>();
+  if (!row) return null;
+  const tail = row.client_phone.replace(/\D/g, "").slice(-10);
+  const [pedido, cuenta, ultimos, previos, config] = await Promise.all([
+    row.order_id
+      ? db
+          .prepare("SELECT id, status, items_desc, total_cents, created_at, delivered_at FROM orders WHERE id = ?")
+          .bind(row.order_id)
+          .first<ReclamoPedido & { delivered_at: string | null }>()
+      : Promise.resolve(null),
+    db
+      .prepare("SELECT count(*) AS n FROM orders WHERE client_id IN (SELECT id FROM clients WHERE phone_digits = ? AND is_anonymous = 0)")
+      .bind(tail)
+      .first<{ n: number }>(),
+    db
+      .prepare(
+        `SELECT status, total_cents, created_at FROM orders WHERE client_id IN (SELECT id FROM clients WHERE phone_digits = ? AND is_anonymous = 0)
+         ORDER BY created_at DESC LIMIT 5`,
+      )
+      .bind(tail)
+      .all<{ status: string; total_cents: number; created_at: string }>(),
+    db
+      .prepare(
+        `SELECT numero, categoria, estado, compensacion_tipo, compensacion_valor FROM reclamos
+         WHERE substr(client_phone, -10) = ? AND id <> ? ORDER BY created_at DESC LIMIT 5`,
+      )
+      .bind(tail, id)
+      .all<ContextoAgenteDatos["reclamosPrevios"][number]>(),
+    configReclamos(db, actor),
+  ]);
+  return {
+    reclamo: fromRow(row),
+    pedido: pedido ?? null,
+    pedidosCliente: Number(cuenta?.n ?? 0),
+    ultimosPedidos: ultimos.results,
+    reclamosPrevios: previos.results,
+    config,
+  };
+}
+
+/** Guarda la sugerencia del agente (JSON ya validado) o el error del último intento. */
+export async function guardarSugerencia(db: SqlDatabase, actor: Actor, id: string, resultado: { sugerencia: unknown } | { error: string }): Promise<void> {
+  requireStaff(actor);
+  const now = nowIso();
+  if ("sugerencia" in resultado) {
+    await db
+      .prepare("UPDATE reclamos SET sugerencia = ?, sugerencia_at = ?, sugerencia_error = NULL WHERE id = ?")
+      .bind(JSON.stringify(resultado.sugerencia), now, id)
+      .run();
+    return;
+  }
+  await db.prepare("UPDATE reclamos SET sugerencia_error = ?, sugerencia_at = ? WHERE id = ?").bind(resultado.error.slice(0, 300), now, id).run();
+}
+
+/** Resultado del aviso de resolución al cliente (enviado o falló, con el motivo) y su evento. */
+export async function marcarNotificacionResolucion(db: SqlDatabase, actor: Actor, id: string, ok: boolean, error?: string): Promise<void> {
+  requireStaff(actor);
+  const now = nowIso();
+  await db.batch([
+    db
+      .prepare("UPDATE reclamos SET notificacion_estado = ?, notificacion_error = ?, updated_at = ? WHERE id = ?")
+      .bind(ok ? "enviado" : "fallo", ok ? null : (error ?? "Error desconocido").slice(0, 300), now, id),
+    ...(ok ? [] : [eventoStmt(db, id, "mensaje", `No se pudo notificar al cliente: ${error ?? "error desconocido"}`, "sistema")]),
+  ]);
 }
 
 /* ---------------------------------------------------------------- app */
@@ -466,7 +587,10 @@ export const reclamosApp = {
   contextoAviso: async (actor: Actor, id: string) => contextoAvisoReclamo(await appDb(), actor, id),
   marcarNotificado: async (actor: Actor, id: string, detalle: string) => marcarReclamoNotificado(await appDb(), actor, id, detalle),
   conversacion: async (actor: Actor, id: string) => conversacionDeReclamo(await appDb(), actor, id),
-  horario: async (actor: Actor) => horarioLocal(await appDb(), actor),
+  config: async (actor: Actor) => configReclamos(await appDb(), actor),
+  contextoAgente: async (actor: Actor, id: string) => contextoAgente(await appDb(), actor, id),
+  guardarSugerencia: async (actor: Actor, id: string, r: Parameters<typeof guardarSugerencia>[3]) => guardarSugerencia(await appDb(), actor, id, r),
+  marcarNotificacion: async (actor: Actor, id: string, ok: boolean, error?: string) => marcarNotificacionResolucion(await appDb(), actor, id, ok, error),
 };
 
 async function appDb(): Promise<SqlDatabase> {
