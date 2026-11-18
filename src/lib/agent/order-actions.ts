@@ -2,7 +2,7 @@ import type { createAdminClient } from "@/utils/supabase/admin";
 import type { Database, Json } from "@/types/database";
 import { isDemoMode } from "@/lib/demo/mode";
 import { geocodeAddress, type GeocodeResult } from "@/lib/geocode";
-import { minutesSince, type PAYMENT_METHODS } from "@/lib/orders";
+import { minutesSince, pointsForLines, type PAYMENT_METHODS } from "@/lib/orders";
 import { cancelOrderForClient, createDeliveryOrder, priceOrder } from "@/lib/orders-create";
 import { getGateway, type PaymentGateway } from "@/lib/payments/gateway";
 import { cancelPendingIntent, latestPendingIntent, startOnlinePayment } from "@/lib/payments/intents";
@@ -87,6 +87,8 @@ export interface QuoteResult {
   total: number;
   zone: unknown;
   resolved_address: string;
+  /** Puntos que suma el cliente con este pedido: misma cuenta que al crearlo (`pointsForLines`). */
+  points: number;
   note: string;
 }
 
@@ -246,6 +248,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     total: subtotal + fee,
     zone,
     resolved_address: place.label,
+    points: pointsForLines(lines),
     note: "Mostrale el resumen y preguntale si confirma. No crees el pedido hasta su respuesta.",
   };
 }

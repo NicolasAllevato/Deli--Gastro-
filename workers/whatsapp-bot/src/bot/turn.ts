@@ -22,7 +22,8 @@ import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  lastDecisiveBotMessage, QUOTE_MARKER, CASH_MARKER, PAYMENT_QUESTION, paymentChoice, renderFinalSummary, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
+  QUOTE_MARKER, CASH_MARKER, PAYMENT_QUESTION, paymentChoice, renderFinalSummary, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
+  pendingThread, pendingReminder, switchPayment, chosenPayment, THREAD_WINDOW,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -143,7 +144,7 @@ async function draftIssue(draft: string, intent: Intent, conversation: BotConver
 
 async function answer(
   turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps, order?: OrderTurn,
-  knownAddress: string | null = null,
+  knownAddress: string | null = null, reminder: string | null = null,
 ): Promise<TurnOutcome> {
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
@@ -233,7 +234,8 @@ async function answer(
     if ((issue === "empty" || issue === "blocked") && openNow(settings)) await deps.repo.setTakeover(conversation.id);
     return "output_blocked";
   }
-  await reply(deps, conversation, draft);
+  // Otro tema con un resumen sin confirmar: se contesta y se recuerda el pedido (no se pierde el hilo).
+  await reply(deps, conversation, reminder ? `${draft}\n\n${reminder}` : draft);
   return "answered";
 }
 
@@ -251,6 +253,28 @@ export function paymentStep(text: string, outNewestFirst: readonly string[]): st
     return (summary && renderFinalSummary(summary, method)) ?? ORDER_REPLIES.requote;
   }
   return isAffirmation(text, "confirm") ? PAYMENT_QUESTION : null;
+}
+
+/** "Sí" sin ningún resumen ni pregunta pendiente. */
+export const NOTHING_PENDING_REPLY = "¡Dale! 😊 ¿Qué te gustaría pedir? Decime los productos y la dirección y te armo el resumen.";
+
+/**
+ * Pasos fijos del hilo del pedido (antes del clasificador):
+ * - resumen final + otra forma de pago ("Mercado", "mejor efectivo", "con mp") → resumen final con la nueva;
+ * - resumen final (o pregunta de cancelar) + SÍ, pero con otro tema en el medio → se vuelve a mandar ese mensaje
+ *   para que el SÍ siguiente sea sobre lo que el cliente tiene a la vista;
+ * - primer resumen → el paso de la forma de pago de siempre (`paymentStep`).
+ */
+export function threadStep(text: string, thread: { decisive: string | null; sideReplies: number }, pending: ReturnType<typeof pendingOperation>, outNewestFirst: readonly string[] = []): string | null {
+  const decisive = thread.decisive;
+  if (!decisive) return null;
+  if (pending === "confirm" && decisive.startsWith(QUOTE_MARKER)) {
+    const method = paymentChoice(text);
+    if (method && method !== chosenPayment(decisive)) return switchPayment(decisive, method);
+  }
+  if (thread.sideReplies > 0 && (pending === "confirm" || pending === "cancel") && isAffirmation(text, pending)) return decisive;
+  if (pending === "pay") return paymentStep(text, [decisive, ...outNewestFirst]);
+  return null;
 }
 
 /** Un SÍ con pregunta ("¿cuánto tardan?") recibe la plantilla de pago y además la respuesta a su pregunta. */
@@ -308,8 +332,12 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     return "blocked";
   }
 
-  const outNewestFirst = (await deps.repo.history(conversation.id, 8)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
-  const lastBot = lastDecisiveBotMessage(outNewestFirst);
+  const outNewestFirst = (await deps.repo.history(conversation.id, THREAD_WINDOW * 2)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
+  // Hilo del pedido: el resumen pendiente aunque después haya habido respuestas de otro tema (carta, horario...).
+  const thread = pendingThread(outNewestFirst);
+  // Para las compuertas del modelo (confirm_order/cancel_order) el "último mensaje" es el resumen solo si no hubo
+  // otro tema en el medio: un SÍ después de charlar de otra cosa nunca confirma a ciegas.
+  const lastBot = thread.decisive && thread.sideReplies === 0 ? thread.decisive : outNewestFirst[0] ?? null;
   // Resumen vigente: el último mensaje "de sistema" del bot es un resumen (todavía sin link de pago ni cancelación).
   const lastSystem = outNewestFirst.find((b) =>
     b.startsWith(QUOTE_MARKER) || b.startsWith(PAYMENT_QUESTION) || b.startsWith(CASH_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
@@ -326,16 +354,20 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
       : undefined;
 
   // Camino determinista: SÍ literal justo después del resumen (o de la pregunta de cancelar) no pasa por el clasificador.
-  const pending = pendingOperation(lastBot);
-  // Paso de la forma de pago: elige → resumen final con "Pago: …"; un SÍ suelto → se le vuelve a preguntar.
-  if (order && pending === "pay" && !order.hasAudio) {
-    const fixed = paymentStep(text, outNewestFirst);
+  const pending = pendingOperation(thread.decisive);
+  if (order && !order.hasAudio) {
+    const fixed = threadStep(text, thread, pending, outNewestFirst);
     if (fixed) {
       await reply(deps, conversation, fixed);
       return "answered";
     }
+    // "Sí" sin nada pendiente (y sin pregunta abierta del bot): se le pregunta qué quiere, no el "no entendí".
+    if (!pending && !recentPayment && isAffirmation(text) && !/\?\s*$/.test(outNewestFirst[0] ?? "")) {
+      await reply(deps, conversation, NOTHING_PENDING_REPLY);
+      return "answered";
+    }
   }
-  if (order && (pending === "confirm" || pending === "cancel") && isAffirmation(text, pending) && !order.hasAudio) {
+  if (order && thread.sideReplies === 0 && (pending === "confirm" || pending === "cancel") && isAffirmation(text, pending) && !order.hasAudio) {
     const direct = pending === "confirm" ? confirmAfterSummary : pending === "cancel" ? cancelAfterPrompt : null;
     if (direct) {
       await direct(order);
@@ -350,13 +382,16 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
 
   if (intent === "humano") return escalate(deps, conversation, settings, text, REPLIES.handoff);
   // Charla nueva (el bot no respondió en 2 h, o el cliente solo saluda y no se lo saludó hace poco): saludo por nombre con las promos de hoy.
-  if (await shouldGreet(deps, conversation.id, text, outNewestFirst)) {
+  // Ráfaga apilada con un pedido concreto ("hola" + "una muzza" + "a Rivadavia 5000"): gana el pedido, sin saludo aparte.
+  const orderWithSubstance = (intent === "pedido_nuevo" || intent === "pedido_datos") && confidence >= MIN_CONFIDENCE && (/\d/.test(text) || text.trim().includes("\n"));
+  if (!orderWithSubstance && (await shouldGreet(deps, conversation.id, text, outNewestFirst))) {
     const promos = promosForToday(await deps.repo.menu().catch(() => []), new Date());
     await reply(deps, conversation, renderGreeting(settings, conversation.displayName, promos));
     if (confidence < MIN_CONFIDENCE || GREETING_ONLY.includes(intent)) return "greeted";
   }
+  const reminder = order && thread.decisive ? pendingReminder(thread.decisive) : null;
   if (confidence < MIN_CONFIDENCE) {
-    await reply(deps, conversation, REPLIES.unclear);
+    await reply(deps, conversation, reminder ? `${REPLIES.unclear}\n\n${reminder}` : REPLIES.unclear);
     return "unclear";
   }
   if (ORDER_INTENTS.includes(intent) && !order) {
@@ -382,7 +417,8 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     return "answered";
   }
   if (intent === "consulta_menu" && asksFullMenu(text) && inbound.verdict !== "suspicious") await sendMenuPdf(deps, conversation, settings);
-  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst));
+  const sideTopic = !ORDER_INTENTS.includes(intent) && intent !== "pedido_estado";
+  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst), sideTopic ? reminder : null);
 }
 
 /** Sin `lastOutboundAt` en el repo (backend viejo) no hay saludo aparte; si la lectura falla, tampoco (no se repite). */

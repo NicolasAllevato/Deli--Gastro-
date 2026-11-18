@@ -72,7 +72,9 @@ function restIsClean(rest: readonly string[], op: "confirm" | "cancel" | null): 
 }
 
 /** Textos de plantilla: el modelo nunca puede mandar un mensaje que los contenga (el cuerpo guardado es la única "marca"). */
-export const TEMPLATE_MARKERS: readonly string[] = [QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para", "¿Cómo vas a pagar: efectivo o Mercado Pago?"];
+export const TEMPLATE_MARKERS: readonly string[] = [
+  QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para", "¿Cómo vas a pagar: efectivo o Mercado Pago?", "puntos con esta compra", "pedido sin confirmar",
+];
 
 const foldText = (text: string): string => text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -153,6 +155,35 @@ const ASKS_FOR_YES = /\bsi\b[^\n]{0,60}\bresumen\b|\bresumen\b[^\n]{0,60}\bsi\b/
  * Último mensaje del bot que decide qué habilita un SÍ (más nuevo primero). Se saltea UN texto libre del modelo
  * que solo pidió "respondé SÍ al resumen": así el SÍ que sigue confirma ese resumen en vez de empezar de cero.
  */
+/** Mensajes del bot que cierran el hilo del pedido: después de ellos ya no hay resumen pendiente. */
+const THREAD_ENDS = /^(¡Listo! Tu pedido quedó confirmado|¡Listo! Para confirmar|Listo, (cancelamos|ya cancelamos|dejamos)|Tu pedido ya está cancelado|No encontré un pedido en curso|Ese resumen ya no está vigente|No pude armar el resumen|Decime qué querés pedir y la dirección|Ya te está atendiendo una persona)/;
+
+/** Cuántos mensajes del bot se miran hacia atrás buscando el resumen pendiente (no hay hora en el historial). */
+export const THREAD_WINDOW = 8;
+
+export interface PendingThread {
+  /** Último mensaje de sistema que habilita algo (resumen, resumen final, pregunta de cancelar); null = no hay. */
+  decisive: string | null;
+  /** Respuestas de otro tema (carta, horario, "no entendí", recordatorios) que hubo después de él. */
+  sideReplies: number;
+}
+
+/**
+ * Hilo del pedido: el resumen (o la pregunta de cancelar) más reciente, salteando las respuestas de otro tema
+ * (menú, horario, saludo, "no entendí", recordatorio). Un mensaje que cierra el pedido (confirmación, link de pago,
+ * cancelación, "empezá de nuevo") corta la búsqueda: ya no hay nada pendiente. Mira los últimos `THREAD_WINDOW`.
+ * Un texto libre que solo pide "respondé SÍ al resumen" no cuenta como otro tema (el SÍ que sigue confirma).
+ */
+export function pendingThread(outNewestFirst: readonly string[]): PendingThread {
+  let sideReplies = 0;
+  for (const body of outNewestFirst.slice(0, THREAD_WINDOW)) {
+    if (pendingOperation(body) !== null) return { decisive: body, sideReplies };
+    if (THREAD_ENDS.test(body)) return { decisive: null, sideReplies: 0 };
+    if (!ASKS_FOR_YES.test(foldText(body))) sideReplies++;
+  }
+  return { decisive: null, sideReplies: 0 };
+}
+
 export function lastDecisiveBotMessage(outNewestFirst: readonly string[]): string | null {
   const [latest, previous] = outNewestFirst;
   if (latest === undefined) return null;
@@ -240,7 +271,7 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFin
 
 /** Plantilla fija del resumen desde los datos del servidor; null si la respuesta no tiene la forma esperada. */
 export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?: string): string | null {
-  const { lines, subtotal, delivery_fee: fee, total, resolved_address: address } = data;
+  const { lines, subtotal, delivery_fee: fee, total, resolved_address: address, points } = data;
   if (!Array.isArray(lines) || lines.length === 0 || !isNum(subtotal) || !isNum(fee) || !isNum(total) || typeof address !== "string") return null;
   const rows: string[] = [];
   for (const line of lines as Record<string, unknown>[]) {
@@ -256,11 +287,17 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
     `Subtotal: ${money(subtotal)}`,
     `Envío: ${money(fee)}`,
     `*Total: ${money(total)}*`,
+    ...pointsLine(points),
     "",
     `Dirección: ${shortAddress(address, typedAddress)}`,
     "",
     PAYMENT_QUESTION,
   ].join("\n");
+}
+
+/** Línea de puntos del resumen: solo con el valor del servidor (misma cuenta que al acreditar) y si suma algo. */
+export function pointsLine(points: unknown): string[] {
+  return isNum(points) && Math.floor(points) > 0 ? [`⭐ Sumás ${Math.floor(points)} puntos con esta compra`] : [];
 }
 
 const CITY_LIKE = /buenos aires|ciudad aut|comuna|argentina|provincia|partido|^c?\d{4}[a-z]{0,3}$/i;
@@ -307,6 +344,7 @@ export type BotPaymentMethod = "Efectivo" | "Mercado Pago";
 const PAYMENT_WORDS: ReadonlySet<string> = new Set([
   "si", "sii", "sip", "dale", "ok", "efectivo", "cash", "mercado", "pago", "mp", "mercadopago", "con", "en", "por", "favor", "porfa",
   "gracias", "voy", "a", "pagar", "pago", "pagaria", "prefiero", "el", "la", "de", "una", "link", "mejor",
+  "cambio", "cambia", "cambiar", "cambialo", "cambiamelo", "quiero", "al", "mas", "bien", "lo", "que", "sea",
 ]);
 
 /** Forma de pago que eligió el cliente; null si el mensaje no es una elección clara (o nombra las dos). */
@@ -332,6 +370,37 @@ export function renderFinalSummary(summary: string, method: BotPaymentMethod): s
   const how = method === "Efectivo" ? "Pago: Efectivo" : "Pago: Mercado Pago";
   const note = method === "Efectivo" ? "Pagás al recibir." : "Te mando el link de pago.";
   return [...body, how, `${note} ${FINAL_PROMPT}`].join("\n");
+}
+
+/** Vuelve un resumen final ("Pago: …") al resumen del servidor con la pregunta de pago (para cambiar la forma de pago). */
+export function baseSummary(summary: string): string | null {
+  if (!summary.startsWith(QUOTE_MARKER)) return null;
+  if (!chosenPayment(summary)) return summary;
+  const body = summary.split("\n").filter((l) => !/^Pago: /.test(l) && !l.endsWith(FINAL_PROMPT));
+  return [...body, PAYMENT_QUESTION].join("\n");
+}
+
+/** Resumen final con otra forma de pago (el cliente cambió de idea en el resumen final). */
+export function switchPayment(finalSummary: string, method: BotPaymentMethod): string | null {
+  const base = baseSummary(finalSummary);
+  return base ? renderFinalSummary(base, method) : null;
+}
+
+/** Total del resumen ("$19.500"), para el recordatorio. */
+export function summaryTotal(summary: string): string | null {
+  return summary.match(/^\*?Total: (\$[\d.]+)\*?$/m)?.[1] ?? null;
+}
+
+/**
+ * Recordatorio que se agrega a una respuesta de otro tema mientras hay un resumen sin confirmar: no pierde el hilo.
+ * Resumen final → pide el SÍ; primer resumen → vuelve a preguntar la forma de pago.
+ */
+export function pendingReminder(pending: string): string | null {
+  const op = pendingOperation(pending);
+  if (op !== "confirm" && op !== "pay") return null;
+  const total = summaryTotal(pending);
+  const head = `Tenés un pedido sin confirmar${total ? ` (${total})` : ""}.`;
+  return op === "confirm" ? `${head} ¿Seguimos? ${FINAL_PROMPT}` : `${head} ${PAYMENT_QUESTION}`;
 }
 
 /** Inicio de la confirmación de un pedido en efectivo (también marca de "ya no hay nada que confirmar"). */

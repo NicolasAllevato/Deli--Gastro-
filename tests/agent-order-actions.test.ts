@@ -75,6 +75,7 @@ describe("quoteOrder", () => {
       total: 9100,
       zone: (out as { zone: unknown }).zone,
       resolved_address: NEAR.label,
+      points: (out as { points: number }).points,
       note: "Mostrale el resumen y preguntale si confirma. No crees el pedido hasta su respuesta.",
     });
     const draft = draftOf(demo)!;
@@ -83,6 +84,21 @@ describe("quoteOrder", () => {
     assert.equal(draft.fee, 600);
     assert.equal(draft.subtotal, 8500);
     assert.deepEqual(draft.items, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }]);
+  });
+
+  it("devuelve los puntos que suma con la misma cuenta que al crear el pedido (pointsForLines)", async () => {
+    // Plato con 2 puntos por $100 propios: 8500 → 170. Otro plato hereda los de su categoría.
+    const demo = newDemo((s) => {
+      const p = s.products.find((x) => x.name === "Hamburguesa Clásica")!;
+      (p as Record<string, unknown>).points_per_100 = 2;
+    });
+    const out = await quoted(demo);
+    assert.equal((out as { points: number }).points, 170);
+    const zero = newDemo((s) => {
+      const p = s.products.find((x) => x.name === "Hamburguesa Clásica")!;
+      (p as Record<string, unknown>).points_per_100 = 0;
+    });
+    assert.equal((await quoted(zero) as { points: number }).points, 0);
   });
 
   it("rechaza un producto inactivo y no guarda borrador", async () => {

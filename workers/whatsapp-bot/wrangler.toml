@@ -44,6 +44,9 @@ max_batch_size = 10
 max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "wa-inbound-dlq"
+# Un solo consumidor a la vez: un turno que llega mientras se procesa el anterior de la misma charla espera
+# (lee el historial con la respuesta previa) y nunca se contesta fuera de orden. El volumen de un local lo permite.
+max_concurrency = 1
 
 # Turnos agotados: aviso único al cliente + takeover (src/turn-ledger.ts).
 [[queues.consumers]]
