@@ -197,7 +197,7 @@ describe("carta estructurada: bot", () => {
 
   it("formatea secciones con columnas y empanadas con precio único", () => {
     assert.equal(formatCartaSeccion(pizzas), "🍕 Pizzas (8 porciones / Porción)\n• Muzzarella — $25.000 / $3.600\n• Pizza de cancha (salsa putanesca) — consultar / consultar");
-    assert.equal(formatCartaSeccion(empanadas), "🥟 Empanadas — $3.500 c/u. Gustos: Carne Suave, Pollo.");
+    assert.equal(formatCartaSeccion(empanadas), "🥟 Empanadas — $3.500 c/u\nGustos:\n• Carne Suave\n• Pollo");
   });
 
   it("sinónimos: pizzas trae Pizzas y Pizzas especiales", () => {

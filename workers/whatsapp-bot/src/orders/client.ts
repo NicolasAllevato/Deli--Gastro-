@@ -151,9 +151,15 @@ export function createOrdersClient(options: OrdersClientOptions): OrdersClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await doFetch(`${base}${path}`, { method: "POST", headers, body: rawBody, signal: controller.signal, redirect: "error" });
+      // Workers solo acepta redirect "follow" o "manual" ("error" tira TypeError y toda llamada caía como `network`).
+      // Con "manual" una redirección no se sigue: se trata como falla no reintentable.
+      const response = await doFetch(`${base}${path}`, { method: "POST", headers, body: rawBody, signal: controller.signal, redirect: "manual" });
+      if (response.status >= 300 && response.status < 400) {
+        return { done: failure("api", response.status, "redirect", "La app respondió con una redirección inesperada.") };
+      }
       return await judge(response);
     } catch (error: unknown) {
+      log("[whatsapp-bot] orders fetch", { op: path, error: error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 200) : "desconocido" });
       const aborted = controller.signal.aborted || (error instanceof Error && error.name === "AbortError");
       const last = aborted
         ? failure("timeout", 0, "timeout", "La app no respondió a tiempo.")

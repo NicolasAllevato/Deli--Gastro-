@@ -28,6 +28,8 @@ export { ConversationBuffer } from "./conversation-buffer.ts";
 export interface Env {
   DB: Hyperdrive;
   AI: Ai;
+  /** Service binding al Worker de la app (opsyn-dely) para /api/internal/bot/*. */
+  APP?: Fetcher;
   /** Apilador por conversación: un Durable Object por teléfono. */
   BUFFER: DurableObjectNamespace<ConversationBuffer>;
   INBOUND: Queue<InboundTurn>;
@@ -196,7 +198,10 @@ async function receiveWebhook(req: Request, env: Env, ctx: ExecutionContext): Pr
 function ordersClientFor(env: Env) {
   const secret = env.BOT_INTERNAL_SECRET?.trim() ?? "";
   if (secret.length < 32) return undefined;
-  return createOrdersClient({ baseUrl: env.APP_URL, secret, log: workerLog });
+  // Con service binding la llamada va directo al Worker de la app: un Worker no puede pedirle por internet a otro
+  // Worker de la misma zona (la-gambeta.com) y fallaba con `network`. Sin binding (tests, otros entornos) usa fetch.
+  const fetchImpl = env.APP ? ((input: RequestInfo | URL, init?: RequestInit) => env.APP!.fetch(input, init)) as typeof fetch : undefined;
+  return createOrdersClient({ baseUrl: env.APP_URL, secret, log: workerLog, fetchImpl });
 }
 
 /** Consumidor de `wa-inbound` (fase 4): un turno agrupado → una respuesta. */
