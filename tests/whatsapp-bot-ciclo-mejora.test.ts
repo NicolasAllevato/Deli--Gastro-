@@ -18,7 +18,7 @@ import { buildResponderPrompt } from "../workers/whatsapp-bot/src/bot/prompts.ts
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { fakeOrders, openSimDb, seedWorld } from "../scripts/simulador/mundo.ts";
 
-const SUMMARY = `${QUOTE_MARKER}:\n• 1 x Muzza — $12.500\nTotal: $14.000\nRespondé SÍ para continuar al pago.`;
+const SUMMARY = `${QUOTE_MARKER}:\n• 1 x Muzza — $12.500\nTotal: $14.000\nPago: Mercado Pago\nTe mando el link de pago. Respondé SÍ para confirmar.`;
 
 describe("SÍ con pregunta, frase o emojis", () => {
   it("confirma lo que antes trababa el pedido", () => {

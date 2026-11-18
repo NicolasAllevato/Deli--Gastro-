@@ -72,7 +72,7 @@ function restIsClean(rest: readonly string[], op: "confirm" | "cancel" | null): 
 }
 
 /** Textos de plantilla: el modelo nunca puede mandar un mensaje que los contenga (el cuerpo guardado es la única "marca"). */
-export const TEMPLATE_MARKERS: readonly string[] = [QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para"];
+export const TEMPLATE_MARKERS: readonly string[] = [QUOTE_MARKER, CANCEL_MARKER, RETRY_MARKER, "Respondé SÍ para", "¿Cómo vas a pagar: efectivo o Mercado Pago?"];
 
 const foldText = (text: string): string => text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -137,9 +137,12 @@ export function asksCancelConfirmation(draft: string): boolean {
 }
 
 /** Qué operación habilita un SÍ según el último mensaje del bot (null = ninguna). */
-export function pendingOperation(lastBot: string | null): "confirm" | "cancel" | null {
+export function pendingOperation(lastBot: string | null): "confirm" | "cancel" | "pay" | null {
   if (!lastBot) return null;
-  if (lastBot.startsWith(QUOTE_MARKER) || lastBot.startsWith(RETRY_CONFIRM)) return "confirm";
+  // Resumen sin forma de pago (o la repregunta): primero se elige cómo paga. Solo el resumen final habilita confirmar.
+  if (lastBot.startsWith(PAYMENT_QUESTION)) return "pay";
+  if (lastBot.startsWith(QUOTE_MARKER)) return chosenPayment(lastBot) ? "confirm" : "pay";
+  if (lastBot.startsWith(RETRY_CONFIRM)) return "confirm";
   if (lastBot.startsWith(CANCEL_MARKER) || lastBot.startsWith(RETRY_CANCEL)) return "cancel";
   return null;
 }
@@ -255,15 +258,45 @@ export function renderQuoteSummary(data: Record<string, unknown>): string | null
   ].join("\n");
 }
 
-/** Pregunta del medio de pago al pie del resumen (el SÍ solo sigue siendo Mercado Pago, como antes). */
-export const PAYMENT_QUESTION =
-  "¿Pagás en efectivo o con Mercado Pago? Respondé SÍ EFECTIVO (pagás al recibir) o SÍ MERCADO PAGO (te mando el link). Con SÍ solo, va con Mercado Pago.";
+/**
+ * Flujo de pago en tres pasos: resumen (termina con esta pregunta) → el cliente elige efectivo o Mercado Pago →
+ * resumen final con la forma de pago ("Pago: …" + FINAL_PROMPT) → SÍ literal → confirmar. Un SÍ suelto al primer
+ * resumen no elige nada: se le vuelve a preguntar la forma de pago.
+ */
+export const PAYMENT_QUESTION = "¿Cómo vas a pagar: efectivo o Mercado Pago?";
+export const FINAL_PROMPT = "Respondé SÍ para confirmar.";
 
 export type BotPaymentMethod = "Efectivo" | "Mercado Pago";
 
-/** Medio de pago elegido en el SÍ al resumen: "efectivo" → Efectivo; cualquier otro SÍ → Mercado Pago. */
-export function paymentFromAnswer(text: string): BotPaymentMethod {
-  return /\befectivo\b|\bcash\b/.test(normalizeAnswer(text)) ? "Efectivo" : "Mercado Pago";
+/** Palabras permitidas al elegir la forma de pago ("sí, en efectivo porfa", "con mp"). Cualquier otra = no es una elección limpia. */
+const PAYMENT_WORDS: ReadonlySet<string> = new Set([
+  "si", "sii", "sip", "dale", "ok", "efectivo", "cash", "mercado", "pago", "mp", "mercadopago", "con", "en", "por", "favor", "porfa",
+  "gracias", "voy", "a", "pagar", "pago", "pagaria", "prefiero", "el", "la", "de", "una", "link", "mejor",
+]);
+
+/** Forma de pago que eligió el cliente; null si el mensaje no es una elección clara (o nombra las dos). */
+export function paymentChoice(text: string): BotPaymentMethod | null {
+  if (text.length > 80) return null;
+  const words = normalizeAnswer(text).split(" ").filter(Boolean);
+  if (words.length === 0 || words.length > 8 || !words.every((w) => PAYMENT_WORDS.has(w))) return null;
+  const cash = words.some((w) => w === "efectivo" || w === "cash");
+  const mp = words.some((w) => w === "mp" || w === "mercado" || w === "mercadopago" || w === "link");
+  return cash === mp ? null : cash ? "Efectivo" : "Mercado Pago";
+}
+
+/** Forma de pago del resumen final (línea "Pago: …") o del aviso de reintento; null si no hay una elegida. */
+export function chosenPayment(lastBot: string | null): BotPaymentMethod | null {
+  const m = lastBot?.match(/^Pago: (Efectivo|Mercado Pago)$/m) ?? lastBot?.match(/\((Efectivo|Mercado Pago)\)/);
+  return (m?.[1] as BotPaymentMethod | undefined) ?? null;
+}
+
+/** Resumen final: el mismo resumen del servidor con la forma de pago elegida y el pedido de SÍ. */
+export function renderFinalSummary(summary: string, method: BotPaymentMethod): string | null {
+  if (!summary.startsWith(QUOTE_MARKER) || chosenPayment(summary)) return null;
+  const body = summary.split("\n").filter((l) => l !== PAYMENT_QUESTION && !/^Respondé SÍ/.test(l));
+  const how = method === "Efectivo" ? "Pago: Efectivo" : "Pago: Mercado Pago";
+  const note = method === "Efectivo" ? "Pagás al recibir." : "Te mando el link de pago.";
+  return [...body, how, `${note} ${FINAL_PROMPT}`].join("\n");
 }
 
 /** Inicio de la confirmación de un pedido en efectivo (también marca de "ya no hay nada que confirmar"). */
@@ -390,7 +423,9 @@ const HANDOFF_SUFFIX = "Te paso con una persona del local para ver cómo lo reso
 async function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm" | "cancel" | "status"): Promise<typeof SENT> {
   // Fallo transitorio de confirm/cancel: se ofrece reintentar con un SÍ (la plantilla dice cuál operación).
   if ((op === "confirm" || op === "cancel") && isTransient(response)) {
-    t.state.fixedReply = `${op === "confirm" ? RETRY_CONFIRM : RETRY_CANCEL} ${RETRY_SUFFIX}`;
+    // El reintento de confirmar lleva la forma de pago elegida: el SÍ siguiente confirma con la misma.
+    const method = op === "confirm" ? chosenPayment(t.lastBotMessage) : null;
+    t.state.fixedReply = op === "confirm" ? `${RETRY_CONFIRM}${method ? ` (${method})` : ""} ${RETRY_SUFFIX}` : `${RETRY_CANCEL} ${RETRY_SUFFIX}`;
     return SENT;
   }
   const message = errorReply(response, { appUrl: t.appUrl, hours: t.hours, op });
@@ -445,7 +480,13 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
 function confirmGate(t: OrderTurn): string | null {
   if (t.state.quoted) return "En este mismo turno se cotizó: esperá a que el cliente responda SÍ al resumen.";
   if (t.hasAudio || !isAffirmation(t.inboundText, "confirm")) return "El último mensaje del cliente no es una confirmación literal (SÍ, dale, ok...). Pedile que responda SÍ al resumen.";
-  if (pendingOperation(t.lastBotMessage) !== "confirm") {
+  const pending = pendingOperation(t.lastBotMessage);
+  if (pending === "pay") {
+    // Vio el resumen pero todavía no eligió cómo paga: se pregunta (con plantilla) antes del resumen final.
+    t.state.fixedReply = PAYMENT_QUESTION;
+    return "El cliente todavía no eligió la forma de pago: se le preguntó.";
+  }
+  if (pending !== "confirm") {
     // Ya tiene el link de pago: no hay nada que confirmar ni que empezar de nuevo; el modelo responde su mensaje.
     if (t.recentPayment) return "El cliente ya recibió el link de pago: no confirmes nada. Respondé su mensaje con calidez; si pregunta por el pedido o dice que pagó, decile que apenas se acredite sale.";
     // Un SÍ suelto sin resumen a la vista no deja al cliente en un callejón: se le pide empezar de nuevo.
@@ -464,6 +505,10 @@ export async function runConfirm(t: OrderTurn, args: unknown): Promise<unknown> 
   }
   const gate = confirmGate(t);
   if (gate) return { ok: false, error: gate };
+  // La forma de pago es la del resumen final que el cliente vio y aceptó, no la que elija el modelo.
+  const chosen = chosenPayment(t.lastBotMessage);
+  if (!chosen) return { ok: false, error: "El cliente todavía no eligió la forma de pago: preguntale si paga en efectivo o con Mercado Pago." };
+  if (chosen !== method) return { ok: false, error: `El cliente eligió ${chosen}: usá esa forma de pago.` };
   const notes = typeof args.notes === "string" && args.notes.trim() ? { notes: args.notes.trim().slice(0, 300) } : {};
   const response = await t.client.confirm({ ...common(t), payment_method: method, ...notes });
   return handleConfirm(t, response);
@@ -489,7 +534,7 @@ async function handleConfirm(t: OrderTurn, response: OrderResponse): Promise<unk
 }
 
 /** Camino determinista: el cliente respondió SÍ al resumen. */
-export const confirmAfterSummary = (t: OrderTurn): Promise<unknown> => runConfirm(t, { payment_method: paymentFromAnswer(t.inboundText) });
+export const confirmAfterSummary = (t: OrderTurn): Promise<unknown> => runConfirm(t, { payment_method: chosenPayment(t.lastBotMessage) ?? "" });
 
 export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
   if (!ownKeys(args, ["confirmed"])) return { ok: false, error: "Argumentos inválidos." };

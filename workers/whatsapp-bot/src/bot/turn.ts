@@ -21,7 +21,7 @@ import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  lastDecisiveBotMessage, QUOTE_MARKER, CASH_MARKER, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
+  lastDecisiveBotMessage, QUOTE_MARKER, CASH_MARKER, PAYMENT_QUESTION, paymentChoice, renderFinalSummary, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -233,6 +233,22 @@ async function answer(
   return "answered";
 }
 
+/**
+ * Respuesta fija al paso de la forma de pago (el último mensaje del bot es el resumen sin pago o la repregunta):
+ * - elige efectivo / Mercado Pago ("mp", "sí efectivo") → resumen final con la forma de pago y "Respondé SÍ para confirmar";
+ * - un SÍ suelto → se pregunta cómo paga (no se asume Mercado Pago);
+ * - otra cosa (cambios, preguntas) → null: sigue el camino normal.
+ */
+export function paymentStep(text: string, outNewestFirst: readonly string[]): string | null {
+  const method = paymentChoice(text);
+  if (method) {
+    // El resumen del servidor más reciente (sin forma de pago): es lo que se vuelve a mostrar completo.
+    const summary = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER) && !/^Pago: /m.test(b));
+    return (summary && renderFinalSummary(summary, method)) ?? ORDER_REPLIES.requote;
+  }
+  return isAffirmation(text, "confirm") ? PAYMENT_QUESTION : null;
+}
+
 /** Un SÍ con pregunta ("¿cuánto tardan?") recibe la plantilla de pago y además la respuesta a su pregunta. */
 function withFollowUp(base: string, text: string, op: "confirm" | "cancel", settings: BotSettings): string {
   if (op !== "confirm" || !base.startsWith("¡Listo! Para confirmar")) return base;
@@ -291,8 +307,9 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const outNewestFirst = (await deps.repo.history(conversation.id, 8)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
   const lastBot = lastDecisiveBotMessage(outNewestFirst);
   // Resumen vigente: el último mensaje "de sistema" del bot es un resumen (todavía sin link de pago ni cancelación).
-  const lastSystem = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER) || b.startsWith(CASH_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
-  const recentQuote = lastSystem?.startsWith(QUOTE_MARKER) ?? false;
+  const lastSystem = outNewestFirst.find((b) =>
+    b.startsWith(QUOTE_MARKER) || b.startsWith(PAYMENT_QUESTION) || b.startsWith(CASH_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
+  const recentQuote = (lastSystem?.startsWith(QUOTE_MARKER) || lastSystem?.startsWith(PAYMENT_QUESTION)) ?? false;
   const recentPayment = lastSystem?.startsWith("¡Listo! Para confirmar") ?? false;
   const wamid = turn.wamids.at(-1);
   const order: OrderTurn | undefined =
@@ -306,7 +323,15 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
 
   // Camino determinista: SÍ literal justo después del resumen (o de la pregunta de cancelar) no pasa por el clasificador.
   const pending = pendingOperation(lastBot);
-  if (order && pending && isAffirmation(text, pending) && !order.hasAudio) {
+  // Paso de la forma de pago: elige → resumen final con "Pago: …"; un SÍ suelto → se le vuelve a preguntar.
+  if (order && pending === "pay" && !order.hasAudio) {
+    const fixed = paymentStep(text, outNewestFirst);
+    if (fixed) {
+      await reply(deps, conversation, fixed);
+      return "answered";
+    }
+  }
+  if (order && (pending === "confirm" || pending === "cancel") && isAffirmation(text, pending) && !order.hasAudio) {
     const direct = pending === "confirm" ? confirmAfterSummary : pending === "cancel" ? cancelAfterPrompt : null;
     if (direct) {
       await direct(order);

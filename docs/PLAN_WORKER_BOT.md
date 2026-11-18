@@ -254,7 +254,7 @@ Hecho en `workers/whatsapp-bot/src`:
 - `orders/client.ts`: cliente firmado (Web Crypto, misma firma que `signature.ts`, con test de paridad), timestamp nuevo por intento, timeout 8 s, `Idempotency-Key` = wamid en confirm/cancel. `claim_lost` reintenta una vez; 429/5xx/red/timeout hasta 2 reintentos con backoff; 400/401/403/422/409 y `503 not_configured` no se reintentan.
 - `orders/flow.ts`: plantillas fijas (resumen, link de pago, pregunta de cancelar, errores por código) y compuertas. `bot/tools.ts`: `quote_order`, `confirm_order`, `cancel_order` y `order_status` (por la app) con esquemas estrictos; `get_menu` expone el `id` solo con el flag encendido.
 - `bot/turn.ts`: con `bot_orders_enabled` en `global_config` (mismo flag que el servidor) y `BOT_INTERNAL_SECRET` cargado, las intenciones de pedido ya no se derivan a la web. Con el flag apagado o sin secreto el camino es el de siempre (`orderReply`; sin secreto y con flag encendido, «no disponible, hacelo desde la web»).
-- El resumen lo envía el Worker desde los datos del servidor (el texto del modelo se descarta). El «SÍ» literal justo después del resumen confirma sin pasar por el clasificador. `confirm_order` exige: sin `quote_order` en el turno, último mensaje del cliente = afirmación literal corta (sí, dale, ok, listo, confirmo, de acuerdo; no audios, no preguntas), el último mensaje del bot es el resumen y `Efectivo` o `Mercado Pago` (`SÍ EFECTIVO` → efectivo; `SÍ` solo o `SÍ MERCADO PAGO` → Mercado Pago). Cancelar: el bot pregunta con plantilla y solo un SÍ posterior cancela. El link de pago solo se envía si es https de Mercado Pago.
+- El resumen lo envía el Worker desde los datos del servidor (el texto del modelo se descarta). El «SÍ» literal justo después del resumen confirma sin pasar por el clasificador. `confirm_order` exige: sin `quote_order` en el turno, último mensaje del cliente = afirmación literal corta (sí, dale, ok, listo, confirmo, de acuerdo; no audios, no preguntas), el último mensaje del bot es el **resumen final** y la forma de pago es la que figura en él. Flujo de pago, siempre: resumen del servidor (termina con «¿Cómo vas a pagar: efectivo o Mercado Pago?») → el cliente elige (efectivo / mercado pago / mp / «sí efectivo»; un SÍ suelto solo repregunta) → el Worker vuelve a mostrar el pedido completo con «Pago: Efectivo|Mercado Pago» y «Respondé SÍ para confirmar.» → SÍ literal → `confirm` con esa forma de pago (el modelo no la puede cambiar). Efectivo crea el pedido; Mercado Pago manda el link. El aviso de reintento lleva la forma de pago («… (Efectivo) Respondé SÍ para reintentar.»). Cancelar: el bot pregunta con plantilla y solo un SÍ posterior cancela. El link de pago solo se envía si es https de Mercado Pago.
 - Logs: `op`, `status`, `code` (sin datos personales).
 
 Falta (no se hizo ni se despliega desde el código):
@@ -276,10 +276,11 @@ Falta (no se hizo ni se despliega desde el código):
 Con el teléfono del dueño en `bot_orders_allowlist` y `bot_orders_enabled = true`:
 1. Escribir «hola»: responde saludo (sin pedido).
 2. «¿Qué pizzas tienen?»: lista el menú real.
-3. «Quiero 2 muzzas a Av. Corrientes 1234»: llega el resumen con plantilla fija (líneas, subtotal, envío, total, dirección y «¿Pagás en efectivo o con Mercado Pago? Respondé SÍ EFECTIVO o SÍ MERCADO PAGO»).
+3. «Quiero 2 muzzas a Av. Corrientes 1234»: llega el resumen con plantilla fija (líneas, subtotal, envío, total, dirección y «¿Cómo vas a pagar: efectivo o Mercado Pago?»).
 4. Cambiar algo («mejor 3»): llega un resumen NUEVO (no un «listo, agregué»).
-5. Responder «sí»: llega el link de Mercado Pago (dominio mercadopago/mpago.la) y el total.
-5b. Repetir con «SÍ EFECTIVO»: llega «¡Listo! Tu pedido quedó confirmado ✅» con número, total y demora, y el pedido aparece en Recibidos (canal WhatsApp) sin venta en Fudo.
+5. Responder «sí» suelto: NO confirma; vuelve a preguntar «¿Cómo vas a pagar: efectivo o Mercado Pago?».
+5a. Responder «mp»: llega el pedido completo de nuevo con «Pago: Mercado Pago» y «Respondé SÍ para confirmar»; con «sí» llega el link de Mercado Pago (dominio mercadopago/mpago.la) y el total.
+5b. Repetir eligiendo «efectivo»: resumen final con «Pago: Efectivo»; con «sí» llega «¡Listo! Tu pedido quedó confirmado ✅» con número, total y demora, y el pedido aparece en Recibidos (canal WhatsApp) sin venta en Fudo.
 6. Pagar en sandbox: llega el aviso «pedido confirmado» y el pedido aparece en Recibidos de `/admin/tablero`.
 7. Preguntar «¿cómo va mi pedido?»: informa el estado real.
 8. Pedir un pedido y no pagar; preguntar «no me llega el link»: reenvía el link vigente y dice que falta pagar (sin decir «confirmado»).
