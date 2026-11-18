@@ -14,6 +14,7 @@ import { slaCorte } from "../src/lib/reclamos/sla.ts";
 import { mensajeResolucion, dentroDeVentana } from "../src/lib/reclamos/mensajes.ts";
 import { avisarReclamoNuevo, renderAviso } from "../src/lib/reclamos/notify.ts";
 import type { ReclamosApiDeps } from "../src/lib/reclamos/api.ts";
+import { reclamosPorAvisar, textoAviso, leerVistos, marcarVisto, SEEN_KEY } from "../src/lib/reclamos/aviso-panel.ts";
 import { SCHEMAS } from "../src/lib/bot-internal/schemas.ts";
 import {
   agregarNotaReclamo, cambiarEstadoReclamo, contextoAvisoReclamo, getReclamo, listReclamos, marcarReclamoNotificado,
@@ -193,7 +194,9 @@ describe("datos: reclamos", () => {
     assert.equal(cats.llego_frio, 1);
     assert.equal(cats.demora, 0);
     const v = await ticket();
-    assert.deepEqual(await resumenReclamos(v.db, admin, null), { abiertos: 1, enCurso: 0, vencidos: 0 });
+    const resumen = await resumenReclamos(v.db, admin, null);
+    assert.deepEqual([resumen.abiertos, resumen.enCurso, resumen.vencidos], [1, 0, 0]);
+    assert.deepEqual(resumen.recientes.map((r) => [r.numero, r.categoria, r.client_name]), [[1, "llego_frio", "Tata"]]);
     assert.equal((await resumenReclamos(v.db, admin, new Date(Date.now() + 60_000).toISOString())).vencidos, 1);
   });
 
@@ -299,5 +302,31 @@ describe("SLA y ventana de WhatsApp", () => {
     assert.equal(dentroDeVentana("2026-11-18T00:00:00Z", now), true);
     assert.equal(dentroDeVentana("2026-11-17T11:00:00Z", now), false);
     assert.equal(dentroDeVentana(null, now), false);
+  });
+});
+
+describe("aviso de reclamo nuevo en el panel", () => {
+  const now = Date.parse("2026-11-18T15:00:00Z");
+  const r = (id: string, numero: number, minAgo: number) => ({ id, numero, categoria: "demora" as const, client_name: "Tata", created_at: new Date(now - minAgo * 60_000).toISOString() });
+
+  it("avisa solo los no vistos y recientes, el más viejo primero", () => {
+    const list = [r("c", 3, 1), r("b", 2, 5), r("a", 1, 120)];
+    assert.deepEqual(reclamosPorAvisar(list, new Set(), now).map((x) => x.id), ["b", "c"]);
+    assert.deepEqual(reclamosPorAvisar(list, new Set(["b"]), now).map((x) => x.id), ["c"]);
+    assert.equal(textoAviso(r("x", 7, 0)), "Ingresó un reclamo #7 — Demora — Tata");
+  });
+
+  it("recuerda los vistos en localStorage y tolera almacenamiento roto", () => {
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    const vistos = marcarVisto(storage, leerVistos(storage), "a");
+    assert.deepEqual(JSON.parse(mem.get(SEEN_KEY)!), ["a"]);
+    assert.ok(leerVistos(storage).has("a"));
+    assert.ok(vistos.has("a"));
+    const broken = { getItem: (): string | null => { throw new Error("bloqueado"); }, setItem: (): void => { throw new Error("bloqueado"); } };
+    assert.equal(leerVistos(broken).size, 0);
+    assert.ok(marcarVisto(broken, new Set(), "z").has("z"));
+    mem.set(SEEN_KEY, "{no json");
+    assert.equal(leerVistos(storage).size, 0);
   });
 });

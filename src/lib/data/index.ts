@@ -209,7 +209,7 @@ export {
   reclamosApp, reclamoEstadoSchema, reclamoAccionSchema, reclamoFiltrosSchema, RECLAMO_CATEGORIAS, RECLAMO_ESTADOS,
   ReclamoNoEncontradoError, ReclamoConflictoError,
   type Reclamo, type ReclamoEstado, type ReclamoDetalle, type ReclamoEvento, type ReclamoAccion, type ReclamoFiltros,
-  type ReclamoCategoria, type ReclamoEstadoValor, type ReclamosResumen, type ReclamoAvisoContexto,
+  type ReclamoCategoria, type ReclamoEstadoValor, type ReclamosResumen, type ReclamoAvisoContexto, type ReclamoReciente,
 } from "./reclamos.ts";
 export { decisionSchema, type KbError, type KbSugerencia } from "./kb-aprendizaje.ts";
 export { claimBotNonce } from "./bot-nonces.ts";

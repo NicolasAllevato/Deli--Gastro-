@@ -165,6 +165,16 @@ export interface ReclamosResumen {
   enCurso: number;
   /** Abiertos (sin tomar) creados antes de `slaDesde`: el panel los marca como vencidos. */
   vencidos: number;
+  /** Últimos abiertos (hasta 5, del más nuevo al más viejo): el panel avisa con sonido y ventana los que no vio. */
+  recientes: ReclamoReciente[];
+}
+
+export interface ReclamoReciente {
+  id: string;
+  numero: number;
+  categoria: ReclamoCategoria;
+  client_name: string | null;
+  created_at: string;
 }
 
 /**
@@ -181,7 +191,14 @@ export async function resumenReclamos(db: SqlDatabase, actor: Actor, slaDesde: s
     )
     .bind(slaDesde)
     .first<{ abiertos: number; en_curso: number; vencidos: number }>();
-  return { abiertos: Number(row?.abiertos ?? 0), enCurso: Number(row?.en_curso ?? 0), vencidos: Number(row?.vencidos ?? 0) };
+  const { results: recientes } = await db
+    .prepare(
+      `SELECT r.id, r.numero, r.categoria, coalesce(c.name, w.contact_name) AS client_name, r.created_at
+       FROM reclamos r LEFT JOIN clients c ON c.id = r.client_id LEFT JOIN wa_conversations w ON w.id = r.conversation_id
+       WHERE r.estado = 'abierto' ORDER BY r.created_at DESC LIMIT 5`,
+    )
+    .all<ReclamoReciente>();
+  return { abiertos: Number(row?.abiertos ?? 0), enCurso: Number(row?.en_curso ?? 0), vencidos: Number(row?.vencidos ?? 0), recientes };
 }
 
 /** Cantidad de reclamos por categoría desde `desde` (ISO). Todas las categorías, con 0 si no hubo. */
