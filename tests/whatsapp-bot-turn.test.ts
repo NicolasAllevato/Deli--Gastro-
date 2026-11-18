@@ -88,10 +88,11 @@ describe("fase 4: turno del bot", () => {
     assert.equal(calls.length, 0);
   });
 
-  it("con poca confianza pregunta en vez de adivinar", async () => {
+  it("con poca confianza interpreta y sugiere opciones (no la repregunta genérica)", async () => {
     const { repo, sent } = fakeRepo();
-    assert.equal(await processTurn(turn("mmm"), deps(repo, fakeRun("consulta_menu", 0.3, "x").run)), "unclear");
-    assert.equal(sent[0].body, REPLIES.unclear);
+    const sugerencia = "¿Querés pedir una muzza grande, ver las promos de hoy o saber el horario?";
+    assert.equal(await processTurn(turn("mmm"), deps(repo, fakeRun("consulta_menu", 0.3, sugerencia).run)), "unclear");
+    assert.equal(sent[0].body, sugerencia);
   });
 
   it("los pedidos se derivan a la web hasta la fase 5", async () => {

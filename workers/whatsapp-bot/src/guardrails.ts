@@ -160,6 +160,8 @@ const TOOLS_BY_INTENT: Readonly<Record<string, readonly string[]>> = {
   pedido_estado: ["order_status", "handoff_to_human"],
   pedido_cancelar: ["order_status", "cancel_order"],
   humano: ["handoff_to_human"],
+  // Mensaje dudoso: puede mirar la carta, las promos y el local para entender y sugerir opciones (solo lectura).
+  otro: ["get_menu", "get_categoria", "get_promos_hoy", "get_business_info"],
 };
 
 export function toolsForIntent(intent: string): string[] {
