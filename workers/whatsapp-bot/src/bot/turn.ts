@@ -391,8 +391,14 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   }
   const reminder = order && thread.decisive ? pendingReminder(thread.decisive) : null;
   if (confidence < MIN_CONFIDENCE) {
-    await reply(deps, conversation, reminder ? `${REPLIES.unclear}\n\n${reminder}` : REPLIES.unclear);
-    return "unclear";
+    // Dudoso: en vez de la repregunta genérica, el modelo interpreta con el contexto y, si duda, sugiere opciones.
+    // Mensaje sospechoso: la respuesta fija de siempre (sin modelo ni herramientas).
+    if (inbound.verdict === "suspicious") {
+      await reply(deps, conversation, reminder ? `${REPLIES.unclear}\n\n${reminder}` : REPLIES.unclear);
+      return "unclear";
+    }
+    const outcome = await answer(text, "otro", false, conversation, settings, deps, order, lastQuoteAddress(outNewestFirst), reminder);
+    return outcome === "answered" ? "unclear" : outcome;
   }
   if (ORDER_INTENTS.includes(intent) && !order) {
     // Flag apagado (o sin cliente): camino de siempre, derivar a la web.
