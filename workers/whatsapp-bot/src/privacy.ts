@@ -12,6 +12,10 @@ export function withPrivacy<R extends string>(text: string, base: { verdict: str
 }
 
 /** Logger del Worker: todo lo que se imprime pasa por la redacción. */
-export const workerLog = redactingLog((message, detail) =>
-  detail === undefined ? console.error(message) : console.error(message, detail),
-);
+export const workerLog = redactingLog((message, detail) => {
+  // Errores como error; lo informativo (p. ej. una llamada a la app que salió bien) como log, para no confundir.
+  const hasCode = typeof detail === "object" && detail !== null && "code" in detail;
+  const write = hasCode || /error|fall|agotad|bloquead|sin |no se pudo/i.test(message) ? console.error : console.log;
+  if (detail === undefined) write(message);
+  else write(message, detail);
+});

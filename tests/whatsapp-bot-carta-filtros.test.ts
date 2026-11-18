@@ -78,3 +78,24 @@ test("cliente de pedidos: no usa redirect 'error' (Workers no lo soporta) y no s
   assert.equal(r.ok, false);
   assert.deepEqual(modes, ["manual"]);
 });
+
+import { renderQuoteSummary, shortAddress } from "../workers/whatsapp-bot/src/orders/flow.ts";
+
+test("dirección corta: calle altura, piso/depto, barrio (sin lugar, comuna, CP ni país)", () => {
+  const geo = "Army, 5000, Avenida Rivadavia, Caballito, Buenos Aires, Comuna 6, Ciudad Autónoma de Buenos Aires, C1424CER, Argentina";
+  assert.equal(shortAddress(geo, "Av Rivadavia 5000 piso 3 dto B"), "Av. Rivadavia 5000, piso 3 dto B, Caballito");
+  assert.equal(shortAddress(geo, "Av Rivadavia 5000"), "Av. Rivadavia 5000, Caballito");
+  assert.equal(shortAddress("Belgrano 123", "Belgrano 123"), "Belgrano 123");
+});
+
+test("resumen por renglones con dirección corta y la pregunta de pago al final", () => {
+  const t = renderQuoteSummary({
+    lines: [{ name: "Grande de muzzarella", qty: 1, price: 25000 }], subtotal: 25000, delivery_fee: 1270, total: 26270,
+    resolved_address: "Army, 5000, Avenida Rivadavia, Caballito, Buenos Aires, Comuna 6, Ciudad Autónoma de Buenos Aires, C1424CER, Argentina",
+  }, "Av Rivadavia 5000")!;
+  assert.match(t, /^Resumen de tu pedido:\n\n• 1 x Grande de muzzarella — \$25\.000\n\n/);
+  assert.match(t, /\*Total: \$26\.270\*/);
+  assert.match(t, /^Dirección: Av\. Rivadavia 5000, Caballito$/m);
+  assert.doesNotMatch(t, /Army|Comuna|C1424|Argentina/);
+  assert.ok(t.endsWith("¿Cómo vas a pagar: efectivo o Mercado Pago?"));
+});

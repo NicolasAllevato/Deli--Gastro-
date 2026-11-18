@@ -12,6 +12,7 @@ import { loadDeliverySettings } from "@/lib/zones-server";
 import { updateConversationState } from "./conversation-state.ts";
 import { mayConfirm, parseDraft, withDraft, type OrderDraft } from "./draft.ts";
 import { isOpenNow } from "./hours.ts";
+import { splitAddressExtra } from "../address-extra.ts";
 import { loadAgentSettings } from "./settings.ts";
 
 /**
@@ -203,13 +204,17 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   const conversation = await reloadConversation(deps);
   if (isActionError(conversation)) return conversation;
   const local = (await loadDeliverySettings(db)).quoteOptions.local;
+  // El geocoder no entiende "piso 3 dto B": se busca solo calle y altura, y el piso/depto se guarda aparte.
+  const { street, extra } = splitAddressExtra(input.address);
   const found = deps.geocode
-    ? await deps.geocode(input.address, local).catch(() => [])
+    ? await deps.geocode(street, local).catch(() => [])
     : isDemoMode()
-      ? demoGeocode(input.address)
-      : await geocodeAddress(input.address, local).catch(() => []);
+      ? demoGeocode(street)
+      : await geocodeAddress(street, local).catch(() => []);
   const place = found[0];
-  if (!place) return { error: "No encontré esa dirección. Pedile calle, altura y barrio." };
+  if (!place) return { error: "No encontré esa dirección 😕 ¿Me pasás calle, altura y barrio?" };
+  // La dirección del pedido lleva el piso/depto para el repartidor.
+  const deliveryAddress = (extra ? `${place.label} — ${extra}` : place.label).slice(0, 200);
 
   const items = input.items.map((i) => ({ productId: i.product_id, qty: i.qty }));
   const priced = await priceOrder(db, items, { address: place.label, lat: place.lat, lng: place.lng });
@@ -221,7 +226,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   if (rejected) return rejected;
   const draft: OrderDraft = {
     items: lines.map((l) => ({ productId: l.productId, qty: l.qty })),
-    address: place.label.slice(0, 200),
+    address: deliveryAddress,
     lat: place.lat,
     lng: place.lng,
     fee,

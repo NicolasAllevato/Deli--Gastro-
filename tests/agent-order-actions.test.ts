@@ -133,7 +133,7 @@ describe("quoteOrder", () => {
       items: [{ product_id: productId(demo, "Hamburguesa Clásica"), qty: 1 }],
       address: "Calle inexistente 99999",
     });
-    assert.deepEqual(out, { error: "No encontré esa dirección. Pedile calle, altura y barrio." });
+    assert.deepEqual(out, { error: "No encontré esa dirección 😕 ¿Me pasás calle, altura y barrio?" });
   });
 
   it("si el geocodificador falla se trata como dirección no encontrada", async () => {
@@ -142,7 +142,7 @@ describe("quoteOrder", () => {
       depsFor(demo, "m1", { geocode: async () => { throw new Error("red caída"); } }),
       { items: [{ product_id: productId(demo, "Hamburguesa Clásica"), qty: 1 }], address: "Av. Corrientes 1234" },
     );
-    assert.deepEqual(out, { error: "No encontré esa dirección. Pedile calle, altura y barrio." });
+    assert.deepEqual(out, { error: "No encontré esa dirección 😕 ¿Me pasás calle, altura y barrio?" });
   });
 
   it("local en pausa o cerrado: no cotiza", async () => {
@@ -316,5 +316,15 @@ describe("customerInfo", () => {
     const info = await customerInfo(depsFor(demo, "m3"));
     assert.equal((info as { known?: boolean }).known, true);
     assert.equal((info as { recent_orders: unknown[] }).recent_orders.length, 1);
+  });
+});
+
+import { splitAddressExtra } from "../src/lib/address-extra.ts";
+
+describe("dirección con piso/depto", () => {
+  it("separa calle y altura de piso/depto", () => {
+    assert.deepEqual(splitAddressExtra("Av Rivadavia 5000 piso 3 dto B"), { street: "Av Rivadavia 5000", extra: "piso 3 dto B" });
+    assert.deepEqual(splitAddressExtra("Belgrano 123, 4° A, Caballito"), { street: "Belgrano 123, Caballito", extra: "4° A" });
+    assert.deepEqual(splitAddressExtra("Belgrano 123"), { street: "Belgrano 123", extra: "" });
   });
 });
