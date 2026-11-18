@@ -239,7 +239,7 @@ const oneLine = (text: string, max: number): string => text.replace(/\s+/g, " ")
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 
 /** Plantilla fija del resumen desde los datos del servidor; null si la respuesta no tiene la forma esperada. */
-export function renderQuoteSummary(data: Record<string, unknown>): string | null {
+export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?: string): string | null {
   const { lines, subtotal, delivery_fee: fee, total, resolved_address: address } = data;
   if (!Array.isArray(lines) || lines.length === 0 || !isNum(subtotal) || !isNum(fee) || !isNum(total) || typeof address !== "string") return null;
   const rows: string[] = [];
@@ -247,15 +247,50 @@ export function renderQuoteSummary(data: Record<string, unknown>): string | null
     if (typeof line?.name !== "string" || !isNum(line.qty) || !isNum(line.price)) return null;
     rows.push(`• ${line.qty} x ${oneLine(line.name, 80)} — ${money(line.qty * line.price)}`);
   }
+  // Por renglones y con aire: productos, montos, dirección corta y la pregunta de pago.
   return [
     `${QUOTE_MARKER}:`,
+    "",
     ...rows,
+    "",
     `Subtotal: ${money(subtotal)}`,
     `Envío: ${money(fee)}`,
-    `Total: ${money(total)}`,
-    `Dirección: ${oneLine(address, 200)}`,
+    `*Total: ${money(total)}*`,
+    "",
+    `Dirección: ${shortAddress(address, typedAddress)}`,
+    "",
     PAYMENT_QUESTION,
   ].join("\n");
+}
+
+const CITY_LIKE = /buenos aires|ciudad aut|comuna|argentina|provincia|partido|^c?\d{4}[a-z]{0,3}$/i;
+const EXTRA_RE = /\b(?:piso\s*\S+|p\.?\s*\d+\S*|(?:dto|dpto|depto|departamento)\.?\s*\S+|\d+\s*°\s*[a-z]?|lote\s*\S+|casa\s*\S+|timbre\s*\S+|torre\s*\S+|local\s*\S+)/gi;
+
+/**
+ * Dirección corta para el cliente: "calle altura, piso/depto, barrio". La calle, la altura y el barrio salen de
+ * la dirección que validó el servidor (geocoder, que trae de más: lugar, comuna, CP, país); el piso/depto, de lo
+ * que escribió el cliente. Si no se puede interpretar, se usa lo que escribió el cliente.
+ */
+export function shortAddress(resolved: string, typed?: string): string {
+  const parts = resolved.split(",").map((p) => p.trim()).filter(Boolean);
+  const abbr = (s: string) => s.replace(/^avenida\s+/i, "Av. ");
+  let street = "";
+  let barrio: string | undefined;
+  const numIdx = parts.findIndex((p) => /^\d{1,6}[a-z]?$/i.test(p));
+  if (numIdx >= 0 && parts[numIdx + 1]) {
+    street = `${abbr(parts[numIdx + 1])} ${parts[numIdx]}`;
+    barrio = parts[numIdx + 2];
+  } else {
+    const idx = parts.findIndex((p) => /\D+\s\d{1,6}\b/.test(p));
+    if (idx >= 0) {
+      street = abbr(parts[idx]);
+      barrio = parts[idx + 1];
+    }
+  }
+  const extra = (typed?.match(EXTRA_RE) ?? []).map((e) => e.trim()).join(" ");
+  if (!street) return oneLine(typed && typed.trim() ? typed : resolved, 120);
+  const pieces = [street, extra, barrio && !CITY_LIKE.test(barrio) ? barrio : ""].filter(Boolean);
+  return oneLine(pieces.join(", "), 120);
 }
 
 /**
@@ -468,7 +503,7 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   t.state.quoted = true;
   const response = await t.client.quote({ ...common(t), ...parsed });
   if (!response.ok) return fail(t, response, "quote");
-  const summary = renderQuoteSummary(response.data);
+  const summary = renderQuoteSummary(response.data, parsed.address);
   t.state.fixedReply = summary ?? ORDER_REPLIES.invalidQuote;
   const total = response.data.total;
   return summary
