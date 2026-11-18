@@ -3,6 +3,7 @@ import { toolsForIntent } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
 import { promosForModel, promosForToday } from "./greeting.ts";
+import { categoryForModel, menuForModel, MENU_RESULT_CHARS } from "./menu.ts";
 import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
@@ -70,14 +71,20 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
   return [
     {
       name: "get_menu",
-      description: "Productos disponibles con nombre, descripción, precio y categoría.",
+      description: "Menú COMPLETO agrupado por categoría (con emoji): cada producto con nombre y price_text (ya formateado, copialo tal cual)" + (order ? " y su id (product_id para quote_order)." : "."),
       parameters: EMPTY,
-      run: async () =>
-        (await repo.menu()).map(({ id, name, description, price, category }) => {
-          // price_text ya formateado en pesos ("$3.500"): el modelo lo copia tal cual, sin convertir números.
-          const item = { name, description, price, price_text: money(price), category };
-          return order ? { id, ...item } : item;
-        }),
+      maxResultChars: MENU_RESULT_CHARS,
+      run: async () => menuForModel(await repo.menu(), Boolean(order)),
+    },
+    {
+      name: "get_categoria",
+      description: "TODOS los productos de una categoría o familia con su precio (ej.: \"pizzas\", \"empanadas\", \"bebidas\", \"postres\", \"promos\", \"cafetería\" o el nombre exacto de una categoría). Tolera tildes, plurales y sinónimos (muzza, fugazzeta, napolitana → pizzas).",
+      parameters: { type: "object", properties: { categoria: { type: "string", maxLength: 60 } }, required: ["categoria"] },
+      maxResultChars: MENU_RESULT_CHARS,
+      run: async (args) => {
+        const q = typeof (args as { categoria?: unknown })?.categoria === "string" ? (args as { categoria: string }).categoria : "";
+        return categoryForModel(await repo.menu(), q.slice(0, 60), Boolean(order));
+      },
     },
     {
       name: "get_business_info",

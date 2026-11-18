@@ -1,10 +1,32 @@
-/** Modelos de Workers AI (benchmark 2026-10-17, ver docs/PLAN_WORKER_BOT.md). Cambiarlos acá, no en la lógica. */
+/**
+ * Modelos del bot. Cambiarlos acá, no en la lógica.
+ * - Los que empiezan con `@cf/` corren en Workers AI; el resto, en la API de OpenAI (secret OPENAI_API_KEY).
+ * - Desde 2026-11-17 el clasificador y el respondedor van por OpenAI gpt-4o-mini (entiende mejor el
+ *   rioplatense); los de Workers AI quedan como respaldo automático si OpenAI falla, tarda o falta la clave.
+ */
 export const MODELS = {
-  classifier: "@cf/mistralai/mistral-small-3.1-24b-instruct",
-  responder: "@cf/qwen/qwen3-30b-a3b-fp8",
-  responderFallback: "@cf/openai/gpt-oss-120b",
+  classifier: "gpt-4o-mini",
+  classifierFallback: "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  responder: "gpt-4o-mini",
+  responderFallback: "@cf/qwen/qwen3-30b-a3b-fp8",
   transcriber: "@cf/openai/whisper-large-v3-turbo",
 } as const;
+
+/** true = el modelo corre en Workers AI (`env.AI.run`); false = API de OpenAI. */
+export const isWorkersAiModel = (model: string): boolean => model.startsWith("@cf/");
+
+/** Corre `primary` y, si falla (error, timeout, sin clave), el respaldo de Workers AI con la misma entrada. */
+export async function runWithFallback(
+  run: RunModel, primary: string, fallback: string, input: Record<string, unknown>, log?: (message: string, detail?: unknown) => void,
+): Promise<unknown> {
+  try {
+    return await run(primary, input);
+  } catch (error: unknown) {
+    if (primary === fallback) throw error;
+    log?.("[whatsapp-bot] modelo principal falló, uso el respaldo", { primary, fallback, error: error instanceof Error ? error.message : "error" });
+    return run(fallback, input);
+  }
+}
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";

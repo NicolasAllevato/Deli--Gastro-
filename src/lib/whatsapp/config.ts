@@ -128,6 +128,7 @@ function createDemoClient(): WhatsAppClient {
   const wamid = () => `wamid.demo-${crypto.randomUUID()}`;
   return {
     sendText: async () => wamid(),
+    sendDocument: async () => wamid(),
     sendTemplate: async () => wamid(),
     listTemplates: async () => [...demoTemplates.values()],
     createTemplate: async (payload) => {
