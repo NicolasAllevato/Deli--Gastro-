@@ -4,7 +4,7 @@ import "./helpers/alias.ts";
 import { asksFullMenu, categoryEmoji, categoryForModel, menuForModel, MENU_RESULT_CHARS, productsForCategory } from "../workers/whatsapp-bot/src/bot/menu.ts";
 import { isGreetingMessage, isPureGreeting, renderGreeting, shouldGreetNow, GREETING_GAP_MS } from "../workers/whatsapp-bot/src/bot/greeting.ts";
 import { isStaleBotMessage, buildResponderPrompt } from "../workers/whatsapp-bot/src/bot/prompts.ts";
-import { historyMessages, MENU_PDF_NOTE, processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
+import { historyMessages, MENU_PDF_NOTE, MENU_PDF_REPLY, processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import { toolsFor } from "../workers/whatsapp-bot/src/bot/tools.ts";
 import { classify, CLASSIFIER_PROMPT } from "../workers/whatsapp-bot/src/ai/classifier.ts";
@@ -328,12 +328,13 @@ describe("turno: pedir la carta", () => {
     return { sent, docs, send: (text: string) => processTurn({ phone: "5491170000001", text, wamids: ["w1"], audios: [], receivedAt: 0 }, deps) };
   }
 
-  it("manda el PDF y después la lista de categorías", async () => {
+  it("manda solo el PDF (URL versionada) y una línea corta, sin la lista en el chat", async () => {
     const w = world(new Date());
     assert.equal(await w.send("me pasás el menú?"), "answered");
-    assert.deepEqual(w.docs, [{ url: "https://opsyndely.la-gambeta.com/api/public/carta.pdf", filename: "Carta La Gambeta.pdf" }]);
-    assert.equal(w.sent[0], MENU_PDF_NOTE);
-    assert.match(w.sent[1], /Platos Principales/);
+    assert.equal(w.docs.length, 1);
+    assert.match(w.docs[0].url, /^https:\/\/opsyndely\.la-gambeta\.com\/api\/public\/carta\.pdf\?v=\d{10}$/);
+    assert.equal(w.docs[0].filename, "Carta La Gambeta.pdf");
+    assert.deepEqual(w.sent, [MENU_PDF_NOTE, MENU_PDF_REPLY]);
   });
 
   it("si pregunta por una categoría no manda el PDF", async () => {
