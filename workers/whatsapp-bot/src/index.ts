@@ -50,6 +50,8 @@ export interface Env {
   BOT_INTERNAL_SECRET?: string;
   /** Secret (wrangler secret put OPENAI_API_KEY). Clasificador y respondedor (gpt-4o-mini) y aprendizaje nocturno; sin él el bot usa Workers AI. */
   OPENAI_API_KEY?: string;
+  /** Bucket privado de fotos de reclamos (deli-gastro-reclamos). Sin él las fotos no se guardan; el reclamo sí. */
+  RECLAMOS?: R2Bucket;
 }
 
 const WEBHOOK_PATH = "/webhook";
@@ -204,6 +206,22 @@ function ordersClientFor(env: Env) {
   return createOrdersClient({ baseUrl: env.APP_URL, secret, log: workerLog, fetchImpl });
 }
 
+/** Fotos de reclamos: hasta 5 MB, solo imágenes. Clave `reclamos/<ticket>/<uuid>.<ext>` en el bucket privado. */
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const PHOTO_EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+function photoStore(bucket: R2Bucket, wa: ReturnType<typeof whatsappClient>) {
+  return async (ticketId: string, mediaId: string): Promise<string | null> => {
+    const media = await wa.downloadMedia(mediaId, MAX_PHOTO_BYTES);
+    const type = media.mimeType.split(";")[0].trim().toLowerCase();
+    const ext = PHOTO_EXT[type];
+    if (!ext) return null;
+    const key = `reclamos/${ticketId}/${crypto.randomUUID()}.${ext}`;
+    await bucket.put(key, media.data, { httpMetadata: { contentType: type } });
+    return key;
+  };
+}
+
 /** Consumidor de `wa-inbound` (fase 4): un turno agrupado → una respuesta. */
 async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise<void> {
   // d1: sin Hyperdrive (etapa 2 del corte).
@@ -229,6 +247,7 @@ async function consumeTurns(batch: MessageBatch<InboundTurn>, env: Env): Promise
       sendDocument: (phone: string, url: string, filename: string, caption?: string) => wa.sendDocument(phone, url, filename, caption),
       appUrl: env.APP_URL,
       orders: ordersClientFor(env),
+      storePhoto: env.RECLAMOS ? photoStore(env.RECLAMOS, wa) : undefined,
       log: workerLog,
     };
     // En orden: dos turnos de la misma conversación nunca se responden a la vez dentro del lote.

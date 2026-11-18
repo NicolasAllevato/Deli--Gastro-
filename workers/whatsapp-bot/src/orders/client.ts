@@ -6,7 +6,7 @@
  * `src/lib/bot-internal/signature.ts`: HMAC-SHA256 de `${timestamp}.${METHOD}.${path}.${sha256hex(cuerpo)}`.
  */
 
-export type OrderOp = "quote" | "confirm" | "cancel" | "status";
+export type OrderOp = "quote" | "confirm" | "cancel" | "status" | "reclamo";
 
 export const TIMESTAMP_HEADER = "x-bot-timestamp";
 export const SIGNATURE_HEADER = "x-bot-signature";
@@ -86,11 +86,17 @@ export interface CancelRequest extends CommonFields {
   confirmed: true;
 }
 
+export interface ReclamoRequest extends CommonFields {
+  reclamoId: string;
+}
+
 export interface OrdersClient {
   quote(body: QuoteRequest): Promise<OrderResponse>;
   confirm(body: ConfirmRequest): Promise<OrderResponse>;
   cancel(body: CancelRequest): Promise<OrderResponse>;
   status(body: CommonFields): Promise<OrderResponse>;
+  /** Reclamo nuevo: la app avisa al local por mail. Opcional en los dobles de prueba. */
+  reclamo?(body: ReclamoRequest): Promise<OrderResponse>;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -206,5 +212,7 @@ export function createOrdersClient(options: OrdersClientOptions): OrdersClient {
     confirm: (body) => call("confirm", body, body.inboundWamid.length > 0),
     cancel: (body) => call("cancel", body, body.inboundWamid.length > 0),
     status: (body) => call("status", body, true),
+    // Sin reintentos: el aviso marca `notified_at` una sola vez y un reintento no agrega nada.
+    reclamo: (body) => call("reclamo", body, false),
   };
 }

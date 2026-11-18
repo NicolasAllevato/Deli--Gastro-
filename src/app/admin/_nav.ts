@@ -14,6 +14,8 @@ export interface NavSection {
   href: string;
   /** Pestañas internas; vacío si la sección es una sola página. */
   tabs: ReadonlyArray<NavTab>;
+  /** Contador que se muestra en el menú lateral (p. ej. reclamos abiertos). */
+  badge?: "reclamos";
 }
 
 export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
@@ -41,9 +43,10 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
     ],
   },
   {
-    label: "Comunicación", icon: MessagesSquare, href: "/admin/conversaciones",
+    label: "Comunicación", icon: MessagesSquare, href: "/admin/conversaciones", badge: "reclamos",
     tabs: [
       { href: "/admin/conversaciones", label: "Conversaciones" },
+      { href: "/admin/reclamos", label: "Reclamos" },
       { href: "/admin/agente", label: "Agente IA" },
       { href: "/admin/conocimiento", label: "Conocimiento" },
       { href: "/admin/plantillas", label: "Plantillas" },

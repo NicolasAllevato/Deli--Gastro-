@@ -42,6 +42,9 @@ export const cancelSchema = z.object({ ...base, confirmed: z.boolean().optional(
 
 export const statusSchema = z.object(base).strict();
 
-export type BotOperation = "quote" | "confirm" | "cancel" | "status";
+/** Reclamo nuevo creado por el bot: la app avisa al local por mail. Solo el id; el resto se lee de la base. */
+export const reclamoSchema = z.object({ ...base, reclamoId: z.string().uuid() }).strict();
 
-export const SCHEMAS = { quote: quoteSchema, confirm: confirmSchema, cancel: cancelSchema, status: statusSchema } as const;
+export type BotOperation = "quote" | "confirm" | "cancel" | "status" | "reclamo";
+
+export const SCHEMAS = { quote: quoteSchema, confirm: confirmSchema, cancel: cancelSchema, status: statusSchema, reclamo: reclamoSchema } as const;

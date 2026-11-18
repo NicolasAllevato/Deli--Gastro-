@@ -9,7 +9,7 @@ import { buildResponderPrompt, closedTicketReply, orderReply } from "../workers/
 import { processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { toolsFor } from "../workers/whatsapp-bot/src/bot/tools.ts";
 import { d1BotRepo } from "../workers/whatsapp-bot/src/repo/d1.ts";
-import type { BotRepo, ComplaintInput, MenuItem } from "../workers/whatsapp-bot/src/repo/types.ts";
+import type { BotRepo, ComplaintInput, ComplaintTicket, MenuItem } from "../workers/whatsapp-bot/src/repo/types.ts";
 import { createTestDb } from "./helpers/sqlite-d1.ts";
 
 const { listReclamos, setReclamoEstado } = await import("../src/lib/data/reclamos.ts");
@@ -103,6 +103,7 @@ function world(opts: { intent: string; lastOut: Date | null; config?: Record<str
   const sent: string[] = [];
   const complaints: ComplaintInput[] = [];
   const state = { takeover: false };
+  let open: ComplaintTicket | null = null;
   const repo: BotRepo = {
     getConversation: async (phone) => ({ id: "c1", phone, clientId: "cl1", displayName: "Tata Pérez", humanTakeover: state.takeover }),
     history: async () => [{ direction: "in", body: "hola" }],
@@ -116,7 +117,13 @@ function world(opts: { intent: string; lastOut: Date | null; config?: Record<str
     saveOutbound: async (_c, _w, body) => { sent.push(body); },
     saveTranscript: async () => {},
     lastOutboundAt: async () => opts.lastOut,
-    createComplaint: async (c) => { complaints.push(c); },
+    createComplaint: async (c) => {
+      complaints.push(c);
+      if (open) return { ...open, created: false };
+      open = { id: "r1", numero: 7, created: true, categoria: c.categoria ?? "otro", orderId: c.orderId ?? null, fotos: 0, createdAt: new Date() };
+      return open;
+    },
+    openComplaint: async () => open,
   };
   const toolCalls = opts.toolCalls ?? [];
   const run: TurnDeps["run"] = async (_m, input) => {
@@ -171,8 +178,8 @@ describe("turno: quejas según el horario", () => {
     assert.equal(w.state.takeover, false);
     assert.equal(w.complaints.length, 1);
     assert.match(w.complaints[0].motivo, /frío/);
-    assert.equal(w.sent[0], closedTicketReply(settingsFromConfig({ ...OPEN, ...CLOSED })));
-    assert.match(w.sent[0], /a las 03:00/);
+    assert.match(w.sent[0], /Lo registramos \(reclamo #7\)\. Te contactamos cuando abramos a las 03:00\./);
+    assert.equal(w.complaints[0].categoria, "llego_frio");
   });
 
   it("cerrado: si el modelo usa handoff_to_human, sale el aviso del ticket (no «te paso con una persona»)", async () => {
@@ -182,7 +189,9 @@ describe("turno: quejas según el horario", () => {
     });
     assert.equal(await w.send("me faltó una pizza"), "ticket");
     assert.equal(w.state.takeover, false);
-    assert.deepEqual(w.complaints.map((c) => c.motivo), ["pedido incompleto"]);
+    assert.equal(w.complaints.length, 1);
+    assert.match(w.complaints[0].motivo, /me faltó una pizza\npedido incompleto/);
+    assert.match(w.sent[0], /reclamo #7/);
     assert.doesNotMatch(w.sent.join("\n"), /te paso con una persona/i);
   });
 

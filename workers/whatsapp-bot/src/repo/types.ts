@@ -114,12 +114,30 @@ export interface CustomerProfile {
   lastAddress: string | null;
 }
 
+export type ComplaintCategory = "demora" | "llego_frio" | "faltante" | "pedido_equivocado" | "cobro" | "atencion" | "otro";
+
 export interface ComplaintInput {
   conversationId: string;
   phone: string;
   clientId: string | null;
-  /** Lo que contó el cliente (se recorta a 500 caracteres). */
+  /** Lo que contó el cliente (se recorta; en un reclamo ya abierto se agrega al final). */
   motivo: string;
+  categoria?: ComplaintCategory;
+  /** Pedido reciente al que se vincula (solo si el reclamo no tenía uno). */
+  orderId?: string | null;
+}
+
+/** Reclamo abierto (abierto o en curso) de una conversación. */
+export interface ComplaintTicket {
+  id: string;
+  /** Número corto que ve el cliente ("reclamo #12"). */
+  numero: number;
+  /** true = se creó ahora; false = ya había uno abierto y se actualizó (nunca se duplica). */
+  created: boolean;
+  categoria: ComplaintCategory;
+  orderId: string | null;
+  fotos: number;
+  createdAt: Date;
 }
 
 /** Acceso a la base del bot (respondedores). SQL en producción, memoria en los tests. */
@@ -146,8 +164,15 @@ export interface BotRepo {
    * bienvenida. Opcional: sin él (backend viejo, tests) no se saluda aparte.
    */
   lastOutboundAt?(conversationId: string): Promise<Date | null>;
-  /** Ticket de reclamo (local cerrado: no hay a quién derivar). Opcional: sin él se deriva como siempre. */
-  createComplaint?(input: ComplaintInput): Promise<void>;
+  /**
+   * Reclamo: crea el ticket o, si la conversación ya tiene uno abierto, lo actualiza (motivo, categoría, pedido).
+   * Opcional: sin él (backend viejo) la queja se deriva como siempre. null = no se registró nada.
+   */
+  createComplaint?(input: ComplaintInput): Promise<ComplaintTicket | null>;
+  /** Reclamo abierto de la conversación, o null. */
+  openComplaint?(conversationId: string): Promise<ComplaintTicket | null>;
+  /** Suma la clave de una foto (R2) al reclamo y deja el evento en el historial. */
+  addComplaintPhoto?(ticketId: string, key: string): Promise<void>;
   /** Alta/baja de promociones para todas las filas de clientes con ese teléfono; devuelve cuántas cambió. */
   setMarketingOptIn(phone: string, optIn: boolean): Promise<number>;
   saveOutbound(conversationId: string, wamid: string, body: string): Promise<void>;

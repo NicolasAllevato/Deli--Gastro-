@@ -140,14 +140,21 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
     },
     {
       name: "handoff_to_human",
-      description: "Queja o reclamo, o el cliente pide una persona. Con el local abierto deriva a una persona (el bot deja de responder); cerrado, registra un ticket de reclamo.",
+      description: "Queja o reclamo, o el cliente pide una persona. Registra el reclamo (siempre) y, con el local abierto, deriva a una persona.",
       parameters: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] },
       run: async (args) => {
-        // Cerrado no hay nadie: ticket de reclamo, sin silenciar al bot.
-        if (!openNow(settings, new Date(now())) && repo.createComplaint) {
+        // Con reclamos disponibles, el turno registra el ticket y manda el aviso fijo (número de reclamo, pedido, foto).
+        if (repo.createComplaint) {
           const reason = typeof (args as { reason?: unknown })?.reason === "string" ? (args as { reason: string }).reason : "";
           await repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo: reason });
-          return { ok: true, ticket: true, note: `El local está cerrado: NO digas que te atiende una persona. Decile que el reclamo quedó registrado y que el local lo contacta cuando abra (a las ${settings.hours.open}).` };
+          const closed = !openNow(settings, new Date(now()));
+          return {
+            ok: true,
+            ticket: true,
+            note: closed
+              ? `El local está cerrado: NO digas que te atiende una persona. El reclamo quedó registrado; el local lo contacta cuando abra (a las ${settings.hours.open}).`
+              : "El reclamo quedó registrado y una persona del local le va a responder a la brevedad.",
+          };
         }
         await repo.setTakeover(conversation.id);
         return { ok: true, note: "Avisale al cliente que una persona del local le va a responder a la brevedad." };

@@ -3,6 +3,8 @@ import { z } from "zod";
 export type InboundContent =
   | { type: "text"; text: string }
   | { type: "audio"; mediaId: string; mimeType: string }
+  /** Foto (p. ej. de un pedido con problemas): el bot la guarda en el reclamo abierto. */
+  | { type: "image"; mediaId: string; mimeType: string; caption: string | null }
   | { type: "unsupported"; rawType: string };
 
 export interface InboundMessage {
@@ -44,6 +46,7 @@ const rawMessage = z.object({
   type: z.string(),
   text: z.object({ body: z.string() }).optional(),
   audio: z.object({ id: z.string(), mime_type: z.string().optional() }).optional(),
+  image: z.object({ id: z.string(), mime_type: z.string().optional(), caption: z.string().optional() }).optional(),
   interactive: z
     .object({
       button_reply: z.object({ title: z.string() }).optional(),
@@ -75,6 +78,9 @@ function contentOf(msg: z.infer<typeof rawMessage>): InboundContent {
   if (msg.type === "text" && msg.text) return { type: "text", text: msg.text.body };
   if (msg.type === "audio" && msg.audio) {
     return { type: "audio", mediaId: msg.audio.id, mimeType: msg.audio.mime_type ?? "audio/ogg" };
+  }
+  if (msg.type === "image" && msg.image) {
+    return { type: "image", mediaId: msg.image.id, mimeType: msg.image.mime_type ?? "image/jpeg", caption: msg.image.caption?.trim() || null };
   }
   if (msg.type === "interactive") {
     const title = msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title;

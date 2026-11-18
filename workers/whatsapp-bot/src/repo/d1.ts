@@ -8,7 +8,7 @@ import type { SqlDatabase } from "../../../../src/lib/data/sql.ts";
 import { fromCents } from "../../../../src/lib/data/money.ts";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import { phoneTail, resolveMatches } from "./phone-tail.ts";
-import type { BotRepo, CartaSeccion, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
+import type { BotRepo, CartaSeccion, ComplaintCategory, ComplaintTicket, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
 
 type Log = (message: string, detail?: unknown) => void;
 type ConvRow = { id: string; client_phone: string; silenced: number };
@@ -310,12 +310,58 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       return row?.at ? new Date(row.at) : null;
     },
 
-    async createComplaint({ conversationId, phone, clientId, motivo }) {
+    async openComplaint(conversationId) {
+      return openComplaintD1(db, conversationId);
+    },
+
+    async createComplaint({ conversationId, phone, clientId, motivo, categoria, orderId }) {
       const text = motivo.replace(/\s+/g, " ").trim().slice(0, 500) || "Reclamo sin detalle";
-      await db
-        .prepare("INSERT INTO reclamos (id, conversation_id, client_phone, client_id, motivo) VALUES (?, ?, ?, ?, ?)")
-        .bind(crypto.randomUUID(), conversationId, phone, clientId, text)
-        .run();
+      const cat = categoria ?? "otro";
+      const now = new Date().toISOString();
+      const open = await openComplaintD1(db, conversationId);
+      if (open) {
+        // Un solo reclamo abierto por conversación: se suma lo nuevo (sin repetir) y se completa lo que faltaba.
+        await db.batch([
+          db
+            .prepare(
+              `UPDATE reclamos SET motivo = CASE WHEN instr(motivo, ?1) > 0 THEN motivo ELSE substr(motivo || char(10) || ?1, 1, 1000) END,
+                 categoria = CASE WHEN categoria = 'otro' THEN ?2 ELSE categoria END,
+                 order_id = coalesce(order_id, ?3), client_id = coalesce(client_id, ?4), updated_at = ?5
+               WHERE id = ?6`,
+            )
+            .bind(text, cat, orderId ?? null, clientId, now, open.id),
+          db
+            .prepare("INSERT INTO reclamos_eventos (id, reclamo_id, tipo, detalle, autor, created_at) VALUES (?, ?, 'actualizado', ?, 'bot', ?)")
+            .bind(crypto.randomUUID(), open.id, text, now),
+        ]);
+        return { ...(await openComplaintD1(db, conversationId))!, created: false };
+      }
+      const id = crypto.randomUUID();
+      await db.batch([
+        db
+          .prepare(
+            `INSERT INTO reclamos (id, numero, conversation_id, client_phone, client_id, order_id, categoria, motivo, created_at, updated_at)
+             VALUES (?, (SELECT coalesce(max(numero), 0) + 1 FROM reclamos), ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(id, conversationId, phone, clientId, orderId ?? null, cat, text, now, now),
+        db
+          .prepare("INSERT INTO reclamos_eventos (id, reclamo_id, tipo, detalle, autor, created_at) VALUES (?, ?, 'creado', ?, 'bot', ?)")
+          .bind(crypto.randomUUID(), id, text, now),
+      ]);
+      const created = await openComplaintD1(db, conversationId);
+      return created ? { ...created, created: true } : null;
+    },
+
+    async addComplaintPhoto(ticketId, key) {
+      const now = new Date().toISOString();
+      await db.batch([
+        db
+          .prepare("UPDATE reclamos SET foto_keys = json_insert(foto_keys, '$[#]', ?), updated_at = ? WHERE id = ? AND json_array_length(foto_keys) < 10")
+          .bind(key, now, ticketId),
+        db
+          .prepare("INSERT INTO reclamos_eventos (id, reclamo_id, tipo, detalle, autor, created_at) VALUES (?, ?, 'foto', 'Foto del cliente', 'bot', ?)")
+          .bind(crypto.randomUUID(), ticketId, now),
+      ]);
     },
 
     async setTakeover(conversationId) {
@@ -340,4 +386,18 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       await db.prepare("UPDATE wa_messages SET body = ? WHERE wamid = ? AND body IS NULL").bind(text, wamid).run();
     },
   };
+}
+
+/** Reclamo abierto (abierto o en curso) de la conversación; null si no hay. */
+async function openComplaintD1(db: SqlDatabase, conversationId: string): Promise<ComplaintTicket | null> {
+  const row = await db
+    .prepare(
+      `SELECT id, numero, categoria, order_id, json_array_length(foto_keys) AS fotos, created_at FROM reclamos
+       WHERE conversation_id = ? AND estado <> 'resuelto' ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(conversationId)
+    .first<{ id: string; numero: number; categoria: ComplaintCategory; order_id: string | null; fotos: number; created_at: string }>();
+  return row
+    ? { id: row.id, numero: Number(row.numero), created: false, categoria: row.categoria, orderId: row.order_id, fotos: Number(row.fotos), createdAt: new Date(row.created_at) }
+    : null;
 }

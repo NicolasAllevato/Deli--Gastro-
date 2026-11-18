@@ -67,6 +67,8 @@ export interface BotDeps {
   geocode?: OrderActionDeps["geocode"];
   gateway?: OrderActionDeps["gateway"];
   log?: (event: Record<string, unknown>) => void;
+  /** Aviso al local de un reclamo nuevo (mail). Sin esta dependencia la operación `reclamo` responde 503. */
+  notifyReclamo?: (reclamoId: string, conversationId: string) => Promise<string>;
 }
 
 const reply = (status: number, body: Record<string, unknown>): BotResponse => ({ status, body });
@@ -391,6 +393,14 @@ function parseJson(raw: string): unknown {
   }
 }
 
+/** Aviso de reclamo nuevo: no depende de la allowlist de pedidos (todo cliente puede reclamar). */
+async function runReclamo(ctx: Context, body: Parsed<"reclamo">): Promise<BotResponse> {
+  if (!ctx.deps.notifyReclamo) return refuse(503, "not_configured", "Avisos de reclamos no disponibles.");
+  const resultado = await ctx.deps.notifyReclamo(body.reclamoId, body.conversationId);
+  if (resultado === "no-existe") return refuse(404, "not_found", "Reclamo no encontrado.");
+  return reply(200, { ok: true, resultado });
+}
+
 /** Orquesta firma, validación, verificación del wamid, interruptores e idempotencia. */
 async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Promise<BotResponse> {
   const now = (deps.now ?? (() => new Date()))();
@@ -422,7 +432,7 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
 
   const parsed = SCHEMAS[op].safeParse(parseJson(req.rawBody));
   if (!parsed.success) return refuse(400, "invalid_body", parsed.error.issues[0]?.message ?? "Cuerpo inválido.");
-  const body = parsed.data as Parsed<"quote"> & Parsed<"confirm"> & Parsed<"cancel"> & Parsed<"status">;
+  const body = parsed.data as Parsed<"quote"> & Parsed<"confirm"> & Parsed<"cancel"> & Parsed<"status"> & Parsed<"reclamo">;
 
   if (!(await deps.rateLimit(`bot-conv:${body.conversationId}`, CONVERSATION_LIMIT.max, CONVERSATION_LIMIT.windowMs))) {
     return refuse(429, "rate_limited", "Demasiadas solicitudes para esta conversación.");
@@ -463,6 +473,8 @@ async function processBot(op: BotOperation, req: BotRequest, deps: BotDeps): Pro
       return runCancel(ctx, body);
     case "status":
       return runStatus(ctx, body);
+    case "reclamo":
+      return runReclamo(ctx, body);
   }
 }
 
