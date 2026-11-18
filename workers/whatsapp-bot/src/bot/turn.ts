@@ -12,15 +12,16 @@ import { inspectInbound, inspectOutbound, wrapUntrusted } from "../guardrails.ts
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
-import { buildResponderPrompt, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
-import { settingsFromConfig, type BotSettings } from "./settings.ts";
+import { buildResponderPrompt, closedTicketReply, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
+import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
+import { isNewConversation, promosForToday, renderGreeting } from "./greeting.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  lastDecisiveBotMessage, QUOTE_MARKER, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
+  lastDecisiveBotMessage, QUOTE_MARKER, CASH_MARKER, PAYMENT_QUESTION, paymentChoice, renderFinalSummary, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
 } from "../orders/flow.ts";
 
 export interface TurnDeps {
@@ -39,11 +40,29 @@ export interface TurnDeps {
 
 export type TurnOutcome =
   | "takeover" | "inactive" | "rate_silent" | "rate_notify" | "keyword"
-  | "blocked" | "unclear" | "order_redirect" | "answered" | "output_blocked" | "no_conversation" | "empty";
+  | "blocked" | "unclear" | "order_redirect" | "answered" | "output_blocked" | "no_conversation" | "empty" | "greeted" | "ticket";
+
+/** Intenciones que en el primer turno reciben SOLO el saludo (con las promos): el pedido arranca en el turno siguiente. */
+const GREETING_ONLY: readonly Intent[] = ["saludo", "pedido_nuevo", "otro"];
 
 const HISTORY_TURNS = 8;
 const ORDER_INTENTS: readonly Intent[] = ["pedido_nuevo", "pedido_datos", "pedido_confirmar", "pedido_cancelar"];
 const ALLOWED_HOSTS = ["mpago.la", "mercadopago.com.ar", "google.com", "maps.google.com"];
+
+/**
+ * Queja o pedido de una persona. Abierto: deriva (human_takeover) como siempre. Cerrado: no hay nadie, así que NO se
+ * silencia al bot: se registra un ticket de reclamo y se le avisa al cliente cuándo lo contactan.
+ */
+async function escalate(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, motivo: string, openReply: string): Promise<"answered" | "ticket"> {
+  if (!openNow(settings) && deps.repo.createComplaint) {
+    await deps.repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo });
+    await reply(deps, conversation, closedTicketReply(settings));
+    return "ticket";
+  }
+  await deps.repo.setTakeover(conversation.id);
+  await reply(deps, conversation, openReply, false);
+  return "answered";
+}
 
 /** Una persona escribió desde la app mientras se preparaba la respuesta: el turno se aborta sin enviar nada. */
 class PausedMidTurn extends Error {}
@@ -135,12 +154,22 @@ async function answer(
   // Si el modelo deriva con handoff_to_human en ESTE turno, su mensaje al cliente igual sale (sin el rechequeo
   // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
   let handedOffNow = false;
+  let ticketNow = false;
+  const createComplaint = deps.repo.createComplaint;
   const toolRepo = {
     ...deps.repo,
     setTakeover: async (id: string) => {
       handedOffNow = true;
       await deps.repo.setTakeover(id);
     },
+    ...(createComplaint
+      ? {
+          createComplaint: async (input: Parameters<typeof createComplaint>[0]) => {
+            ticketNow = true;
+            await createComplaint(input);
+          },
+        }
+      : {}),
   };
   const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, knowledge, lessons, profile);
   const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard);
@@ -151,6 +180,11 @@ async function answer(
   let issue: DraftIssue | null = null;
   // Un reintento con la corrección: el cliente no recibe el mensaje genérico si el modelo lo puede arreglar.
   for (let attempt = 0; attempt < 2; attempt++) {
+    // Local cerrado y el modelo registró un reclamo: aviso fijo (sin prometer una persona).
+    if (ticketNow) {
+      await reply(deps, conversation, closedTicketReply(settings));
+      return "ticket";
+    }
     // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
     if (order?.state.fixedReply) {
       await reply(deps, conversation, order.state.fixedReply, !order.state.handedOff && !handedOffNow);
@@ -178,21 +212,41 @@ async function answer(
     return "answered";
   }
   // Consulta por su pedido que el modelo no pudo contestar sin prometer: una persona lo revisa ya (no un saludo vacío).
+  if (ticketNow) {
+    await reply(deps, conversation, closedTicketReply(settings));
+    return "ticket";
+  }
   if (issue && intent === "pedido_estado") {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], handoff: true });
-    await deps.repo.setTakeover(conversation.id);
-    await reply(deps, conversation, STATUS_HANDOFF_REPLY, false);
-    return "output_blocked";
+    const done = await escalate(deps, conversation, settings, turnText, STATUS_HANDOFF_REPLY);
+    return done === "ticket" ? "ticket" : "output_blocked";
   }
   if (issue) {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });
     const orderIntent = intent === "pedido_nuevo" || intent === "pedido_datos" || intent === "pedido_confirmar";
     await reply(deps, conversation, issue === "promise" && orderIntent ? ORDER_REPLIES.startOver : SAFE_FALLBACK[issue]);
-    if (issue === "empty" || issue === "blocked") await deps.repo.setTakeover(conversation.id);
+    // Cerrado no hay quien tome la charla: no se silencia al bot.
+    if ((issue === "empty" || issue === "blocked") && openNow(settings)) await deps.repo.setTakeover(conversation.id);
     return "output_blocked";
   }
   await reply(deps, conversation, draft);
   return "answered";
+}
+
+/**
+ * Respuesta fija al paso de la forma de pago (el último mensaje del bot es el resumen sin pago o la repregunta):
+ * - elige efectivo / Mercado Pago ("mp", "sí efectivo") → resumen final con la forma de pago y "Respondé SÍ para confirmar";
+ * - un SÍ suelto → se pregunta cómo paga (no se asume Mercado Pago);
+ * - otra cosa (cambios, preguntas) → null: sigue el camino normal.
+ */
+export function paymentStep(text: string, outNewestFirst: readonly string[]): string | null {
+  const method = paymentChoice(text);
+  if (method) {
+    // El resumen del servidor más reciente (sin forma de pago): es lo que se vuelve a mostrar completo.
+    const summary = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER) && !/^Pago: /m.test(b));
+    return (summary && renderFinalSummary(summary, method)) ?? ORDER_REPLIES.requote;
+  }
+  return isAffirmation(text, "confirm") ? PAYMENT_QUESTION : null;
 }
 
 /** Un SÍ con pregunta ("¿cuánto tardan?") recibe la plantilla de pago y además la respuesta a su pregunta. */
@@ -253,21 +307,31 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const outNewestFirst = (await deps.repo.history(conversation.id, 8)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
   const lastBot = lastDecisiveBotMessage(outNewestFirst);
   // Resumen vigente: el último mensaje "de sistema" del bot es un resumen (todavía sin link de pago ni cancelación).
-  const lastSystem = outNewestFirst.find((b) => b.startsWith(QUOTE_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
-  const recentQuote = lastSystem?.startsWith(QUOTE_MARKER) ?? false;
+  const lastSystem = outNewestFirst.find((b) =>
+    b.startsWith(QUOTE_MARKER) || b.startsWith(PAYMENT_QUESTION) || b.startsWith(CASH_MARKER) || /^¡Listo! Para confirmar|^Listo, (cancelamos|dejamos)/.test(b));
+  const recentQuote = (lastSystem?.startsWith(QUOTE_MARKER) || lastSystem?.startsWith(PAYMENT_QUESTION)) ?? false;
   const recentPayment = lastSystem?.startsWith("¡Listo! Para confirmar") ?? false;
   const wamid = turn.wamids.at(-1);
   const order: OrderTurn | undefined =
     settings.ordersEnabled && deps.orders && wamid
       ? {
           client: deps.orders, repo: deps.repo, conversation, inboundWamid: wamid, inboundText: text,
-          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, recentQuote, recentPayment, appUrl: deps.appUrl, hours: settings.hours, state: newOrderState(),
+          hasAudio: turn.audios.length > 0, lastBotMessage: lastBot, recentQuote, recentPayment, appUrl: deps.appUrl, hours: settings.hours,
+          estimatedMinutes: settings.estimatedMinutes, state: newOrderState(),
         }
       : undefined;
 
   // Camino determinista: SÍ literal justo después del resumen (o de la pregunta de cancelar) no pasa por el clasificador.
   const pending = pendingOperation(lastBot);
-  if (order && pending && isAffirmation(text, pending) && !order.hasAudio) {
+  // Paso de la forma de pago: elige → resumen final con "Pago: …"; un SÍ suelto → se le vuelve a preguntar.
+  if (order && pending === "pay" && !order.hasAudio) {
+    const fixed = paymentStep(text, outNewestFirst);
+    if (fixed) {
+      await reply(deps, conversation, fixed);
+      return "answered";
+    }
+  }
+  if (order && (pending === "confirm" || pending === "cancel") && isAffirmation(text, pending) && !order.hasAudio) {
     const direct = pending === "confirm" ? confirmAfterSummary : pending === "cancel" ? cancelAfterPrompt : null;
     if (direct) {
       await direct(order);
@@ -280,10 +344,12 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const classified = saysPaid(text) ? { intent: "pedido_estado" as Intent, confidence: 1 } : await classify(deps.run, wrapUntrusted(text), lastBot);
   const { intent, confidence } = classified;
 
-  if (intent === "humano") {
-    await deps.repo.setTakeover(conversation.id);
-    await reply(deps, conversation, REPLIES.handoff, false);
-    return "answered";
+  if (intent === "humano") return escalate(deps, conversation, settings, text, REPLIES.handoff);
+  // Charla nueva (el bot nunca respondió o pasaron más de 6 h): primero el saludo por nombre con las promos de hoy.
+  if (await shouldGreet(deps, conversation.id)) {
+    const promos = promosForToday(await deps.repo.menu().catch(() => []), new Date());
+    await reply(deps, conversation, renderGreeting(settings, conversation.displayName, promos));
+    if (confidence < MIN_CONFIDENCE || GREETING_ONLY.includes(intent)) return "greeted";
   }
   if (confidence < MIN_CONFIDENCE) {
     await reply(deps, conversation, REPLIES.unclear);
@@ -312,6 +378,13 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     return "answered";
   }
   return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst));
+}
+
+/** Sin `lastOutboundAt` en el repo (backend viejo) no hay saludo aparte; si la lectura falla, tampoco (no se repite). */
+async function shouldGreet(deps: TurnDeps, conversationId: string): Promise<boolean> {
+  if (!deps.repo.lastOutboundAt) return false;
+  const last = await deps.repo.lastOutboundAt(conversationId).catch(() => undefined);
+  return last !== undefined && isNewConversation(last, Date.now());
 }
 
 export const CLOSING_PAID = "¡Gracias a vos! 😊 Tu pago ya está acreditado: te avisamos por acá cuando tu pedido salga 🛵";

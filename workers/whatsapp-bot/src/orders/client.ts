@@ -78,7 +78,7 @@ export interface QuoteRequest extends CommonFields {
 }
 
 export interface ConfirmRequest extends CommonFields {
-  payment_method: "Mercado Pago";
+  payment_method: "Mercado Pago" | "Efectivo";
   notes?: string;
 }
 

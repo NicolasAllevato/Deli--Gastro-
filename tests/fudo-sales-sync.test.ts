@@ -114,6 +114,18 @@ describe("ventas en Fudo al confirmar un pedido", () => {
     assert.equal(calls.length, 0);
   });
 
+  it("pedidos del bot (canal whatsapp) no crean venta salvo bot_orders_fudo_enabled = true", async () => {
+    seed({ channel: "whatsapp" });
+    const { gw, calls } = gateway(okSale);
+    assert.equal((await sales.pushOrderSale(db, admin, gw, ORDER)).result, "skipped");
+    db.raw.exec("INSERT INTO global_config (key, value) VALUES ('bot_orders_fudo_enabled', 'false')");
+    assert.equal((await sales.pushOrderSale(db, admin, gw, ORDER)).result, "skipped");
+    assert.equal(calls.length, 0);
+    db.raw.exec("UPDATE global_config SET value = 'true' WHERE key = 'bot_orders_fudo_enabled'");
+    assert.equal((await sales.pushOrderSale(db, admin, gw, ORDER)).result, "sent");
+    assert.equal(calls.length, 1);
+  });
+
   it("con escrituras apagadas el pedido queda pendiente (sin tirar) y aparece en el admin", async () => {
     seed();
     const { gw } = gateway(() => ({ ok: false, status: 403, error: "Escrituras en Fudo deshabilitadas.", code: "WRITES_DISABLED" }));

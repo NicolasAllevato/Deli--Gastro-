@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
 import { Aprendizaje } from "./Aprendizaje";
+import { Reclamos } from "./Reclamos";
 
 type Categoria = "faq" | "politica" | "promo" | "vocabulario" | "otro";
 
@@ -133,6 +134,7 @@ export default function ConocimientoPage() {
         </div>
       </section>
 
+      <Reclamos />
       <Aprendizaje onApproved={() => void load()} />
 
       {entries === null && !error && <p className="text-sm text-gray-500">Cargando...</p>}

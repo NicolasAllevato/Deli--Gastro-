@@ -2,6 +2,7 @@ import type { BotTool } from "../ai/responder.ts";
 import { toolsForIntent } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
+import { promosForModel, promosForToday } from "./greeting.ts";
 import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
@@ -43,8 +44,8 @@ function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
     },
     {
       name: "confirm_order",
-      description: "Confirma el pedido cotizado y genera el link de pago. Solo funciona si el cliente respondió SÍ al resumen. Solo Mercado Pago.",
-      parameters: OBJECT_NO_EXTRA({ payment_method: { type: "string", enum: ["Mercado Pago"] }, notes: { type: "string", maxLength: 300 } }, ["payment_method"]),
+      description: "Confirma el pedido cotizado. Solo funciona si el cliente respondió SÍ al resumen. Efectivo: el pedido queda hecho y se paga al recibir. Mercado Pago: genera el link de pago.",
+      parameters: OBJECT_NO_EXTRA({ payment_method: { type: "string", enum: ["Efectivo", "Mercado Pago"] }, notes: { type: "string", maxLength: 300 } }, ["payment_method"]),
       run: (args) => runConfirm(order, args),
     },
     {
@@ -96,6 +97,12 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
       }),
     },
     {
+      name: "get_promos_hoy",
+      description: "Promos de HOY del catálogo (según el día y la hora de Argentina), con price_text ya formateado. Usala si preguntan qué promos hay.",
+      parameters: EMPTY,
+      run: async () => ({ promos: promosForModel(promosForToday(await repo.menu(), new Date(now()))) }),
+    },
+    {
       name: "order_status",
       description: "Estado del último pedido del cliente de esta conversación.",
       parameters: EMPTY,
@@ -121,9 +128,15 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
     },
     {
       name: "handoff_to_human",
-      description: "Deriva la conversación a una persona del local (queja o el cliente lo pide). El bot deja de responder.",
+      description: "Queja o reclamo, o el cliente pide una persona. Con el local abierto deriva a una persona (el bot deja de responder); cerrado, registra un ticket de reclamo.",
       parameters: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] },
-      run: async () => {
+      run: async (args) => {
+        // Cerrado no hay nadie: ticket de reclamo, sin silenciar al bot.
+        if (!openNow(settings, new Date(now())) && repo.createComplaint) {
+          const reason = typeof (args as { reason?: unknown })?.reason === "string" ? (args as { reason: string }).reason : "";
+          await repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo: reason });
+          return { ok: true, ticket: true, note: `El local está cerrado: NO digas que te atiende una persona. Decile que el reclamo quedó registrado y que el local lo contacta cuando abra (a las ${settings.hours.open}).` };
+        }
         await repo.setTakeover(conversation.id);
         return { ok: true, note: "Avisale al cliente que una persona del local le va a responder a la brevedad." };
       },

@@ -96,13 +96,21 @@ interface LineRow {
   fudo_product_id: number | null;
 }
 
-/** Toma el pedido para crear su venta. false: ya tiene venta, viene de Fudo, está cancelado u otro proceso lo tiene. */
+/**
+ * Interruptor de `global_config.bot_orders_fudo_enabled`: los pedidos del bot de WhatsApp (canal `whatsapp`) solo
+ * crean venta en Fudo con el valor `true`. Ausente o cualquier otro valor = apagado (piloto de pruebas sin ventas reales).
+ */
+export const BOT_ORDERS_FUDO_KEY = "bot_orders_fudo_enabled";
+
+/** Toma el pedido para crear su venta. false: ya tiene venta, viene de Fudo, está cancelado, es del bot con el interruptor apagado u otro proceso lo tiene. */
 async function claimForSale(db: SqlDatabase, orderId: string): Promise<boolean> {
   const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
   const r = await db
     .prepare(
       `UPDATE orders SET fudo_sale_sync = 'sending', fudo_sale_claimed_at = ?, fudo_sale_error = NULL
        WHERE id = ? AND channel <> 'fudo' AND fudo_order_id IS NULL AND fudo_sale_id IS NULL AND status <> 'Cancelado'
+         AND (channel <> 'whatsapp' OR EXISTS (
+           SELECT 1 FROM global_config WHERE key = 'bot_orders_fudo_enabled' AND value IN ('true', '"true"')))
          AND (fudo_sale_sync IS NULL OR fudo_sale_sync = 'pending' OR (fudo_sale_sync = 'sending' AND fudo_sale_claimed_at < ?))`,
     )
     .bind(nowIso(), orderId, staleBefore)
