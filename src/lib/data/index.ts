@@ -208,3 +208,13 @@ export { kbAprendizajeApp } from "./kb-aprendizaje-app.ts";
 export { reclamosApp, reclamoEstadoSchema, type Reclamo, type ReclamoEstado } from "./reclamos.ts";
 export { decisionSchema, type KbError, type KbSugerencia } from "./kb-aprendizaje.ts";
 export { claimBotNonce } from "./bot-nonces.ts";
+export {
+  cartaApp,
+  cartaInputSchema,
+  CartaError,
+  type CartaInput,
+  type CartaAdminVista,
+  type CartaSeccionVista,
+  type CartaItemVista,
+  type CartaProductoRef,
+} from "./carta.ts";

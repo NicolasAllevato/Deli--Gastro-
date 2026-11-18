@@ -3,7 +3,7 @@ import { toolsForIntent } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
 import { promosForModel, promosForToday } from "./greeting.ts";
-import { categoryForModel, menuForModel, MENU_RESULT_CHARS } from "./menu.ts";
+import { cartaCategoryForModel, cartaMenuForModel, categoryForModel, menuForModel, MENU_RESULT_CHARS } from "./menu.ts";
 import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
@@ -74,7 +74,10 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
       description: "Menú COMPLETO agrupado por categoría (con emoji): cada producto con nombre y price_text (ya formateado, copialo tal cual)" + (order ? " y su id (product_id para quote_order)." : "."),
       parameters: EMPTY,
       maxResultChars: MENU_RESULT_CHARS,
-      run: async () => menuForModel(await repo.menu(), Boolean(order)),
+      run: async () => {
+        const [menu, carta] = await Promise.all([repo.menu(), repo.carta ? repo.carta() : Promise.resolve([])]);
+        return carta.length > 0 ? cartaMenuForModel(carta, menu, Boolean(order)) : menuForModel(menu, Boolean(order));
+      },
     },
     {
       name: "get_categoria",
@@ -83,7 +86,9 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
       maxResultChars: MENU_RESULT_CHARS,
       run: async (args) => {
         const q = typeof (args as { categoria?: unknown })?.categoria === "string" ? (args as { categoria: string }).categoria : "";
-        return categoryForModel(await repo.menu(), q.slice(0, 60), Boolean(order));
+        const carta = repo.carta ? await repo.carta() : [];
+        const fromCarta = carta.length > 0 ? cartaCategoryForModel(carta, q.slice(0, 60), Boolean(order)) : null;
+        return fromCarta ?? categoryForModel(await repo.menu(), q.slice(0, 60), Boolean(order));
       },
     },
     {
