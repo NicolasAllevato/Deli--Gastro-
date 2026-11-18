@@ -23,8 +23,8 @@ IMAGES = [
     (58, 57, "marco", 900),      # hoja 1: marco completo con la pelota abajo
     (41, 49, "logo", 520),       # "La Gambeta" en rojo
     (48, 47, "jugador", 400),    # jugador de fondo a la derecha
-    (8, 7, "marcoSuperior", 900),  # hoja 2: esquinas de arriba
-    (9, 0, "pie", 600),          # hoja 2: fileteado de abajo (JPEG sin transparencia: se recorta el fondo)
+    (8, 7, "marcoSuperior", 900),  # hojas 2+: esquinas de arriba y laterales
+    (9, 0, "pie", 600),          # hojas 2+: fileteado rojo de abajo (JPEG sin transparencia: se recorta el fondo)
 ]
 
 
@@ -46,7 +46,25 @@ def keyed_alpha(pix: fitz.Pixmap) -> bytes:
     return bytes(out)
 
 
-def image_entry(doc: fitz.Document, xref: int, mask: int, max_w: int) -> dict:
+# Restos de la carta original pegados en la imagen del jugador (en píxeles de la imagen de 389x601): la pelota
+# clara a su izquierda y la firma suelta abajo. Se borran de la transparencia.
+JUGADOR_RESTOS = [
+    (0, 250, 82, 342),   # pelota fantasma
+    (0, 425, 88, 446),   # firma (parte de arriba, sin tocar la media)
+    (0, 446, 118, 452),  # firma (resto)
+    (0, 452, 145, 505),  # firma (trazo final, antes del botín)
+]
+
+
+def clear_regions(alpha: bytes, w: int, regions: list[tuple[int, int, int, int]]) -> bytes:
+    out = bytearray(alpha)
+    for x0, y0, x1, y1 in regions:
+        for y in range(y0, y1):
+            out[y * w + x0 : y * w + x1] = bytes(x1 - x0)
+    return bytes(out)
+
+
+def image_entry(doc: fitz.Document, xref: int, mask: int, max_w: int, name: str = "") -> dict:
     pix = fitz.Pixmap(doc, xref)
     if mask:
         pix = fitz.Pixmap(pix, fitz.Pixmap(doc, mask))
@@ -58,6 +76,8 @@ def image_entry(doc: fitz.Document, xref: int, mask: int, max_w: int) -> dict:
             pix.shrink(factor.bit_length() - 1)
     rgb = fitz.Pixmap(pix, 0) if pix.alpha else pix
     alpha = pix.samples[pix.n - 1 :: pix.n] if pix.alpha else keyed_alpha(rgb)
+    if name == "jugador":
+        alpha = clear_regions(bytes(alpha), rgb.width, JUGADOR_RESTOS)
     jpeg = rgb.tobytes("jpeg", jpg_quality=78)
     return {
         "w": rgb.width,
@@ -97,7 +117,7 @@ def main() -> None:
         "export interface CartaFontAsset { file: string; length: number; widths: number[]; ascent: number; descent: number }",
     ]
     for xref, mask, name, max_w in IMAGES:
-        e = image_entry(doc, xref, mask, max_w)
+        e = image_entry(doc, xref, mask, max_w, name)
         lines.append(
             f'export const {name}: CartaImageAsset = {{ w: {e["w"]}, h: {e["h"]}, jpeg: "{e["jpeg"]}", alpha: "{e["alpha"]}" }};'
         )

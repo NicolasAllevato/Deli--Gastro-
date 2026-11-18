@@ -6,7 +6,7 @@ import "./helpers/alias.ts";
 import { createTestDb, seed, actors } from "./helpers/sqlite-d1.ts";
 import { ForbiddenError } from "../src/lib/data/actor.ts";
 import { CartaError, cartaInputSchema, getCartaAdmin, getCartaPublica, saveCarta, type CartaInput } from "../src/lib/data/carta.ts";
-import { renderCartaPdf, pesosCarta, winAnsi } from "../src/lib/carta-pdf/render.ts";
+import { JUGADOR, renderCartaPdf, pesosCarta, winAnsi } from "../src/lib/carta-pdf/render.ts";
 import { seccionesDesdeCarta, seccionesDesdeCategorias } from "../src/lib/carta-pdf/build.ts";
 import { d1BotRepo } from "../workers/whatsapp-bot/src/repo/d1.ts";
 import { cartaCategoryForModel, cartaMenuForModel, cartaSectionsFor, formatCartaSeccion } from "../workers/whatsapp-bot/src/bot/menu.ts";
@@ -138,6 +138,11 @@ describe("carta estructurada: PDF", () => {
     // xref apunta a objetos reales
     const startxref = Number(/startxref\n(\d+)/.exec(s)?.[1]);
     assert.equal(s.slice(startxref, startxref + 4), "xref");
+  });
+
+  it("el jugador queda a la derecha de las columnas de precio (nunca debajo del texto)", () => {
+    assert.ok(JUGADOR.x > 392, `x=${JUGADOR.x}`);
+    assert.ok(JUGADOR.x + JUGADOR.w <= 595.28);
   });
 
   it("pagina sola si la carta crece", () => {

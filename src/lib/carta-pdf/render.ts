@@ -35,9 +35,10 @@ const X0 = 84;
 const COL_RIGHT = 392;
 const COL_W = 64;
 const TOP = 670;
-/** Límite inferior del contenido: la hoja 1 tiene la pelota y las esquinas; las siguientes, el fileteado bajo. */
-const BOTTOM_FIRST = 236;
-const BOTTOM_REST = 92;
+/** Límite inferior del contenido en la hoja 1: arriba de las esquinas y la pelota del marco. */
+const BOTTOM = 236;
+/** Hojas 2+: el fileteado rojo va pegado a los bordes; el texto baja hasta arriba de la guarda inferior. */
+const BOTTOM_REST = 64;
 
 const RED = "0.70 0.09 0.08";
 const INK = "0.16 0.10 0.07";
@@ -92,6 +93,11 @@ const IMAGES: Record<ImageKey, CartaImageAsset> = {
   marcoSuperior: assets.marcoSuperior,
   pie: assets.pie,
 };
+/** Tramo de laterales que une el marco superior con el fileteado de abajo en las hojas 2+. */
+const RAIL_FROM = 120;
+const RAIL_TO = 246;
+/** Posición del jugador: arranca pasando la última columna de precios. */
+export const JUGADOR = { x: COL_RIGHT + 8, y: 262, w: 182, h: 182 * (assets.jugador.h / assets.jugador.w) };
 
 class Page {
   ops: string[] = [];
@@ -100,18 +106,24 @@ class Page {
   constructor(first: boolean) {
     this.first = first;
     this.ops.push(`${CREAM} rg 0 0 ${W} ${H} re f`);
+    // El jugador va siempre a la derecha de la columna de precios (COL_RIGHT): nunca queda debajo del texto.
     this.ops.push("q /GsJugador gs");
-    this.image("jugador", 280, 186, 335, 466);
+    this.image("jugador", JUGADOR.x, JUGADOR.y, JUGADOR.w, JUGADOR.h);
     this.ops.push("Q");
     if (first) this.image("marco", -1, -40, 597, 895);
     else {
+      // Hojas 2+: como la carta original (esquinas arriba, fileteado rojo abajo) y, en el hueco entre los dos,
+      // un tramo de los laterales del marco de la hoja 1 para que el marco cubra toda la altura.
       this.image("pie", 11, 1, 585, 247);
       this.image("marcoSuperior", -1, 241, 597, 617);
+      this.ops.push(`q 0 ${RAIL_FROM} 70 ${RAIL_TO - RAIL_FROM} re 525 ${RAIL_FROM} 71 ${RAIL_TO - RAIL_FROM} re W n`);
+      this.image("marco", -1, -240, 597, 895);
+      this.ops.push("Q");
     }
     this.image("logo", 113, 606, 369, 246);
   }
   get bottom(): number {
-    return this.first ? BOTTOM_FIRST : BOTTOM_REST;
+    return this.first ? BOTTOM : BOTTOM_REST;
   }
   image(key: ImageKey, x: number, y: number, w: number, h: number) {
     this.ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /${key} Do Q`);
@@ -193,8 +205,8 @@ function layout(input: CartaPdfInput): Page[] {
     }
   }
   if (input.footer) {
-    const last = pages[pages.length - 1];
-    last.text("I", 8, MUTED, X0, last.first ? BOTTOM_FIRST - 18 : BOTTOM_REST - 22, input.footer);
+    ensure(14);
+    page.text("I", 8, MUTED, X0, page.y - 4, input.footer);
   }
   return pages;
 }
@@ -292,7 +304,7 @@ export function renderCartaPdf(input: CartaPdfInput): Uint8Array {
   const pagesId = w.reserve();
   const fontIds = (Object.keys(FONTS) as FontKey[]).map((k) => `/F${k} ${writeFont(w, k)} 0 R`).join(" ");
   const imageIds = (Object.keys(IMAGES) as ImageKey[]).map((k) => `/${k} ${writeImage(w, IMAGES[k])} 0 R`).join(" ");
-  const resources = `<< /Font << ${fontIds} >> /XObject << ${imageIds} >> /ExtGState << /GsJugador << /Type /ExtGState /ca 0.38 >> >> >>`;
+  const resources = `<< /Font << ${fontIds} >> /XObject << ${imageIds} >> /ExtGState << /GsJugador << /Type /ExtGState /ca 0.3 >> >> >>`;
   const pageIds = pages.map((p) => {
     const contentId = w.reserve();
     const pageId = w.reserve();
