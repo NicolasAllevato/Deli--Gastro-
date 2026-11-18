@@ -27,6 +27,9 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "deli-gastro", "database_id": "8e293f66-d614-4519-8514-be4dd6a3ac44" }
   ],
+  // Fotos de reclamos (privado, sin acceso público). Lo escribe el Worker whatsapp-bot; el panel las sirve por
+  // /api/admin/reclamos/[id]/foto solo a admins. Crear antes del deploy: npx wrangler r2 bucket create deli-gastro-reclamos
+  "r2_buckets": [{ "binding": "RECLAMOS", "bucket_name": "deli-gastro-reclamos" }],
   // Cloudflare Email Sending (resumen diario). Requiere onboardear la-gambeta.com: docs/EMAIL_CLOUDFLARE.md.
   "send_email": [{ "name": "EMAIL" }],
   // Workers Paid: 30 s de CPU por request (Free = 10 ms → error 1102). Ver memoria aprendizaje-error-1102.

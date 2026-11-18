@@ -79,7 +79,7 @@ async function handleMessage(
       wamid: message.wamid,
       direction: "in",
       type: content.type === "unsupported" ? "unsupported" : content.type,
-      body: content.type === "text" ? content.text : null,
+      body: content.type === "text" ? content.text : content.type === "image" ? content.caption : null,
     })
     .select("id")
     .single();

@@ -43,6 +43,7 @@ export class ConversationBuffer extends DurableObject<BufferEnv> {
         text: turn.text,
         wamids: turn.wamids,
         audios: turn.audios,
+        images: turn.images,
         receivedAt: batch.firstAt ?? Date.now(),
       });
     }

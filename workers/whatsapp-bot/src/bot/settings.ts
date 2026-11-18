@@ -15,6 +15,8 @@ export interface BotSettings {
   paused: boolean;
   /** Fase 5: el bot toma pedidos por los endpoints internos. Apagado = se derivan a la web (`bot_orders_enabled`, el mismo flag del servidor). */
   ordersEnabled: boolean;
+  /** Entrenamiento del agente (`bot_modo_entrenamiento`): los reclamos NO se derivan a una persona, ni con el local abierto. */
+  trainingMode: boolean;
 }
 
 const text = (value: unknown, fallback: string, max: number): string =>
@@ -36,6 +38,7 @@ export function settingsFromConfig(config: Record<string, unknown>): BotSettings
     paused: config.modo_pausa === true || config.tienda_activa === false,
     // Igual que el servidor (handlers.ts): `true` o "true".
     ordersEnabled: config.bot_orders_enabled === true || config.bot_orders_enabled === "true",
+    trainingMode: config.bot_modo_entrenamiento === true || config.bot_modo_entrenamiento === "true",
   };
 }
 

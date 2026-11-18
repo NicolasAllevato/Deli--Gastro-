@@ -18,6 +18,8 @@ import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
+import { attachPhotos, complaintUpdateReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
+import { esQueja } from "../../../../src/lib/reclamos/categoria.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
@@ -39,6 +41,8 @@ export interface TurnDeps {
   appUrl: string;
   /** Cliente firmado de los endpoints de pedidos; sin él (o con el flag apagado) los pedidos se derivan a la web. */
   orders?: OrdersClient;
+  /** Guarda en R2 una foto de WhatsApp para un reclamo; devuelve la clave. Sin él las fotos no se guardan. */
+  storePhoto?: (ticketId: string, mediaId: string) => Promise<string | null>;
   log: (message: string, detail?: unknown) => void;
 }
 
@@ -53,15 +57,41 @@ const HISTORY_TURNS = 8;
 const ORDER_INTENTS: readonly Intent[] = ["pedido_nuevo", "pedido_datos", "pedido_confirmar", "pedido_cancelar"];
 const ALLOWED_HOSTS = ["mpago.la", "mercadopago.com.ar", "google.com", "maps.google.com"];
 
+/** Datos del turno que necesita el flujo de reclamos. */
+interface TurnExtras {
+  images: readonly TurnImage[];
+  wamid: string | undefined;
+}
+
 /**
- * Queja o pedido de una persona. Abierto: deriva (human_takeover) como siempre. Cerrado: no hay nadie, así que NO se
- * silencia al bot: se registra un ticket de reclamo y se le avisa al cliente cuándo lo contactan.
+ * Queja o pedido de una persona. Una queja SIEMPRE queda registrada (reclamo nuevo o el abierto, actualizado):
+ * abierto -> reclamo + derivación a una persona; cerrado -> reclamo sin silenciar al bot. Un pedido de hablar con
+ * una persona SIN queja, con el local abierto, solo deriva (como siempre).
  */
-async function escalate(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, motivo: string, openReply: string): Promise<"answered" | "ticket"> {
-  if (!openNow(settings) && deps.repo.createComplaint) {
-    await deps.repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo });
-    await reply(deps, conversation, closedTicketReply(settings));
-    return "ticket";
+/** Entrenamiento gana: los reclamos no se derivan aunque el local esté abierto. */
+function complaintMode(settings: BotSettings): ComplaintMode {
+  if (settings.trainingMode) return "entrenamiento";
+  return openNow(settings) ? "abierto" : "cerrado";
+}
+
+async function complaintFlow(
+  deps: TurnDeps, conversation: BotConversation, settings: BotSettings, text: string, extras: TurnExtras, openReply: string = REPLIES.handoff,
+): Promise<TurnOutcome> {
+  const shopOpen = openNow(settings);
+  const isComplaint = esQueja(text) || extras.images.length > 0;
+  if (!shopOpen || isComplaint) {
+    const mode = complaintMode(settings);
+    const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, mode, openAt: settings.hours.open });
+    if (done) {
+      // Solo con el local abierto y fuera de entrenamiento el reclamo pasa a una persona.
+      if (mode === "abierto") await deps.repo.setTakeover(conversation.id);
+      await reply(deps, conversation, done.text, mode !== "abierto");
+      return "ticket";
+    }
+    if (!shopOpen) {
+      await reply(deps, conversation, closedTicketReply(settings));
+      return "ticket";
+    }
   }
   await deps.repo.setTakeover(conversation.id);
   await reply(deps, conversation, openReply, false);
@@ -144,7 +174,7 @@ async function draftIssue(draft: string, intent: Intent, conversation: BotConver
 
 async function answer(
   turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps, order?: OrderTurn,
-  knownAddress: string | null = null, reminder: string | null = null,
+  knownAddress: string | null = null, reminder: string | null = null, extras: TurnExtras = { images: [], wamid: undefined },
 ): Promise<TurnOutcome> {
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
@@ -159,7 +189,8 @@ async function answer(
   // Si el modelo deriva con handoff_to_human en ESTE turno, su mensaje al cliente igual sale (sin el rechequeo
   // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
   let handedOffNow = false;
-  let ticketNow = false;
+  // El modelo llamó handoff_to_human: el reclamo lo registra complaintFlow (con pedido, fotos y aviso), no la herramienta.
+  let ticketNow: string | null = null;
   const createComplaint = deps.repo.createComplaint;
   const toolRepo = {
     ...deps.repo,
@@ -170,8 +201,8 @@ async function answer(
     ...(createComplaint
       ? {
           createComplaint: async (input: Parameters<typeof createComplaint>[0]) => {
-            ticketNow = true;
-            await createComplaint(input);
+            ticketNow = input.motivo;
+            return null;
           },
         }
       : {}),
@@ -185,11 +216,8 @@ async function answer(
   let issue: DraftIssue | null = null;
   // Un reintento con la corrección: el cliente no recibe el mensaje genérico si el modelo lo puede arreglar.
   for (let attempt = 0; attempt < 2; attempt++) {
-    // Local cerrado y el modelo registró un reclamo: aviso fijo (sin prometer una persona).
-    if (ticketNow) {
-      await reply(deps, conversation, closedTicketReply(settings));
-      return "ticket";
-    }
+    // El modelo derivó: reclamo registrado (si es queja o el local está cerrado) y aviso fijo con el número.
+    if (ticketNow !== null) return complaintFlow(deps, conversation, settings, `${turnText}\n${ticketNow}`.trim(), extras);
     // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
     if (order?.state.fixedReply) {
       await reply(deps, conversation, order.state.fixedReply, !order.state.handedOff && !handedOffNow);
@@ -217,13 +245,10 @@ async function answer(
     return "answered";
   }
   // Consulta por su pedido que el modelo no pudo contestar sin prometer: una persona lo revisa ya (no un saludo vacío).
-  if (ticketNow) {
-    await reply(deps, conversation, closedTicketReply(settings));
-    return "ticket";
-  }
+  if (ticketNow !== null) return complaintFlow(deps, conversation, settings, `${turnText}\n${ticketNow}`.trim(), extras);
   if (issue && intent === "pedido_estado") {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], handoff: true });
-    const done = await escalate(deps, conversation, settings, turnText, STATUS_HANDOFF_REPLY);
+    const done = await complaintFlow(deps, conversation, settings, turnText, extras, STATUS_HANDOFF_REPLY);
     return done === "ticket" ? "ticket" : "output_blocked";
   }
   if (issue) {
@@ -298,7 +323,13 @@ export async function processTurn(turn: InboundTurn, deps: TurnDeps): Promise<Tu
 async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> {
   const conversation = await deps.repo.getConversation(turn.phone);
   if (!conversation) return "no_conversation";
-  if (conversation.humanTakeover) return "takeover";
+  const images = turn.images ?? [];
+  if (conversation.humanTakeover) {
+    // Con una persona a cargo no se responde, pero las fotos se suman al reclamo abierto (sin mensaje).
+    const open = images.length > 0 ? await deps.repo.openComplaint?.(conversation.id).catch(() => null) : null;
+    if (open && (await attachPhotos(deps, open, images)) > 0) await pingApp(deps, conversation.id, open.id, turn.wamids.at(-1));
+    return "takeover";
+  }
 
   const settings = settingsFromConfig(await deps.repo.config());
   if (!settings.active) return "inactive";
@@ -331,6 +362,10 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     await reply(deps, conversation, REPLIES.blocked);
     return "blocked";
   }
+
+  const extras: TurnExtras = { images, wamid: turn.wamids.at(-1) };
+  const followUp = await complaintFollowUp(deps, conversation, settings, text, extras);
+  if (followUp) return followUp;
 
   const outNewestFirst = (await deps.repo.history(conversation.id, THREAD_WINDOW * 2)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
   // Hilo del pedido: el resumen pendiente aunque después haya habido respuestas de otro tema (carta, horario...).
@@ -380,7 +415,7 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const classified = saysPaid(text) ? { intent: "pedido_estado" as Intent, confidence: 1 } : await classify(deps.run, wrapUntrusted(text), lastBot);
   const { intent, confidence } = classified;
 
-  if (intent === "humano") return escalate(deps, conversation, settings, text, REPLIES.handoff);
+  if (intent === "humano") return complaintFlow(deps, conversation, settings, text, extras);
   // Charla nueva (el bot no respondió en 2 h, o el cliente solo saluda y no se lo saludó hace poco): saludo por nombre con las promos de hoy.
   // Ráfaga apilada con un pedido concreto ("hola" + "una muzza" + "a Rivadavia 5000"): gana el pedido, sin saludo aparte.
   const orderWithSubstance = (intent === "pedido_nuevo" || intent === "pedido_datos") && confidence >= MIN_CONFIDENCE && (/\d/.test(text) || text.trim().includes("\n"));
@@ -442,7 +477,28 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     }
   }
   const sideTopic = !ORDER_INTENTS.includes(intent) && intent !== "pedido_estado";
-  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst), sideTopic ? reminder : null);
+  return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst), sideTopic ? reminder : null, extras);
+}
+
+/**
+ * Seguimiento de un reclamo abierto (sin clasificador): fotos sueltas, o la respuesta del cliente justo después del
+ * aviso del reclamo ("sí, ese pedido", "llegó frío"). Se suma al MISMO reclamo: nunca se duplica ni se repite el aviso.
+ */
+async function complaintFollowUp(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, text: string, extras: TurnExtras): Promise<TurnOutcome | null> {
+  if (!deps.repo.openComplaint || !deps.repo.createComplaint) return null;
+  const words = withoutPhotoMarks(text);
+  const onlyPhotos = extras.images.length > 0 && words.length === 0;
+  const recent = await deps.repo.history(conversation.id, 6).catch(() => []);
+  const lastBot = recent.filter((m) => m.direction === "out").at(-1)?.body ?? null;
+  const answersComplaint = isComplaintReply(lastBot) && words.length > 0 && words.length <= 300;
+  if (!onlyPhotos && !answersComplaint) return null;
+  const open = await deps.repo.openComplaint(conversation.id).catch(() => null);
+  if (!open) return null;
+  const mode = complaintMode(settings);
+  const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, mode, openAt: settings.hours.open });
+  if (!done) return null;
+  await reply(deps, conversation, done.ticket.created ? done.text : complaintUpdateReply(done.ticket.numero, mode, settings.hours.open, onlyPhotos));
+  return "ticket";
 }
 
 /** Sin `lastOutboundAt` en el repo (backend viejo) no hay saludo aparte; si la lectura falla, tampoco (no se repite). */

@@ -71,6 +71,12 @@ database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
 binding = "APP"
 service = "opsyn-dely"
 
+# Fotos de reclamos (bucket PRIVADO, sin r2.dev). El panel las sirve solo a admins por la app (binding RECLAMOS de
+# opsyn-dely). Crear antes del deploy:  npx wrangler r2 bucket create deli-gastro-reclamos
+[[r2_buckets]]
+binding = "RECLAMOS"
+bucket_name = "deli-gastro-reclamos"
+
 [vars]
 # "supabase" (default): no copia nada a D1. Cambiar a "dual" solo con OK del usuario.
 # "d1" (corte): el bot usa solo D1 y lee los secretos de Meta de Worker secrets:

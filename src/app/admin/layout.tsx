@@ -12,11 +12,13 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Copyright } from "@/components/Copyright";
 import { NAV_SECTIONS, findSection, isTabActive } from "./_nav";
 import { CourierShiftAlerts } from "./_components/CourierShifts";
+import { ReclamoNuevoModal, ReclamosAlert, useReclamosResumen } from "./_components/ReclamosAlert";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const activeSection = findSection(pathname);
+  const reclamos = useReclamosResumen();
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -83,6 +85,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               >
                 <Icon size={17} className="flex-shrink-0" />
                 <span>{item.label}</span>
+                {item.badge === "reclamos" && reclamos && reclamos.abiertos > 0 && (
+                  <span
+                    className={cn("ml-auto min-w-5 px-1.5 rounded-full text-[11px] font-bold text-center text-white", reclamos.vencidos > 0 ? "bg-red-600" : "bg-brand-orange")}
+                    aria-label={`${reclamos.abiertos} reclamos sin atender`}
+                  >
+                    {reclamos.abiertos}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -150,6 +160,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </header>
 
         <CourierShiftAlerts />
+        <ReclamosAlert resumen={reclamos} />
+        <ReclamoNuevoModal resumen={reclamos} />
 
         {/* Content */}
         <div className="flex-1 min-h-0 px-3 pb-8">

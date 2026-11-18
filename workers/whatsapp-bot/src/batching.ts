@@ -14,7 +14,7 @@ export const BATCH_POLICY = {
   maxMessages: 5,
 } as const;
 
-export type MessageKind = "text" | "audio" | "location" | "other";
+export type MessageKind = "text" | "audio" | "location" | "image" | "other";
 
 export interface BufferedMessage {
   wamid: string;
@@ -23,7 +23,7 @@ export interface BufferedMessage {
   /** Hora de llegada en ms. */
   at: number;
   kind: MessageKind;
-  /** Audio todavía sin transcribir: el consumidor lo transcribe y reemplaza `[audio:<wamid>]`. */
+  /** Audio todavía sin transcribir (el consumidor lo transcribe y reemplaza `[audio:<wamid>]`) o foto a guardar. */
   mediaId?: string;
 }
 
@@ -38,6 +38,8 @@ export interface CombinedTurn {
   wamids: string[];
   /** Audios pendientes de transcribir, en el orden en que aparecen en `text`. */
   audios: { wamid: string; mediaId: string }[];
+  /** Fotos del lote (se guardan en el reclamo abierto). En `text` aparecen como `[foto]` + su epígrafe. */
+  images: { wamid: string; mediaId: string }[];
 }
 
 /** Marca que deja un audio sin transcribir dentro del texto combinado. */
@@ -77,15 +79,17 @@ export function flushAt(batch: Batch): number | null {
   return Math.min(batch.lastAt + BATCH_POLICY.quietMs, batch.firstAt + BATCH_POLICY.maxWaitMs);
 }
 
-const KIND_LABEL: Record<MessageKind, string> = { text: "", audio: "[audio] ", location: "[ubicación] ", other: "[adjunto] " };
+const KIND_LABEL: Record<MessageKind, string> = { text: "", audio: "[audio] ", location: "[ubicación] ", image: "[foto] ", other: "[adjunto] " };
 
 /** Une el lote en un solo turno para el clasificador y el respondedor. */
 export function combineBatch(batch: Batch): CombinedTurn {
-  const pending = (m: BufferedMessage) => m.mediaId !== undefined && m.text.trim().length === 0;
-  const useful = batch.messages.filter((m) => pending(m) || m.text.trim().length > 0);
+  const isImage = (m: BufferedMessage) => m.kind === "image" && m.mediaId !== undefined;
+  const pending = (m: BufferedMessage) => !isImage(m) && m.mediaId !== undefined && m.text.trim().length === 0;
+  const useful = batch.messages.filter((m) => isImage(m) || pending(m) || m.text.trim().length > 0);
   return {
+    images: useful.filter(isImage).map((m) => ({ wamid: m.wamid, mediaId: m.mediaId as string })),
     text: useful
-      .map((m) => (pending(m) ? audioPlaceholder(m.wamid) : `${KIND_LABEL[m.kind]}${m.text.trim()}`))
+      .map((m) => (pending(m) ? audioPlaceholder(m.wamid) : `${KIND_LABEL[m.kind]}${m.text.trim()}`.trim()))
       .join("\n"),
     wamids: batch.messages.map((m) => m.wamid),
     audios: useful.filter(pending).map((m) => ({ wamid: m.wamid, mediaId: m.mediaId as string })),

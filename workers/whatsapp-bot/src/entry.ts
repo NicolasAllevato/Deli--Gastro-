@@ -31,6 +31,7 @@ function rowFor(message: InboundMessage): InboundRow {
   const { content } = message;
   if (content.type === "text") return { wamid: message.wamid, type: "text", body: content.text };
   if (content.type === "audio") return { wamid: message.wamid, type: "audio", body: null };
+  if (content.type === "image") return { wamid: message.wamid, type: "image", body: content.caption };
   return { wamid: message.wamid, type: "unsupported", body: null };
 }
 
@@ -39,6 +40,7 @@ function bufferedFor(message: InboundMessage): BufferedMessage {
   const { content } = message;
   if (content.type === "text") return { wamid: message.wamid, text: content.text, at, kind: "text" };
   if (content.type === "audio") return { wamid: message.wamid, text: "", at, kind: "audio", mediaId: content.mediaId };
+  if (content.type === "image") return { wamid: message.wamid, text: content.caption ?? "", at, kind: "image", mediaId: content.mediaId };
   return { wamid: message.wamid, text: `(mensaje de tipo ${content.rawType})`, at, kind: "other" };
 }
 
@@ -67,7 +69,10 @@ async function handleMessage(message: InboundMessage, deps: EntryDeps): Promise<
     deps.log("[whatsapp-bot] no se pudo guardar el entrante; se apila igual", { wamid: message.wamid, error: error instanceof Error ? error.message : "error" });
     return true;
   });
-  if (!isNew || conversation.humanTakeover) return;
+  if (!isNew) return;
+  // Con una persona a cargo el bot no responde, pero una foto igual se apila: el turno la suma al reclamo abierto
+  // (el cliente la manda después de que el bot lo derivó) sin contestar nada.
+  if (conversation.humanTakeover && message.content.type !== "image") return;
 
   await deps.buffer(phone, bufferedFor(message));
 }
