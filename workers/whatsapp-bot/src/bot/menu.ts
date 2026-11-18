@@ -158,8 +158,9 @@ export function formatCartaSeccion(s: CartaSeccion): string {
   const emoji = categoryEmoji(s.titulo);
   if (s.estilo === "gustos") {
     const unico = s.items.flatMap((i) => i.productos).find((p) => p !== null) ?? null;
-    const gustos = s.items.map((i) => i.nombre).join(", ");
-    return `${emoji} ${s.titulo} — ${unico ? `${money(unico.price)} c/u` : "consultar precio"}. Gustos: ${gustos}.`;
+    // Un solo precio arriba y los gustos en lista, sin repetir el precio en cada uno.
+    const gustos = s.items.map((i) => `• ${i.nombre}`);
+    return [`${emoji} ${s.titulo} — ${unico ? `${money(unico.price)} c/u` : "consultar precio"}`, "Gustos:", ...gustos].join("\n");
   }
   const head = `${emoji} ${s.titulo}${s.columnas.length ? ` (${s.columnas.join(" / ")})` : ""}`;
   const lines = s.items.map((i) => {
@@ -223,12 +224,30 @@ export function cartaSectionsFor(carta: readonly CartaSeccion[], query: string):
 
 /** get_categoria con carta; null si la consulta no corresponde a ninguna sección (se usa la búsqueda de siempre). */
 export function cartaCategoryForModel(carta: readonly CartaSeccion[], query: string, withIds: boolean): Record<string, unknown> | null {
-  const secciones = cartaSectionsFor(carta, query);
+  const filtro = alcoholFilter(query);
+  const base = cartaSectionsFor(carta, filtro ? "bebidas" : query);
+  const secciones = filtro ? base.map((s) => filterAlcohol(s, filtro)).filter((s) => s.items.length > 0) : base;
   if (secciones.length === 0) return null;
   return {
     encontrado: true,
     consulta: query.slice(0, 60),
     secciones: secciones.map((s) => bloque(s, withIds)),
-    nota: "Respondé copiando el 'texto' de cada sección tal cual (todas las líneas).",
+    nota: "Respondé copiando el 'texto' de cada sección tal cual (todas las líneas). No repitas el precio en cada gusto.",
   };
+}
+
+/** Bebidas con alcohol (por nombre): cervezas, vinos, aperitivos. */
+const ALCOHOL = /cerveza|andes|stella|budweiser|quilmes|corona|michelob|patagonia|heineken|brahma|imperial|fernet|vino|malbec|cabernet|nicasia|lobo|gin\b|vodka|whisky|aperol|campari|sidra|champ|trago|ipa\b|lager|rubia|negra|roja/;
+export const isAlcoholic = (name: string): boolean => ALCOHOL.test(fold(name));
+
+/** "sin alcohol"/"gaseosas" → solo sin alcohol; "cervezas"/"con alcohol"/"vinos" → solo con alcohol; si no, null. */
+export function alcoholFilter(query: string): "sin" | "con" | null {
+  const q = fold(query);
+  if (/sin alcohol|no alcoh|gaseosa|refresco|soda|para (los )?chicos/.test(q)) return "sin";
+  if (/con alcohol|cerveza|birra|vino|trago|aperitivo|fernet/.test(q)) return "con";
+  return null;
+}
+
+function filterAlcohol(s: CartaSeccion, filtro: "sin" | "con"): CartaSeccion {
+  return { ...s, items: s.items.filter((i) => isAlcoholic(i.nombre) === (filtro === "con")) };
 }

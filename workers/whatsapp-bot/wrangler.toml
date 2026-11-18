@@ -62,6 +62,12 @@ binding = "D1"
 database_name = "deli-gastro"
 database_id = "8e293f66-d614-4519-8514-be4dd6a3ac44"
 
+# Pedidos del bot: /api/internal/bot/* del Worker de la app por service binding. Un Worker no puede hacer fetch por
+# internet a otro Worker de la misma zona (la-gambeta.com): sin esto quote/confirm fallaban con `network`.
+[[services]]
+binding = "APP"
+service = "opsyn-dely"
+
 [vars]
 # "supabase" (default): no copia nada a D1. Cambiar a "dual" solo con OK del usuario.
 # "d1" (corte): el bot usa solo D1 y lee los secretos de Meta de Worker secrets:

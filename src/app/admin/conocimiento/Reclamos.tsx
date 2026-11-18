@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { formatDateTimeAR } from "@/lib/time-ar";
 
 interface Reclamo {
   id: string;
@@ -26,8 +27,7 @@ async function call<T>(method: string, body?: unknown): Promise<T> {
   return json;
 }
 
-const fecha = (iso: string): string =>
-  new Date(iso).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", dateStyle: "short", timeStyle: "short" });
+const fecha = (iso: string): string => formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" });
 
 /** Reclamos que el bot registró fuera de horario: el local contacta al cliente y lo marca resuelto. */
 export function Reclamos() {
