@@ -418,8 +418,14 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   }
   const reminder = order && thread.decisive ? pendingReminder(thread.decisive) : null;
   if (confidence < MIN_CONFIDENCE) {
-    await reply(deps, conversation, reminder ? `${REPLIES.unclear}\n\n${reminder}` : REPLIES.unclear);
-    return "unclear";
+    // Dudoso: en vez de la repregunta genérica, el modelo interpreta con el contexto y, si duda, sugiere opciones.
+    // Mensaje sospechoso: la respuesta fija de siempre (sin modelo ni herramientas).
+    if (inbound.verdict === "suspicious") {
+      await reply(deps, conversation, reminder ? `${REPLIES.unclear}\n\n${reminder}` : REPLIES.unclear);
+      return "unclear";
+    }
+    const outcome = await answer(text, "otro", false, conversation, settings, deps, order, lastQuoteAddress(outNewestFirst), reminder);
+    return outcome === "answered" ? "unclear" : outcome;
   }
   if (ORDER_INTENTS.includes(intent) && !order) {
     // Flag apagado (o sin cliente): camino de siempre, derivar a la web.
@@ -443,7 +449,25 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
     await reply(deps, conversation, early, false);
     return "answered";
   }
-  if (intent === "consulta_menu" && asksFullMenu(text) && inbound.verdict !== "suspicious") await sendMenuPdf(deps, conversation, settings);
+  // Carta completa: va solo el PDF y una línea corta (la lista larga en el chat no se lee y se cortaba).
+  // Las categorías puntuales ("pizzas", "bebidas") sí se responden en el chat.
+  if (intent === "consulta_menu" && asksFullMenu(text) && inbound.verdict !== "suspicious" && deps.sendDocument) {
+    const sent = await sendMenuPdf(deps, conversation, settings);
+    if (sent) {
+      await reply(deps, conversation, reminder ? `${MENU_PDF_REPLY}\n\n${reminder}` : MENU_PDF_REPLY);
+      return "answered";
+    }
+  }
+  // "¿Cómo va mi pedido?": respuesta fija con el estado real del sistema (el modelo a veces quedaba bloqueado y derivaba).
+  // Solo la pregunta tranquila: una queja por demora ("hace 1 hora que espero!!") sigue el camino de la queja.
+  if (order && intent === "pedido_estado" && !saysPaid(text) && !soundsLikeComplaint(text)) {
+    const st = await order.client.status({ conversationId: conversation.id, inboundWamid: order.inboundWamid }).catch(() => null);
+    const fixed = st?.ok ? renderStatusReply(st.data, settings.estimatedMinutes) : null;
+    if (fixed) {
+      await reply(deps, conversation, fixed);
+      return "answered";
+    }
+  }
   const sideTopic = !ORDER_INTENTS.includes(intent) && intent !== "pedido_estado";
   return answer(text, intent, inbound.verdict === "suspicious", conversation, settings, deps, order, lastQuoteAddress(outNewestFirst), sideTopic ? reminder : null, extras);
 }
@@ -479,17 +503,64 @@ async function shouldGreet(deps: TurnDeps, conversationId: string, text: string,
 /** Ruta pública de la carta en PDF (la arma la app con los productos visibles en el portal). */
 export const MENU_PDF_PATH = "/api/public/carta.pdf";
 export const MENU_PDF_NOTE = "📄 Te mandé la carta en PDF.";
+export const MENU_PDF_REPLY = "📄 Ahí te mandé la carta. Si querés ver alguna parte acá, decime cuál: pizzas, empanadas, bebidas, cafetería o postres 😊";
 
-/** Pide la carta completa: se manda el PDF antes de la respuesta del modelo. Si falla, sigue sin PDF. */
-async function sendMenuPdf(deps: TurnDeps, conversation: BotConversation, settings: BotSettings): Promise<void> {
-  if (!deps.sendDocument) return;
+/**
+ * URL de la carta con versión por hora: WhatsApp guarda en caché el archivo por URL y seguía mandando una carta
+ * vieja. Con `?v=` cambia la URL y Meta baja la vigente (como mucho, una hora de atraso).
+ */
+export function menuPdfUrl(appUrl: string, now: Date = new Date()): string {
+  const v = now.toISOString().slice(0, 13).replace(/\D/g, "");
+  return `${appUrl}${MENU_PDF_PATH}?v=${v}`;
+}
+
+/** Pide la carta completa: se manda el PDF. Devuelve si salió (si falla, sigue sin PDF). */
+async function sendMenuPdf(deps: TurnDeps, conversation: BotConversation, settings: BotSettings): Promise<boolean> {
+  if (!deps.sendDocument) return false;
   try {
     const name = settings.businessName.replace(/[^\p{L}\p{N} .'-]/gu, "").trim().slice(0, 60) || "Menú";
-    const wamid = await deps.sendDocument(conversation.phone, `${deps.appUrl}${MENU_PDF_PATH}`, `Carta ${name}.pdf`, `Carta de ${name}`);
+    const wamid = await deps.sendDocument(conversation.phone, menuPdfUrl(deps.appUrl), `Carta ${name}.pdf`, `Carta de ${name}`);
     await deps.repo.saveOutbound(conversation.id, wamid, MENU_PDF_NOTE);
+    return true;
   } catch (error: unknown) {
     deps.log("[whatsapp-bot] no se pudo mandar la carta en PDF", { conversation: conversation.id, error: error instanceof Error ? error.message : "error" });
+    return false;
   }
+}
+
+/** Señales de enojo o demora: espera larga, "nunca llega", signos repetidos, reclamo. */
+export function soundsLikeComplaint(text: string): boolean {
+  const t = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return /!!|\?\?|hace (mas de |casi )?(una|un|\d+) ?(hora|hs|h\b|min)|no llega|nunca|todavia no|sigo esperando|espero hace|demora|tarda(n|ron)? (mucho|una)|fri[oa]|reclamo|queja|un desastre|me cancelaron|equivoc|falt(a|o|aba)/.test(t);
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  recibido: "ya lo recibimos 🧾 y entra a la cocina en breve",
+  "en preparacion": "está en preparación 🍕",
+  "en camino": "ya salió y va en camino 🛵",
+  entregado: "figura entregado ✅ ¿Llegó todo bien?",
+  cancelado: "figura cancelado",
+};
+
+/** Estado del pedido con los datos del servidor; null si la respuesta no tiene la forma esperada. */
+export function renderStatusReply(data: Record<string, unknown>, estimatedMinutes: number | null): string | null {
+  if (data.found === false) return "No encontré un pedido en curso a tu nombre. ¿Querés que armemos uno? 😊";
+  if (data.found !== true) return null;
+  if (data.awaiting_payment === true) {
+    const url = typeof data.payment_url === "string" && /^https:\/\//.test(data.payment_url) ? `\n${data.payment_url}` : "";
+    return `Tu pedido está esperando el pago con Mercado Pago 💳. Apenas se acredite, sale.${url}`;
+  }
+  if (typeof data.order_code !== "string" || typeof data.status !== "string") return null;
+  const key = data.status.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const what = STATUS_TEXT[key] ?? `está en estado «${data.status}»`;
+  const lines = [`Tu pedido ${data.order_code} ${what}.`];
+  const since = typeof data.minutes_since_order === "number" ? Math.max(0, Math.round(data.minutes_since_order)) : null;
+  if ((key === "recibido" || key === "en preparacion") && estimatedMinutes) {
+    const left = since !== null ? Math.max(5, estimatedMinutes - since) : estimatedMinutes;
+    lines.push(`Demora estimada: unos ${left} minutos más.`);
+  }
+  if (key === "en camino" && typeof data.courier === "string" && data.courier.trim()) lines.push(`Lo lleva ${data.courier.trim().split(/\s+/)[0]}.`);
+  return lines.join("\n");
 }
 
 export const CLOSING_PAID = "¡Gracias a vos! 😊 Tu pago ya está acreditado: te avisamos por acá cuando tu pedido salga 🛵";

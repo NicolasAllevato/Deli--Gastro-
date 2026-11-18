@@ -128,7 +128,8 @@ describe("guardrails: delimitación y herramientas por intención", () => {
     assert.deepEqual(toolsForIntent("consulta_menu"), ["get_menu", "get_categoria", "get_business_info", "get_promos_hoy", "quote_order"]);
     assert.ok(!toolsForIntent("saludo").includes("confirm_order"));
     assert.ok(toolsForIntent("pedido_confirmar").includes("confirm_order"));
-    assert.deepEqual(toolsForIntent("otro"), []);
+    // "otro" (mensaje dudoso) solo lee carta/promos/local para sugerir opciones; nunca escribe.
+    assert.deepEqual(toolsForIntent("otro"), ["get_menu", "get_categoria", "get_promos_hoy", "get_business_info"]);
     assert.deepEqual(toolsForIntent("intencion_inventada"), []);
   });
 });

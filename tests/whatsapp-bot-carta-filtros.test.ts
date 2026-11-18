@@ -99,3 +99,25 @@ test("resumen por renglones con dirección corta y la pregunta de pago al final"
   assert.doesNotMatch(t, /Army|Comuna|C1424|Argentina/);
   assert.ok(t.endsWith("¿Cómo vas a pagar: efectivo o Mercado Pago?"));
 });
+
+import { menuPdfUrl, renderStatusReply } from "../workers/whatsapp-bot/src/bot/turn.ts";
+
+test("la URL de la carta lleva versión por hora para que WhatsApp no mande una vieja", () => {
+  assert.equal(menuPdfUrl("https://app.test", new Date("2026-11-18T18:45:00Z")), "https://app.test/api/public/carta.pdf?v=2026111818");
+});
+
+test("estado del pedido: respuesta fija con el estado real", () => {
+  assert.match(renderStatusReply({ found: true, order_code: "#ABC", status: "Recibido", minutes_since_order: 10 }, 30)!, /#ABC ya lo recibimos[\s\S]*unos 20 minutos/);
+  assert.match(renderStatusReply({ found: true, order_code: "#ABC", status: "En Preparación" }, 30)!, /en preparación/);
+  assert.match(renderStatusReply({ found: true, order_code: "#ABC", status: "En Camino", courier: "Juan Pérez" }, 30)!, /en camino[\s\S]*Lo lleva Juan\./);
+  assert.match(renderStatusReply({ found: false }, 30)!, /No encontré un pedido/);
+  assert.match(renderStatusReply({ found: true, awaiting_payment: true, payment_url: "https://mpago.la/x" }, 30)!, /esperando el pago[\s\S]*mpago/);
+  assert.equal(renderStatusReply({ found: true }, 30), null);
+});
+
+import { soundsLikeComplaint } from "../workers/whatsapp-bot/src/bot/turn.ts";
+
+test("queja por demora no se confunde con la consulta tranquila de estado", () => {
+  for (const q of ["hace 1 hora y media que espero!!", "no llega nunca", "todavía no llegó y hace 2 horas", "me llegó fría"]) assert.ok(soundsLikeComplaint(q), q);
+  for (const q of ["¿cómo va mi pedido?", "ya salió?", "dónde está mi pedido"]) assert.ok(!soundsLikeComplaint(q), q);
+});
