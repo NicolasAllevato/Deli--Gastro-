@@ -64,3 +64,17 @@ test("bebidas sin filtro trae todas", () => {
   assert.match(t, /Pepsi/);
   assert.match(t, /Fernet/);
 });
+
+import { createOrdersClient } from "../workers/whatsapp-bot/src/orders/client.ts";
+
+test("cliente de pedidos: no usa redirect 'error' (Workers no lo soporta) y no sigue redirecciones", async () => {
+  const modes: unknown[] = [];
+  const fetchImpl = (async (_url: string, init?: RequestInit) => {
+    modes.push(init?.redirect);
+    return new Response(null, { status: 302, headers: { location: "https://otro" } });
+  }) as unknown as typeof fetch;
+  const client = createOrdersClient({ baseUrl: "https://app.test", secret: "x".repeat(40), fetchImpl, sleep: async () => {} });
+  const r = await client.status({ conversationId: "c", inboundWamid: "w" });
+  assert.equal(r.ok, false);
+  assert.deepEqual(modes, ["manual"]);
+});
