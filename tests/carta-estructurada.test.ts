@@ -110,7 +110,13 @@ describe("carta estructurada: datos", () => {
     assert.deepEqual(carta.map((s) => s.items.map((i) => i.nombre)), [["Muzzarella"]]);
     const admin = await getCartaAdmin(db, actors.admin);
     assert.ok(admin.secciones.some((s) => s.titulo === "Bebidas" && s.items.some((i) => i.nombre === "Pepsi Chica")));
-    assert.ok(admin.secciones.some((s) => s.items.some((i) => i.nombre === "Medialuna de grasa" && i.producto_id === null)));
+    // Decisión del dueño: los cortados van al café sin cortar y la medialuna de grasa a la de manteca.
+    const sql = readFileSync(new URL("../d1/seeds/0015_carta_gambeta.sql", import.meta.url), "utf8");
+    for (const [linea, fudo] of [["Café pocillo cortado", 53], ["Café jarrito cortado", 55], ["Medialuna de grasa", 51]] as const) {
+      const linePart = sql.split("\n").find((l) => l.includes(`'${linea}'`)) ?? "";
+      assert.ok(linePart.includes(`(SELECT id FROM products WHERE fudo_id = ${fudo} `), linea);
+    }
+    assert.doesNotMatch(sql, /producto_id_2\) VALUES \([^;]*, NULL, NULL\);/);
   });
 
   it("zod: ids repetidos, segundo producto sin segunda columna, campos extra y largos", () => {
