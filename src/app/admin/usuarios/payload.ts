@@ -1,13 +1,23 @@
-import { SECTIONS, type Permissions, type StaffRole } from "@/lib/auth/permissions";
+import { SECTIONS, STAFF_ROLES, type Permissions, type StaffRole } from "@/lib/auth/permissions";
 import type { StaffUserPublic } from "@/lib/staff-users/types";
 
 export interface UserFormState {
   name: string;
   email: string;
   password: string;
+  /** Contraseña actual: solo cuando uno cambia la suya. */
+  currentPassword: string;
   role: StaffRole;
   permissions: Permissions;
   banned: boolean;
+}
+
+/**
+ * Roles que ofrece el selector. "Dueño" solo lo ve el dueño principal (único que crea dueños o promueve a alguien);
+ * si el usuario ya es dueño se muestra igual para que el selector deshabilitado refleje su rol.
+ */
+export function selectableRoles(viewerIsSuperOwner: boolean, originalRole: StaffRole | null): StaffRole[] {
+  return STAFF_ROLES.filter((r) => r !== "admin" || viewerIsSuperOwner || originalRole === "admin");
 }
 
 /** Cuerpo del alta. El dueño no manda permisos (son fijos). */
@@ -32,6 +42,9 @@ export function buildPatchBody(original: StaffUserPublic, form: UserFormState): 
   const permissionsChanged = SECTIONS.some((s) => form.permissions[s] !== original.permissions[s]);
   if (form.role !== "admin" && (form.role !== original.staff_role || permissionsChanged)) body.permissions = form.permissions;
   if (form.banned !== original.banned) body.banned = form.banned;
-  if (form.password) body.password = form.password;
+  if (form.password) {
+    body.password = form.password;
+    if (form.currentPassword) body.current_password = form.currentPassword;
+  }
   return body;
 }

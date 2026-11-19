@@ -4,13 +4,14 @@ import assert from "node:assert/strict";
 import "./helpers/alias.ts";
 
 const { DEFAULT_PERMISSIONS } = await import("../src/lib/auth/permissions.ts");
-const { buildCreateBody, buildPatchBody } = await import("../src/app/admin/usuarios/payload.ts");
+const { buildCreateBody, buildPatchBody, selectableRoles } = await import("../src/app/admin/usuarios/payload.ts");
 
 const original = {
   id: "u1", name: "Gerardo", email: "g@local.test", staff_role: "gerente" as const,
   permissions: DEFAULT_PERMISSIONS.gerente, banned: false, createdAt: "2026-11-19T00:00:00.000Z",
+  isSuperOwner: false, canEdit: true,
 };
-const form = { name: "Gerardo", email: "g@local.test", password: "", role: "gerente" as const, permissions: DEFAULT_PERMISSIONS.gerente, banned: false };
+const form = { name: "Gerardo", email: "g@local.test", password: "", currentPassword: "", role: "gerente" as const, permissions: DEFAULT_PERMISSIONS.gerente, banned: false };
 
 describe("buildCreateBody", () => {
   it("manda nombre, email, contraseña, rol y permisos", () => {
@@ -23,7 +24,26 @@ describe("buildCreateBody", () => {
   });
 });
 
+describe("selectableRoles", () => {
+  it("la opción Dueño solo la ve el dueño principal", () => {
+    assert.deepEqual(selectableRoles(true, null), ["admin", "gerente", "cajero"]);
+    assert.deepEqual(selectableRoles(false, null), ["gerente", "cajero"]);
+    assert.deepEqual(selectableRoles(false, "gerente"), ["gerente", "cajero"]);
+  });
+
+  it("si el usuario ya es dueño se muestra igual (el selector queda deshabilitado)", () => {
+    assert.deepEqual(selectableRoles(false, "admin"), ["admin", "gerente", "cajero"]);
+  });
+});
+
 describe("buildPatchBody", () => {
+  it("al cambiar la contraseña manda también la actual (solo hace falta sobre uno mismo)", () => {
+    assert.deepEqual(buildPatchBody(original, { ...form, password: "nueva-clave-larga", currentPassword: "la-de-hoy-123" }), {
+      password: "nueva-clave-larga", current_password: "la-de-hoy-123",
+    });
+    assert.deepEqual(buildPatchBody(original, { ...form, currentPassword: "la-de-hoy-123" }), {}, "la actual sola no es un cambio");
+  });
+
   it("sin cambios: vacío", () => {
     assert.deepEqual(buildPatchBody(original, form), {});
   });

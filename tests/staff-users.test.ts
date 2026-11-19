@@ -15,6 +15,8 @@ import { createStaffUser, listStaffUsers, updateStaffUser } from "../src/lib/dat
 const BASE = "https://opsyndely.la-gambeta.com";
 const SECRET = crypto.randomUUID() + crypto.randomUUID();
 const PASSWORD = "clave-segura-123";
+// Dueño principal de las pruebas: el usuario "dueno" (email ficticio, sin relación con ningún email real).
+const SUPER = { superOwnerEmail: "dueno@x.test" } as const;
 
 function setup() {
   const db = createTestDb();
@@ -111,7 +113,7 @@ describe("alta de usuarios del personal", () => {
     insertUser(ctx, "dueno", "admin", "admin");
     const owner2 = expectOk(await createStaffUser(ctx.db, ctx.auth, asAdmin("dueno"), {
       name: "Socio", email: "socio@local.test", password: PASSWORD, staffRole: "admin", permissions: { pedidos: "none" },
-    }));
+    }, SUPER));
     assert.equal(row(ctx, owner2.id).permissions, null);
     assert.equal(owner2.permissions.pedidos, "edit");
 
@@ -193,7 +195,7 @@ describe("edición", () => {
     assert.equal(asCajero.staffRole, "cajero");
     assert.equal(row(ctx, g.id).permissions, null);
     assert.equal(asCajero.permissions.catalogo, "view", "defaults del cajero");
-    const asOwner = expectOk(await updateStaffUser(ctx.db, ctx.auth, asAdmin("dueno"), g.id, { staffRole: "admin", permissions: { pedidos: "none" } }));
+    const asOwner = expectOk(await updateStaffUser(ctx.db, ctx.auth, asAdmin("dueno"), g.id, { staffRole: "admin", permissions: { pedidos: "none" } }, SUPER));
     assert.equal(asOwner.permissions.pedidos, "edit");
     assert.equal(row(ctx, g.id).permissions, null);
   });
@@ -250,12 +252,12 @@ describe("protecciones", () => {
     assert.equal(row(ctx, "cli").role, "cliente", "no se promueve a nadie");
   });
 
-  it("uno mismo: solo el nombre (ni rol, ni bloqueo, ni contraseña)", async () => {
+  it("uno mismo: nombre sí; rol y bloqueo no; la contraseña pide la actual", async () => {
     const ctx = setup();
     insertUser(ctx, "dueno", "admin", "admin");
     insertUser(ctx, "socio", "admin", "admin");
     const me = asAdmin("dueno");
-    for (const patch of [{ staffRole: "gerente" as const }, { banned: true }, { password: "otra-clave-larga-1" }]) {
+    for (const patch of [{ staffRole: "gerente" as const }, { banned: true }, { password: "otra-clave-larga-1" }, { password: "otra-clave-larga-1", currentPassword: "no-es-esta-clave" }]) {
       const r = await updateStaffUser(ctx.db, ctx.auth, me, "dueno", patch);
       assert.equal(r.ok, false, JSON.stringify(patch));
       assert.equal((r as { status: number }).status, 400);
@@ -270,8 +272,8 @@ describe("protecciones", () => {
     const ctx = setup();
     insertUser(ctx, "a", "admin", "admin");
     insertUser(ctx, "b", "admin", "admin");
-    // a degrada a b: queda a
-    assert.ok((await updateStaffUser(ctx.db, ctx.auth, asAdmin("a"), "b", { staffRole: "gerente" })).ok);
+    // se degrada a b: queda a
+    assert.ok((await updateStaffUser(ctx.db, ctx.auth, system, "b", { staffRole: "gerente" })).ok);
     // ahora a es el único dueño: nadie (ni el sistema) puede degradarlo ni bloquearlo
     for (const patch of [{ staffRole: "cajero" as const }, { banned: true }]) {
       const r = await updateStaffUser(ctx.db, ctx.auth, system, "a", patch);

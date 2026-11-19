@@ -46,6 +46,13 @@ function AccessSummary({ user }: { user: StaffUserPublic }) {
   );
 }
 
+/** Por qué no se puede editar a este usuario (para el tooltip del botón deshabilitado). */
+function blockedReason(superOwnerConfigured: boolean): string {
+  return superOwnerConfigured
+    ? "Solo el dueño principal puede modificar a otro dueño."
+    : "No hay dueño principal configurado (SUPER_OWNER_EMAIL): por seguridad nadie puede modificar a otro dueño.";
+}
+
 function StatusBadge({ banned }: { banned: boolean }) {
   return banned ? <Badge tone="red">Bloqueado</Badge> : <Badge tone="green">Activo</Badge>;
 }
@@ -97,6 +104,14 @@ export default function UsuariosPage() {
         )}
       </header>
 
+      {data && !data.superOwnerConfigured && (
+        <p role="note" className="text-xs text-gray-600 rounded-xl neumorphic-inset px-4 py-2.5 max-w-3xl">
+          No hay dueño principal configurado (variable SUPER_OWNER_EMAIL del Worker). Mientras tanto, por seguridad, no se
+          pueden crear dueños ni editar a otros dueños: cada dueño solo cambia su nombre y su contraseña, y podés gestionar
+          gerentes y cajeros.
+        </p>
+      )}
+
       {error && (
         <p role="alert" className="text-sm font-bold text-red-600">
           {error.status === 501 ? "La gestión de usuarios solo está disponible con la base D1." : error.message}
@@ -128,19 +143,26 @@ export default function UsuariosPage() {
                       <td className="px-4 py-3">
                         <p className="font-bold text-gray-800">{u.name || "Sin nombre"}{u.id === data.currentUserId && <span className="ml-2 text-[11px] font-bold text-gray-500">(vos)</span>}</p>
                         <p className="text-xs text-gray-500">{u.email}</p>
+                        {u.isSuperOwner && <Badge tone="orange" className="mt-1">Dueño principal</Badge>}
                       </td>
                       <td className="px-4 py-3"><Badge tone={ROLE_TONE[u.staff_role]}>{STAFF_ROLE_LABELS[u.staff_role]}</Badge></td>
                       <td className="px-4 py-3 max-w-md"><AccessSummary user={u} /></td>
                       <td className="px-4 py-3"><StatusBadge banned={u.banned} /></td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="icon"
-                          size="sm"
-                          aria-label={`Editar a ${u.name || u.email}`}
-                          onClick={() => setModal({ user: u })}
-                        >
-                          <Pencil size={15} aria-hidden />
-                        </Button>
+                        {/* El tooltip va en el contenedor: un botón deshabilitado no siempre lo muestra. */}
+                        <span title={u.canEdit ? undefined : blockedReason(data.superOwnerConfigured)} className="inline-flex">
+                          <Button
+                            variant="icon"
+                            size="sm"
+                            disabled={!u.canEdit}
+                            aria-label={u.canEdit
+                              ? `Editar a ${u.name || u.email}`
+                              : `Editar a ${u.name || u.email} (no disponible: ${blockedReason(data.superOwnerConfigured)})`}
+                            onClick={() => setModal({ user: u })}
+                          >
+                            <Pencil size={15} aria-hidden />
+                          </Button>
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -187,6 +209,7 @@ export default function UsuariosPage() {
           key={modal.user?.id ?? "nuevo"}
           user={modal.user}
           currentUserId={data.currentUserId}
+          viewerIsSuperOwner={data.isSuperOwner}
           onClose={() => setModal(null)}
           onSaved={saved}
         />

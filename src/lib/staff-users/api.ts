@@ -49,8 +49,10 @@ export const updateStaffSchema = z
     permissions: permissionsSchema.optional(),
     banned: z.boolean({ error: "Estado inválido." }).optional(),
     password: passwordSchema.optional(),
+    /** Solo al cambiar la propia contraseña: la actual, para confirmar que es quien dice ser. */
+    current_password: z.string({ error: "Ingresá tu contraseña actual." }).min(1, "Ingresá tu contraseña actual.").max(MAX_PASSWORD).optional(),
   })
-  .refine((v) => Object.keys(v).length > 0, { message: "No hay cambios para guardar." });
+  .refine((v) => Object.keys(v).some((k) => k !== "current_password"), { message: "No hay cambios para guardar." });
 
 /** Ids de Better Auth: uuid (los de esta app) o cadenas alfanuméricas propias de la librería. */
 export const userIdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
@@ -65,17 +67,20 @@ export interface StaffUserView {
   permissions: Permissions;
   banned: boolean;
   createdAt: string;
+  isSuperOwner: boolean;
+  canEdit: boolean;
 }
 
 export type PortResult = { ok: true; value: StaffUserView } | { ok: false; status: number; error: string };
 
 export interface StaffUsersPort<A> {
-  list(actor: A): Promise<{ staff: StaffUserView[]; couriers: CourierView[] }>;
+  list(actor: A): Promise<{ staff: StaffUserView[]; couriers: CourierView[]; viewer: { isSuperOwner: boolean; superOwnerConfigured: boolean } }>;
   create(actor: A, input: {
     name: string; email: string; password: string; staffRole: StaffRole; permissions?: Partial<Record<Section, AccessLevel>>;
   }): Promise<PortResult>;
   update(actor: A, id: string, patch: {
-    name?: string; staffRole?: StaffRole; permissions?: Partial<Record<Section, AccessLevel>>; banned?: boolean; password?: string;
+    name?: string; staffRole?: StaffRole; permissions?: Partial<Record<Section, AccessLevel>>; banned?: boolean;
+    password?: string; currentPassword?: string;
   }): Promise<PortResult>;
 }
 
@@ -97,6 +102,8 @@ function present(u: StaffUserView): StaffUserPublic {
     permissions: u.permissions,
     banned: u.banned,
     createdAt: u.createdAt,
+    isSuperOwner: u.isSuperOwner,
+    canEdit: u.canEdit,
   };
 }
 
@@ -107,8 +114,14 @@ export async function listStaffUsersApi<A>(
   port: StaffUsersPort<A>, access: StaffAccess, actor: A, currentUserId: string,
 ): Promise<ApiResult> {
   if (!canManageUsers(access)) return NOT_OWNER;
-  const { staff, couriers } = await port.list(actor);
-  const body: StaffUsersListing = { users: staff.map(present), couriers, currentUserId };
+  const { staff, couriers, viewer } = await port.list(actor);
+  const body: StaffUsersListing = {
+    users: staff.map(present),
+    couriers,
+    currentUserId,
+    isSuperOwner: viewer.isSuperOwner,
+    superOwnerConfigured: viewer.superOwnerConfigured,
+  };
   return ok(200, body);
 }
 
@@ -128,7 +141,11 @@ export async function updateStaffUserApi<A>(
   if (!userIdSchema.safeParse(id).success) return err(400, "Usuario inválido.");
   const parsed = updateStaffSchema.safeParse(rawBody);
   if (!parsed.success) return err(400, firstIssue(parsed.error));
-  const { staff_role, ...rest } = parsed.data;
-  const result = await port.update(actor, id, { ...rest, ...(staff_role !== undefined ? { staffRole: staff_role } : {}) });
+  const { staff_role, current_password, ...rest } = parsed.data;
+  const result = await port.update(actor, id, {
+    ...rest,
+    ...(staff_role !== undefined ? { staffRole: staff_role } : {}),
+    ...(current_password !== undefined ? { currentPassword: current_password } : {}),
+  });
   return result.ok ? ok(200, { user: present(result.value) }) : fromFailure(result);
 }
