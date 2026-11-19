@@ -1,15 +1,17 @@
 /**
- * Crea el usuario de prueba admin@deli-gastro.com / admin en Supabase.
- * Requiere NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en .env.local
+ * Crea el usuario admin@deli-gastro.com en Supabase (modo Supabase/demo; con D1 los usuarios se gestionan
+ * desde /admin/usuarios). Requiere NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY y ADMIN_PASSWORD
+ * (la contraseña no está en el código: pasala por entorno o en .env.local).
  *
  * Uso:
- *   node --env-file=.env.local scripts/create-admin-user.mjs
+ *   ADMIN_PASSWORD='una-clave-larga' node --env-file=.env.local scripts/create-admin-user.mjs
  */
 
 import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const adminPassword = process.env.ADMIN_PASSWORD;
 
 if (!url || !serviceKey) {
   console.error(
@@ -17,6 +19,11 @@ if (!url || !serviceKey) {
     "  NEXT_PUBLIC_SUPABASE_URL\n" +
     "  SUPABASE_SERVICE_ROLE_KEY"
   );
+  process.exit(1);
+}
+
+if (!adminPassword) {
+  console.error("Falta ADMIN_PASSWORD: definila en el entorno (no hay contraseña por defecto).");
   process.exit(1);
 }
 
@@ -30,7 +37,7 @@ const supabase = createClient(url, serviceKey, {
 // llamando a `supabase.auth.updateUser()` desde el cliente.
 const { data, error } = await supabase.auth.admin.createUser({
   email: "admin@deli-gastro.com",
-  password: "admin123",
+  password: adminPassword,
   email_confirm: true,
   app_metadata: { role: "admin" },
 });
@@ -70,6 +77,6 @@ if (error) {
 } else {
   console.log("✓ Usuario creado:");
   console.log("  Email:    admin@deli-gastro.com");
-  console.log("  Password: admin");
+  console.log("  Password: la definida en ADMIN_PASSWORD");
   console.log("  ID:      ", data.user.id);
 }
