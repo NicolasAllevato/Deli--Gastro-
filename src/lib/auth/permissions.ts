@@ -220,8 +220,19 @@ const PAGE_RULES: ReadonlyArray<readonly [string, Section]> = [
   ["/admin/usuarios", "configuracion"],
 ];
 
-/** Solo el dueño, aunque la sección sea de otro: gestión de usuarios. */
-const OWNER_ONLY_PREFIXES: readonly string[] = ["/admin/usuarios", "/api/admin/usuarios"];
+/**
+ * Solo el dueño, aunque tengan la sección en "editar": la gestión de usuarios y la Conexión de WhatsApp
+ * (credenciales, token, webhook, registro del número y diagnóstico). El resto de Comunicación no cambia.
+ */
+const OWNER_ONLY_PREFIXES: readonly string[] = [
+  "/admin/usuarios",
+  "/api/admin/usuarios",
+  "/admin/whatsapp",
+  "/api/whatsapp/config",
+  "/api/whatsapp/link",
+  "/api/whatsapp/embedded-signup",
+  "/api/whatsapp/test",
+];
 
 interface ApiRule {
   prefix: string;
@@ -324,7 +335,9 @@ export function evaluateAccess(access: StaffAccess, pathname: string, method = "
   if (canManageUsers(access)) return allow;
   const path = normalizePath(pathname);
   if (path === "/admin") return allow; // solo redirige a la primera pantalla; la pantalla se valida aparte
-  if (isOwnerOnlyPath(path)) return deny("owner-only", "configuracion");
+  if (isOwnerOnlyPath(path)) {
+    return deny("owner-only", path.startsWith("/api/") ? sectionForApi(path) : sectionForPath(path));
+  }
 
   if (path.startsWith("/api/")) {
     const sections = sectionsForApi(path, method);

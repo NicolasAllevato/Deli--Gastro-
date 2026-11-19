@@ -194,7 +194,36 @@ describe("evaluateAccess", () => {
     const configEditor = P.staffAccessOf(metaOf("gerente", JSON.stringify({ configuracion: "edit" })));
     assert.equal(P.evaluateAccess(configEditor, "/admin/configuracion", "GET").allowed, true);
     for (const path of ["/admin/usuarios", "/api/admin/usuarios", "/api/admin/usuarios/abc", "/ADMIN/usuarios/"]) {
-      assert.deepEqual(P.evaluateAccess(configEditor, path, "GET"), { allowed: false, reason: "owner-only", section: "configuracion" }, path);
+      const decision = P.evaluateAccess(configEditor, path, "GET");
+      assert.equal(decision.allowed, false, path);
+      assert.equal(decision.allowed === false && decision.reason, "owner-only", path);
+    }
+  });
+
+  it("Conexión de WhatsApp (credenciales, token, webhook, registro y diagnóstico): solo dueño, aun con Comunicación en editar", () => {
+    const comunicacionEditor = P.staffAccessOf(metaOf("cajero", JSON.stringify({ comunicacion: "edit" })));
+    const ownerOnly = [
+      ["/admin/whatsapp", "GET"], ["/admin/whatsapp/", "GET"],
+      ["/api/whatsapp/config", "GET"], ["/api/whatsapp/config", "PUT"],
+      ["/api/whatsapp/link", "POST"], ["/api/whatsapp/embedded-signup", "POST"], ["/api/whatsapp/test", "POST"],
+    ] as const;
+    for (const access of [gerente, cajero, comunicacionEditor]) {
+      for (const [path, method] of ownerOnly) {
+        const d = P.evaluateAccess(access, path, method);
+        assert.equal(d.allowed === false && d.reason, "owner-only", `${method} ${path}`);
+      }
+    }
+    for (const [path, method] of ownerOnly) assert.equal(P.evaluateAccess(owner, path, method).allowed, true, `${method} ${path}`);
+  });
+
+  it("el resto de Comunicación no cambia: conversaciones, plantillas, campañas, agente, reclamos, conocimiento", () => {
+    for (const path of ["/admin/conversaciones", "/admin/plantillas", "/admin/campanas", "/admin/agente", "/admin/reclamos", "/admin/conocimiento"]) {
+      assert.equal(P.evaluateAccess(gerente, path, "GET").allowed, true, path);
+    }
+    for (const path of ["/api/whatsapp/conversations", "/api/whatsapp/conversations/abc", "/api/whatsapp/templates", "/api/whatsapp/campaigns", "/api/whatsapp/campaigns/preview", "/api/agent/config"]) {
+      assert.equal(P.evaluateAccess(gerente, path, "POST").allowed, true, `gerente POST ${path}`);
+      assert.equal(P.evaluateAccess(cajero, path, "GET").allowed, true, `cajero GET ${path}`);
+      assert.equal(P.evaluateAccess(cajero, path, "POST").allowed, false, `cajero POST ${path}`);
     }
   });
 
@@ -269,6 +298,14 @@ describe("staff-guard (lo que usa requireRole)", () => {
     assert.equal(staffAccessDenial(metaOf("gerente"), req("/api/admin/usuarios")), FORBIDDEN_MESSAGE);
   });
 
+  it("endpoints de Conexión de WhatsApp: solo dueño aunque Comunicación esté en editar", () => {
+    for (const path of ["/api/whatsapp/config", "/api/whatsapp/link", "/api/whatsapp/embedded-signup", "/api/whatsapp/test"]) {
+      assert.equal(staffAccessDenial(metaOf("gerente"), req(path, "POST")), FORBIDDEN_MESSAGE, path);
+      assert.equal(staffAccessDenial(metaOf("cajero"), req(path, "GET")), FORBIDDEN_MESSAGE, path);
+      assert.equal(staffAccessDenial(metaOf("admin"), req(path, "POST")), null, path);
+    }
+  });
+
   it("sin pedido (no se sabe qué quiere) o con URL rota: solo el dueño", () => {
     assert.equal(staffAccessDenial(metaOf("admin")), null);
     assert.equal(staffAccessDenial(metaOf("gerente")), FORBIDDEN_MESSAGE);
@@ -295,6 +332,8 @@ describe("proxy: páginas del panel (adminPageDecision)", () => {
     assert.deepEqual(adminPageDecision(metaOf("cajero"), "/admin/zonas"), { kind: "redirect", to: "/admin/tablero" });
     assert.deepEqual(adminPageDecision(metaOf("cajero"), "/admin/informes"), { kind: "redirect", to: "/admin/tablero" });
     assert.deepEqual(adminPageDecision(metaOf("gerente"), "/admin/usuarios"), { kind: "redirect", to: "/admin/ejecutivo" });
+    assert.deepEqual(adminPageDecision(metaOf("gerente"), "/admin/whatsapp"), { kind: "redirect", to: "/admin/ejecutivo" });
+    assert.deepEqual(adminPageDecision(metaOf("cajero"), "/admin/whatsapp"), { kind: "redirect", to: "/admin/tablero" });
     assert.deepEqual(adminPageDecision(metaOf("gerente"), "/admin/pantalla-nueva"), { kind: "redirect", to: "/admin/ejecutivo" });
   });
 
@@ -326,13 +365,16 @@ describe("menú filtrado por permisos", () => {
     assert.equal(menu.length, NAV_SECTIONS.length);
     assert.ok(tabsOf(menu).includes("/admin/usuarios"));
     assert.ok(tabsOf(menu).includes("/admin/legal"));
+    assert.ok(tabsOf(menu).includes("/admin/whatsapp"));
   });
 
-  it("gerente: ve Configuración (solo ver) pero no la pestaña Usuarios", () => {
+  it("gerente: ve Configuración (solo ver) pero no la pestaña Usuarios ni la Conexión de WhatsApp", () => {
     const menu = visibleNavSections(gerente);
     assert.deepEqual(menu.map((s) => s.section), [...P.SECTIONS]);
     assert.equal(tabsOf(menu).includes("/admin/usuarios"), false);
+    assert.equal(tabsOf(menu).includes("/admin/whatsapp"), false);
     assert.ok(tabsOf(menu).includes("/admin/carta"));
+    assert.ok(tabsOf(menu).includes("/admin/conversaciones"), "el resto de Comunicación sigue");
   });
 
   it("cajero: sin Dashboard, Zonas ni Configuración; la sección apunta a su primera pestaña visible", () => {
@@ -340,6 +382,7 @@ describe("menú filtrado por permisos", () => {
     assert.deepEqual(menu.map((s) => s.section), ["pedidos", "catalogo", "comunicacion"]);
     assert.equal(menu.find((s) => s.section === "pedidos")?.href, "/admin/tablero");
     assert.equal(findSection("/admin/mapa", menu)?.section, "pedidos");
+    assert.equal(tabsOf(menu).includes("/admin/whatsapp"), false);
     assert.equal(findSection("/admin/zonas", menu), undefined);
   });
 
