@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import PuntosClient, { type ClientePuntos } from "./PuntosClient";
 import PuntosCatalogo, { type CategoriaPuntos, type ProductoPuntos } from "./PuntosCatalogo";
+import { EditableArea } from "../_components/AdminAccess";
 import type { ClientTier } from "@/types/database";
 import { formatDateAR } from "@/lib/time-ar";
 
@@ -95,7 +96,9 @@ export default async function AdminPuntosPage({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-5">
-      <PuntosCatalogo categorias={categorias} productos={productos} />
+      <EditableArea section="catalogo">
+        <PuntosCatalogo categorias={categorias} productos={productos} />
+      </EditableArea>
       <PuntosClient clientes={clientes} initialClientId={clienteId.success ? clienteId.data : null} />
     </div>
   );

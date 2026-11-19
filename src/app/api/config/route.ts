@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
-import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
+import { requireRole, isAuthorizationError, denyConfigKeys } from "@/lib/auth/requireRole";
 import type { Json } from "@/types/database";
 import { actorFromSession, dataFor, dualWrite, shadowRead } from "@/lib/data";
 import { promoListSchema } from "@/lib/promos";
@@ -101,6 +101,10 @@ export async function PATCH(req: NextRequest) {
     ([key, value]) => ({ key, value: value as Json }),
   );
   if (rows.length === 0) return NextResponse.json({ ok: true });
+
+  // Permisos por sección: Zonas guarda el radio y el local, el Agente IA sus ajustes, el resto es de Configuración.
+  const forbidden = denyConfigKeys(auth.user, rows.map((r) => r.key));
+  if (forbidden) return forbidden;
 
   const actor = actorFromSession({ userId: auth.user.id, role: auth.role });
   try {

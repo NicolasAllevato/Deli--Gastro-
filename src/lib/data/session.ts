@@ -9,13 +9,18 @@
  */
 import { randomUUID } from "node:crypto";
 import { createAuth, type Auth } from "./auth.ts";
+import { normalizeStaffRole, type StaffRole } from "../auth/permissions.ts";
 import { AUTH_ROLES } from "./mirror.ts";
 import type { SqlDatabase } from "./sql.ts";
 
 export interface SessionUser {
   id: string;
   email: string;
-  app_metadata: { role: string; legal_version?: string };
+  /**
+   * `staff_role` y `permissions` (JSON crudo) solo vienen en usuarios con rol "admin" (personal del local).
+   * Sin `staff_role` se trata como dueño: ver src/lib/auth/permissions.ts.
+   */
+  app_metadata: { role: string; legal_version?: string; staff_role?: StaffRole; permissions?: string };
   user_metadata: { name?: string };
   aud: string;
   created_at: string;
@@ -27,6 +32,8 @@ interface AuthUserRow {
   name?: string | null;
   role?: string | null;
   legal_version?: string | null;
+  staff_role?: string | null;
+  permissions?: string | null;
   banned?: boolean | number | null;
   createdAt?: Date | string;
 }
@@ -36,10 +43,13 @@ const COURIER_EMAIL_DOMAIN = "repartidores.dely.opsyn.app";
 export function toSessionUser(u: AuthUserRow): SessionUser | null {
   if (u.banned === true || u.banned === 1) return null;
   const role = typeof u.role === "string" && AUTH_ROLES.has(u.role) ? u.role : "cliente";
+  const staff = role === "admin"
+    ? { staff_role: normalizeStaffRole(u.staff_role), ...(u.permissions ? { permissions: u.permissions } : {}) }
+    : {};
   return {
     id: u.id,
     email: u.email,
-    app_metadata: { role, ...(u.legal_version ? { legal_version: u.legal_version } : {}) },
+    app_metadata: { role, ...(u.legal_version ? { legal_version: u.legal_version } : {}), ...staff },
     user_metadata: u.name ? { name: u.name } : {},
     aud: "authenticated",
     created_at: new Date(u.createdAt ?? Date.now()).toISOString(),

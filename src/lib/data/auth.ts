@@ -81,6 +81,10 @@ export function createAuth(env: AuthEnv) {
         legal_version: { type: "string", required: false, input: false },
         // Repartidor desactivado: sessionUser() lo rechaza aunque tenga una sesión vieja.
         banned: { type: "boolean", required: false, defaultValue: false, input: false },
+        // Personal del local (migración 0018): rol (admin|gerente|cajero) y ajustes por sección en JSON.
+        // Solo los escribe /api/admin/usuarios; el usuario no puede auto-otorgárselos por update-user.
+        staff_role: { type: "string", required: false, input: false },
+        permissions: { type: "string", required: false, input: false },
       },
     },
     session: {

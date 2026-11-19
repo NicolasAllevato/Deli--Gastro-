@@ -19,10 +19,14 @@ export interface ReclamosResumen {
 /** Mismo intervalo de respaldo que el resto del panel en vivo (los reclamos los escribe el Worker del bot). */
 const POLL_MS = FALLBACK_POLL_MS;
 
-/** Contadores de reclamos para el panel (badge del menú y aviso). Se refresca cada minuto. */
-export function useReclamosResumen(): ReclamosResumen | null {
+/**
+ * Contadores de reclamos para el panel (badge del menú y aviso). Se refresca cada minuto.
+ * `enabled` en false (usuario sin acceso a Comunicación) no consulta nada.
+ */
+export function useReclamosResumen(enabled = true): ReclamosResumen | null {
   const [data, setData] = useState<ReclamosResumen | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const load = () =>
       fetch("/api/admin/reclamos/resumen", { cache: "no-store" })
@@ -39,8 +43,8 @@ export function useReclamosResumen(): ReclamosResumen | null {
       alive = false;
       clearInterval(timer);
     };
-  }, []);
-  return data;
+  }, [enabled]);
+  return enabled ? data : null;
 }
 
 function storage(): Storage | null {

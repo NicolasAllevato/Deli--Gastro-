@@ -10,6 +10,7 @@ import { ManageCategoriesModal } from "./_components/ManageCategoriesModal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
+import { useCanEdit } from "../_components/AdminAccess";
 
 type ProductFilter = "all" | "visible" | "hidden" | "no_photo";
 const FILTERS: { id: ProductFilter; label: string }[] = [
@@ -58,6 +59,8 @@ async function api<T>(url: string, method: string, body?: unknown): Promise<T> {
 }
 
 export default function ProductosClient({ initialCategories, initialProducts }: Props) {
+  // Con "ver" la lista y los filtros siguen disponibles; las acciones de edición no se muestran (el servidor igual las rechaza).
+  const canEdit = useCanEdit("catalogo");
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [products, setProducts]     = useState<Product[]>(initialProducts);
   const [error, setError]           = useState<string | null>(null);
@@ -175,23 +178,25 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
           <h2 className="font-headline text-3xl font-black text-gray-800 tracking-tight">Catálogo</h2>
           <p className="text-xs font-bold text-gray-500 mt-1 uppercase tracking-widest">Gestiona tu menú</p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Settings2 size={16} />}
-            onClick={() => setIsManagingCats(true)}
-          >
-            Categorías
-          </Button>
-          <Button
-            size="sm"
-            leftIcon={<Plus size={16} />}
-            onClick={() => openProductForm()}
-          >
-            Nuevo Producto
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<Settings2 size={16} />}
+              onClick={() => setIsManagingCats(true)}
+            >
+              Categorías
+            </Button>
+            <Button
+              size="sm"
+              leftIcon={<Plus size={16} />}
+              onClick={() => openProductForm()}
+            >
+              Nuevo Producto
+            </Button>
+          </div>
+        )}
       </header>
 
       {error && (
@@ -254,7 +259,7 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
                   <Switch
                     checked={product.show_in_portal !== false}
                     onChange={(next) => togglePortal(product.id, next)}
-                    disabled={savingPortal.has(product.id)}
+                    disabled={savingPortal.has(product.id) || !canEdit}
                     label="Visible en el portal"
                     aria-label={`Visible en el portal: ${product.name}`}
                     hint={product.show_in_portal === false ? "Oculto: el cliente no lo ve." : product.is_active ? undefined : "Inactivo: no se ve aunque esté prendido."}
@@ -263,7 +268,7 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
                   <div className="mt-auto flex items-center justify-between pt-4 border-t border-gray-200/50">
                     <button
                       onClick={() => toggleProductActive(product.id)}
-                      disabled={product.fudo_id != null}
+                      disabled={product.fudo_id != null || !canEdit}
                       title={product.fudo_id != null ? "La disponibilidad la define Fudo" : undefined}
                       aria-label={product.is_active ? "Desactivar producto" : "Activar producto"}
                       className="transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange/60 rounded-full"
@@ -278,26 +283,28 @@ export default function ProductosClient({ initialCategories, initialProducts }: 
                       </Badge>
                     </button>
 
-                    <div className="flex gap-2">
-                      <Button
-                        variant="icon"
-                        size="sm"
-                        aria-label={`Editar ${product.name}`}
-                        onClick={() => openProductForm(product)}
-                      >
-                        <Edit2 size={14} />
-                      </Button>
-                      <Button
-                        variant="icon"
-                        size="sm"
-                        aria-label={`Eliminar ${product.name}`}
-                        onClick={() => deleteProduct(product.id)}
-                        disabled={product.fudo_id != null}
-                        className="hover:text-red-500"
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="icon"
+                          size="sm"
+                          aria-label={`Editar ${product.name}`}
+                          onClick={() => openProductForm(product)}
+                        >
+                          <Edit2 size={14} />
+                        </Button>
+                        <Button
+                          variant="icon"
+                          size="sm"
+                          aria-label={`Eliminar ${product.name}`}
+                          onClick={() => deleteProduct(product.id)}
+                          disabled={product.fudo_id != null}
+                          className="hover:text-red-500"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

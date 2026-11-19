@@ -5,6 +5,7 @@ import { ArrowLeft, Hand, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { TOPIC_WA_CONVERSATIONS, waConversationTopic } from "@/lib/live-refresh";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { useCanEdit } from "../_components/AdminAccess";
 import { Composer } from "./_components/Composer";
 import { ConversationList } from "./_components/ConversationList";
 import { MessageThread } from "./_components/MessageThread";
@@ -35,6 +36,7 @@ const send = (method: string, body: unknown): RequestInit => ({
 const CLOCK_TICK_MS = 30_000;
 
 export default function ConversacionesPage() {
+  const canReply = useCanEdit("comunicacion");
   const [list, setList] = useState<ConversationItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -157,14 +159,16 @@ export default function ConversacionesPage() {
                     {attendedLabel(thread.conversation, now)}
                   </p>
                 </div>
-                <Button size="sm" variant="secondary" onClick={toggleTakeover} loading={busy} leftIcon={<Hand size={14} aria-hidden />}>
-                  {personAttends(thread.conversation, now) ? "Devolver al agente" : "Tomar el control"}
-                </Button>
+                {canReply && (
+                  <Button size="sm" variant="secondary" onClick={toggleTakeover} loading={busy} leftIcon={<Hand size={14} aria-hidden />}>
+                    {personAttends(thread.conversation, now) ? "Devolver al agente" : "Tomar el control"}
+                  </Button>
+                )}
               </div>
 
               <MessageThread conversationId={thread.conversation.id} messages={thread.messages} now={now} />
 
-              <Composer lastInboundAt={selectedItem?.lastInboundAt ?? null} now={now} busy={busy} onSend={reply} />
+              {canReply && <Composer lastInboundAt={selectedItem?.lastInboundAt ?? null} now={now} busy={busy} onSend={reply} />}
             </>
           )}
         </section>

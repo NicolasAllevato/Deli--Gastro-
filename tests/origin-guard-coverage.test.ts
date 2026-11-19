@@ -8,7 +8,7 @@ import { join } from "node:path";
  * saltea la verificación de origen (CSRF) sin avisar. Este test falla si alguien lo olvida.
  */
 const API_DIR = join(import.meta.dirname, "..", "src", "app", "api");
-const GUARDS = ["requireAuth", "requireClient", "guardAdmin"];
+const GUARDS = ["requireAuth", "requireClient", "guardAdmin", "guardOwner"];
 // requireRole/requireAnyRole siempre llevan argumentos (el rol), así que se chequea el último.
 const WITH_ROLE = ["requireRole", "requireAnyRole"];
 

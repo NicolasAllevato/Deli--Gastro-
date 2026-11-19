@@ -35,7 +35,7 @@ export default function LegalAdminPage() {
   return (
     <div className="page-fade flex flex-col gap-4 p-2">
       <header>
-        <h1 className="font-headline text-2xl font-black text-gray-800">Usuarios y documentos</h1>
+        <h1 className="font-headline text-2xl font-black text-gray-800">Documentos legales</h1>
         <p className="text-sm text-gray-500 mt-1">
           Quién aceptó los Términos y la Política de privacidad, y cuándo. Cada documento se acepta por separado
           al primer ingreso; si cambia la versión, se vuelve a pedir.

@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useCallback, useEffect, useState } from "react";
 import { Bot, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -39,7 +40,7 @@ const send = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-export default function AgentePage() {
+function AgentePageContent() {
   const [state, setState] = useState<State | null>(null);
   const [form, setForm] = useState<AgentSettings | null>(null);
   const [openaiKey, setOpenaiKey] = useState("");
@@ -221,5 +222,14 @@ export default function AgentePage() {
         </form>
       </section>
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function AgentePage() {
+  return (
+    <EditableArea section="comunicacion">
+      <AgentePageContent />
+    </EditableArea>
   );
 }
