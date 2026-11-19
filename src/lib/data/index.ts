@@ -202,6 +202,9 @@ export async function courierSessionCookies(userId: string): Promise<string[] | 
   return session.courierSessionCookiesWith(await getAuth(), userId);
 }
 
+export { staffUsersApp, type StaffUsersApp } from "./staff-users-app.ts";
+export type { StaffUser, CourierUser, CreateStaffInput, UpdateStaffInput, UserResult, UserFailure } from "./staff-users.ts";
+
 export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, type KbEntry, type KbInput } from "./kb-negocio.ts";
 export { kbAprendizajeApp } from "./kb-aprendizaje-app.ts";
