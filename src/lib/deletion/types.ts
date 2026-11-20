@@ -58,6 +58,8 @@ export interface DeletionAdminListing {
 export interface DeletionEligibilityView {
   canDelete: boolean;
   reason: string | null;
+  /** Con qué confirma: su contraseña, o el email exacto de la cuenta si no tiene contraseña. Solo si puede. */
+  method?: "password" | "email";
 }
 
 export const CHANNEL_LABELS: Readonly<Record<DeletionRequestRowView["channel"], string>> = {

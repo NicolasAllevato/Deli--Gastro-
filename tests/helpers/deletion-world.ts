@@ -58,6 +58,12 @@ export function seedHistory(world: World): void {
   run(`INSERT INTO order_items (id, order_id, name, qty, unit_price_cents, fudo_comment) VALUES ('i-1', 'o-1', 'Muzza', 2, 625025, 'sin cebolla')`);
   run(`INSERT INTO order_events (id, order_id, event, actor, detail) VALUES ('e-1', 'o-1', 'assigned', 'admin', 'Repartidor Uno')`);
   run(`INSERT INTO fudo_writes (id, order_id, operation, ok, payload, actor) VALUES ('fw-1', 'o-1', 'create_sale', 1, '{"customerName":"Cliente Uno"}', 'admin:gerente1')`);
+  // El cliente: conversación de WhatsApp (teléfono verificado), otra ficha creada por WhatsApp con ese teléfono, y un cliente sin relación.
+  run(`INSERT INTO wa_conversations (id, client_phone, client_id, contact_name) VALUES ('w-cli', '5491155550101', 'c-cli', 'Cliente Uno')`);
+  run(`INSERT INTO clients (id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('c-cli-wa', 'Cliente Uno WA', '+5491155550101', '1155550101', 1)`);
+  run(`INSERT INTO clients (id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('c-otro', 'Otro Cliente', '+54 9 11 7777-0303', '1177770303', 1)`);
+  run(`UPDATE clients SET wa_marketing_opt_in = 1 WHERE id IN ('c-cli', 'c-ger')`);
+  run(`INSERT INTO orders (id, client_id, status, items_desc, total_cents, created_at) VALUES ('o-wa', 'c-cli-wa', 'Finalizados', '1x Flan', 200000, '2026-11-03T20:00:00.000Z')`);
   run(`INSERT INTO points_ledger (id, client_id, order_id, delta, description) VALUES ('l-1', 'c-ger', 'o-2', 100, 'Compra')`);
   run(`INSERT INTO reviews (id, order_id, client_id, rating, feedback) VALUES ('r-1', 'o-2', 'c-ger', 5, 'rico')`);
   run(`INSERT INTO payment_intents (id, client_id, channel, total_cents, snapshot, expires_at) VALUES ('pi-1', 'c-ger', 'web', 300000, '{"address":"Calle 2"}', '2099-01-01T00:00:00.000Z')`);
@@ -71,6 +77,16 @@ export function seedHistory(world: World): void {
   run(`INSERT INTO integration_settings (key, value_enc, updated_at, updated_by) VALUES ('ajuste', 'v1:x:y', ?, 'gerente1')`, NOW);
   run(`INSERT INTO kb_errores (id, clave, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, origen) VALUES ('kbe-1', 'k1', 'esc', 'otro', 'hola', 'no', 'm', 'c', 'conversacion')`);
   run(`INSERT INTO global_config (key, value) VALUES ('resumen_diario', '{"destinatarios":[{"email":"gerente@local.test"}]}')`);
+}
+
+/** Acceso del cliente de prueba (u-cli): contraseña (PASSWORD), una sesión y un token de verificación. */
+export async function seedClientLogin(world: World, opts: { password?: boolean } = {}): Promise<void> {
+  const { raw } = world.db;
+  if (opts.password !== false) {
+    raw.prepare(`INSERT INTO "account" (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES ('a-u-cli', 'u-cli', 'credential', 'u-cli', ?, ?, ?)`).run(await hashPassword(world, PASSWORD), NOW, NOW);
+  }
+  raw.prepare(`INSERT INTO "session" (id, expiresAt, token, createdAt, updatedAt, ipAddress, userAgent, userId) VALUES ('s-u-cli', '2099-01-01', 'tok-u-cli', ?, ?, '203.0.113.7', 'UA', 'u-cli')`).run(NOW, NOW);
+  raw.prepare(`INSERT INTO "verification" (id, identifier, value, expiresAt) VALUES ('v-cli', 'cliente@example.test', 'token-cli', '2099-01-01')`).run();
 }
 
 /** Contenido de cada tabla, sin las columnas indicadas (`tabla.columna`). Lo único que puede cambiar al eliminar un usuario. */

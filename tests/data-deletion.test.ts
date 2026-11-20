@@ -12,7 +12,7 @@ import {
   DELETION_STEPS, KEPT, MESSAGES, SELF_MESSAGES, TOKEN_TTL_MS, deleteOwnAccount, deleteUserAsOwner, issueToken, listDeletableUsers,
   listDeletionRequests, ownAccountEligibility, previewUserDeletion, readToken, subjectHash, type DeletionOutcome, type DeletionOptions,
 } from "../src/lib/data/data-deletion.ts";
-import { BASE, PASSWORD, SECRET, SUPER_EMAIL, dumpAll, seedHistory, seedStaff, setup, type World } from "./helpers/deletion-world.ts";
+import { BASE, PASSWORD, SECRET, SUPER_EMAIL, dumpAll, seedClientLogin, seedHistory, seedStaff, setup, type World } from "./helpers/deletion-world.ts";
 
 const asAdmin = (userId: string): Actor => ({ kind: "admin", userId });
 const DUENO = asAdmin("dueno");
@@ -208,9 +208,9 @@ describe("herramienta del dueño principal", () => {
     const world = await build();
     world.db.raw.prepare(`INSERT INTO courier_pin_attempts (key, failures, window_start) VALUES ('delete-account:gerente1', 2, '2026-11-10T00:00:00.000Z')`).run();
     const notified: string[] = [];
-    const result = expectOk(await ownerDelete(world, "gerente1", {}, { ...world.opts, notify: async (to) => void notified.push(to) }));
-    assert.deepEqual(result.counts, { session: 1, account: 1, verification: 2, intentos: 1, user: 1 });
-    assert.equal(result.total, 6);
+    const result = expectOk(await ownerDelete(world, "gerente1", {}, { ...world.opts, notify: async ({ email }) => void notified.push(email) }));
+    assert.deepEqual(result.counts, { session: 1, account: 1, verification: 2, intentos: 1, comunicaciones: 0, user: 1 });
+    assert.equal(result.total, 6, "el personal no recibe baja de comunicaciones: sus filas de cliente no se tocan");
     assert.equal(result.notified, "sent");
     assert.deepEqual(notified, ["gerente@local.test"]);
     assert.equal(count(world, "user", "id = 'gerente1'") + count(world, "session", "userId = 'gerente1'") + count(world, "account", "userId = 'gerente1'"), 0);
@@ -352,7 +352,7 @@ describe("el historial no se toca", () => {
       "legal_acceptances.user_id SET NULL", "orders.courier_user_id SET NULL", "session.userId CASCADE",
     ]);
     // clients es el único CASCADE que arrastra historial y lo cubre el trigger; los repartidores no se borran (role = 'admin').
-    assert.ok(DELETION_STEPS.find((s) => s.key === "user")?.del.includes("role = 'admin'"));
+    assert.ok(DELETION_STEPS.find((s) => s.key === "user")?.del.includes("role IN ('admin', 'cliente')"));
   });
 });
 
@@ -364,7 +364,7 @@ describe("autoservicio del personal", () => {
     const world = await build();
     const before = dumpAll(world.db.raw, ["clients.user_id", "clients.updated_at", "legal_acceptances.user_id"]);
     const notified: string[] = [];
-    const result = expectOk(await own(world, "gerente1", PASSWORD, undefined, async (to) => void notified.push(to)));
+    const result = expectOk(await own(world, "gerente1", PASSWORD, undefined, async ({ email }) => void notified.push(email)));
     assert.equal(result.status, "completed");
     assert.deepEqual(notified, ["gerente@local.test"]);
     assert.equal(gerenteExists(world), false);
@@ -389,15 +389,14 @@ describe("autoservicio del personal", () => {
     assert.equal(count(world, "courier_pin_attempts", "key LIKE 'delete-account:%'"), 0);
   });
 
-  it("los clientes NO pueden (403, con a quién pedir la baja), ni con contraseña correcta; los repartidores tampoco", async () => {
+  it("los repartidores NO pueden (403, con a quién escribir), ni con contraseña correcta", async () => {
     const world = await build();
-    world.db.raw.prepare(`INSERT INTO "account" (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES ('a-cli', 'u-cli', 'credential', 'u-cli', (SELECT password FROM account WHERE id = 'a-dueno'), 'x', 'x')`).run();
+    world.db.raw.prepare(`INSERT INTO "account" (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES ('a-rep', 'u-rep', 'credential', 'u-rep', (SELECT password FROM account WHERE id = 'a-dueno'), 'x', 'x')`).run();
     const before = dumpAll(world.db.raw);
-    assert.equal(expectFail(await own(world, "u-cli"), 403), SELF_MESSAGES.notStaff);
-    assert.match(SELF_MESSAGES.notStaff, /contacto@la-gambeta\.com/);
-    expectFail(await own(world, "u-rep"), 403);
+    assert.equal(expectFail(await own(world, "u-rep"), 403), SELF_MESSAGES.courier);
+    assert.match(SELF_MESSAGES.courier, /contacto@la-gambeta\.com/);
     assert.deepEqual(dumpAll(world.db.raw), before);
-    assert.deepEqual(await ownAccountEligibility(world.db, "u-cli", world.opts), { canDelete: false, status: 403, reason: SELF_MESSAGES.notStaff });
+    assert.deepEqual(await ownAccountEligibility(world.db, "u-rep", world.opts), { canDelete: false, status: 403, reason: SELF_MESSAGES.courier });
   });
 
   it("el dueño principal NO puede (403), ni con la contraseña correcta", async () => {
@@ -416,10 +415,140 @@ describe("autoservicio del personal", () => {
     assert.equal(expectFail(await own(blocked, "socio"), 409), SELF_MESSAGES.lastOwner);
   });
 
-  it("una cuenta sin contraseña o inexistente no puede", async () => {
+  it("una cuenta inexistente: 404", async () => {
     const world = await build();
-    world.db.raw.prepare(`DELETE FROM "account" WHERE userId = 'cajero1'`).run();
-    assert.equal(expectFail(await own(world, "cajero1"), 400), MESSAGES.noPassword);
     expectFail(await own(world, "nadie"), 404);
+  });
+});
+
+describe("baja de un cliente (autoservicio)", () => {
+  const ownCli = (world: World, input: { password?: string; confirmEmail?: string }, over: Partial<DeletionOptions> = {}) =>
+    deleteOwnAccount(world.db, world.auth, { userId: "u-cli", ...input }, { ...world.opts, ...over });
+  const fichas = (world: World) =>
+    Object.fromEntries((world.db.raw.prepare(`SELECT id, user_id, wa_marketing_opt_in AS opt, unsubscribed_at AS un FROM clients ORDER BY id`).all() as { id: string; user_id: string | null; opt: number; un: string | null }[]).map((c) => [c.id, { ...c }]));
+  const HISTORY_OMIT = ["clients.user_id", "clients.updated_at", "clients.unsubscribed_at", "clients.wa_marketing_opt_in", "legal_acceptances.user_id"];
+  const ACCOUNT_TABLES = ["user", "session", "account", "verification", "courier_pin_attempts", "data_deletion_requests", "bot_nonces"];
+
+  async function buildClient(opts: { password?: boolean } = {}) {
+    const world = await build();
+    await seedClientLogin(world, opts);
+    return world;
+  }
+
+  it("el cliente puede: borra su cuenta de acceso y su ficha queda dada de baja de promociones y encuestas, sin tocar el historial", async () => {
+    const world = await buildClient();
+    const before = dumpAll(world.db.raw, HISTORY_OMIT);
+    const notified: Array<{ email: string; role: string }> = [];
+    const result = expectOk(await ownCli(world, { password: PASSWORD }, { notify: async (t) => void notified.push(t) }));
+    assert.deepEqual(result.counts, { session: 1, account: 1, verification: 1, intentos: 0, comunicaciones: 2, user: 1 });
+    assert.deepEqual(notified, [{ email: "cliente@example.test", role: "cliente" }]);
+    assert.equal(count(world, "user", "id = 'u-cli'") + count(world, "session", "userId = 'u-cli'") + count(world, "account", "userId = 'u-cli'") + count(world, "verification", "id = 'v-cli'"), 0);
+    const after = fichas(world);
+    // Su ficha y la ficha de WhatsApp con el mismo teléfono verificado: de baja, sin opt-in y sin vínculo con la cuenta. La ficha NO se borra.
+    assert.equal(after["c-cli"].user_id, null);
+    for (const id of ["c-cli", "c-cli-wa"]) {
+      assert.ok(after[id].un, `${id} no quedó de baja`);
+      assert.equal(after[id].opt, 0, `${id} sigue con opt-in`);
+    }
+    // Otras fichas (la del gerente, la de un cliente sin relación) siguen igual.
+    for (const id of ["c-ger", "c-otro"]) assert.deepEqual({ un: after[id].un, opt: after[id].opt }, { un: null, opt: 1 }, id);
+    const afterDump = dumpAll(world.db.raw, HISTORY_OMIT);
+    for (const t of Object.keys(before).filter((k) => !ACCOUNT_TABLES.includes(k))) assert.equal(afterDump[t], before[t], `cambió ${t}`);
+    assert.equal(count(world, "orders"), 3, "los pedidos quedan");
+    assert.equal(count(world, "wa_conversations", "id = 'w-cli'"), 1);
+    assert.equal(count(world, "legal_acceptances", "id = 'la-2' AND user_id IS NULL"), 1);
+    const row = one(world, `SELECT channel, performed_by, subject_hash FROM data_deletion_requests`);
+    assert.deepEqual({ ...row }, { channel: "autoservicio", performed_by: "u-cli", subject_hash: subjectHash(SECRET, "cliente@example.test") });
+  });
+
+  it("la elegibilidad dice con qué confirma: su contraseña, o el email exacto si la cuenta no tiene contraseña", async () => {
+    const world = await buildClient();
+    assert.deepEqual(await ownAccountEligibility(world.db, "u-cli", world.opts), { canDelete: true, method: "password" });
+    world.db.raw.prepare(`DELETE FROM "account" WHERE userId = 'u-cli'`).run();
+    assert.deepEqual(await ownAccountEligibility(world.db, "u-cli", world.opts), { canDelete: true, method: "email" });
+  });
+
+  it("con contraseña: la incorrecta o faltante no borra nada; tras 5 incorrectas se bloquea (429) hasta que pasa el bloqueo", async () => {
+    const world = await buildClient();
+    const t0 = new Date("2026-11-10T12:00:00.000Z");
+    const at = { now: () => t0 };
+    assert.equal(expectFail(await ownCli(world, {}, at), 400), MESSAGES.needPassword);
+    assert.equal(expectFail(await ownCli(world, { confirmEmail: "cliente@example.test" }, at), 400), MESSAGES.needPassword, "teniendo contraseña, el email solo no alcanza");
+    for (let i = 0; i < 5; i++) expectFail(await ownCli(world, { password: "mal" }, at), 400);
+    expectFail(await ownCli(world, { password: PASSWORD }, at), 429);
+    assert.equal(count(world, "user", "id = 'u-cli'"), 1);
+    assert.equal(fichas(world)["c-cli"].un, null);
+    expectOk(await ownCli(world, { password: PASSWORD }, { now: () => new Date(t0.getTime() + 31 * 60_000) }));
+  });
+
+  it("sin contraseña (entró con otro proveedor): confirma con el email exacto de la cuenta, con el mismo tope de intentos", async () => {
+    const world = await buildClient({ password: false });
+    const t0 = new Date("2026-11-10T12:00:00.000Z");
+    const at = { now: () => t0 };
+    assert.equal(expectFail(await ownCli(world, {}, at), 400), SELF_MESSAGES.needEmail);
+    assert.equal(expectFail(await ownCli(world, { confirmEmail: "otro@example.test" }, at), 400), SELF_MESSAGES.emailMismatch);
+    for (let i = 0; i < 4; i++) expectFail(await ownCli(world, { confirmEmail: "otro@example.test" }, at), 400);
+    expectFail(await ownCli(world, { confirmEmail: "cliente@example.test" }, at), 429);
+    assert.equal(count(world, "user", "id = 'u-cli'"), 1);
+    expectOk(await ownCli(world, { confirmEmail: "  CLIENTE@Example.test " }, { now: () => new Date(t0.getTime() + 31 * 60_000) }));
+    assert.ok(fichas(world)["c-cli"].un);
+  });
+
+  it("un pedido en curso lo impide (409), también el de la ficha de WhatsApp con su teléfono; con el pedido entregado o cancelado, puede", async () => {
+    const world = await buildClient();
+    world.db.raw.prepare(`UPDATE orders SET status = 'En Camino' WHERE id = 'o-1'`).run();
+    assert.equal(expectFail(await ownCli(world, { password: PASSWORD }), 409), SELF_MESSAGES.inProgress);
+    assert.deepEqual(await ownAccountEligibility(world.db, "u-cli", world.opts), { canDelete: false, status: 409, reason: SELF_MESSAGES.inProgress });
+    world.db.raw.prepare(`UPDATE orders SET status = 'Finalizados' WHERE id = 'o-1'`).run();
+    world.db.raw.prepare(`UPDATE orders SET status = 'En Preparación' WHERE id = 'o-wa'`).run();
+    expectFail(await ownCli(world, { password: PASSWORD }), 409);
+    world.db.raw.prepare(`UPDATE orders SET status = 'Cancelado' WHERE id = 'o-wa'`).run();
+    expectOk(await ownCli(world, { password: PASSWORD }));
+    assert.equal(count(world, "user", "id = 'u-cli'"), 0);
+  });
+
+  it("el pedido en curso de OTRA persona no lo bloquea", async () => {
+    const world = await buildClient();
+    world.db.raw.prepare(`INSERT INTO orders (id, client_id, status, items_desc, total_cents) VALUES ('o-otro', 'c-otro', 'En Camino', 'x', 100)`).run();
+    expectOk(await ownCli(world, { password: PASSWORD }));
+  });
+
+  it("no se da de baja a otra persona por un teléfono que el cliente escribió a mano en su perfil (solo el verificado por la conversación de WhatsApp)", async () => {
+    const world = await buildClient();
+    // El perfil dice el teléfono de c-otro, pero la conversación vinculada a su cuenta es de otro número.
+    world.db.raw.prepare(`UPDATE clients SET phone = '+54 9 11 7777-0303', phone_digits = '1177770303' WHERE id = 'c-cli'`).run();
+    expectOk(await ownCli(world, { password: PASSWORD }));
+    assert.equal(fichas(world)["c-otro"].un, null, "la ficha ajena no se toca");
+    assert.equal(fichas(world)["c-otro"].opt, 1);
+    assert.ok(fichas(world)["c-cli"].un);
+    assert.ok(fichas(world)["c-cli-wa"].un, "el teléfono verificado de la conversación sí");
+  });
+
+  it("una ficha que ya estaba dada de baja conserva su fecha original", async () => {
+    const world = await buildClient();
+    world.db.raw.prepare(`UPDATE clients SET unsubscribed_at = '2026-10-01T00:00:00.000Z' WHERE id = 'c-cli'`).run();
+    const result = expectOk(await ownCli(world, { password: PASSWORD }));
+    assert.equal(result.counts.comunicaciones, 1, "solo la que faltaba (la de WhatsApp)");
+    assert.equal(fichas(world)["c-cli"].un, "2026-10-01T00:00:00.000Z");
+  });
+
+  it("si el aviso por email falla, la baja vale igual (y queda dicho)", async (t) => {
+    t.mock.method(console, "error", () => undefined);
+    const world = await buildClient();
+    const result = expectOk(await ownCli(world, { password: PASSWORD }, { notify: async () => { throw new Error("sin correo"); } }));
+    assert.deepEqual([result.status, result.notified], ["completed", "failed"]);
+    assert.equal(count(world, "user", "id = 'u-cli'"), 0);
+  });
+
+  it("un cliente sin ficha puede darse de baja (no toca ninguna ficha), y sin secreto no se puede", async () => {
+    const world = await buildClient();
+    world.db.raw.prepare(`DELETE FROM clients WHERE user_id = 'u-cli'`).run();
+    const before = fichas(world);
+    const result = expectOk(await ownCli(world, { password: PASSWORD }));
+    assert.equal(result.counts.comunicaciones, 0);
+    assert.deepEqual(fichas(world), before);
+    const off = await buildClient();
+    expectFail(await ownCli(off, { password: PASSWORD }, { hashSecret: null }), 503);
+    assert.equal(count(off, "user", "id = 'u-cli'"), 1);
   });
 });

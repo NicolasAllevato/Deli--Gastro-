@@ -1,5 +1,5 @@
 /**
- * Lógica de /api/admin/eliminar-datos (solo el dueño principal) y /api/account/delete (la propia cuenta del personal), separada de las
+ * Lógica de /api/admin/eliminar-datos (solo el dueño principal) y /api/account/delete (la propia cuenta: personal y clientes), separada de las
  * rutas para probarla sin Next. La ruta autentica (sesión, CSRF, límite) y entrega acá quién llama; este módulo valida los datos con
  * zod, exige las condiciones de cada herramienta y traduce los resultados de la capa de datos a HTTP. Errores en español.
  */
@@ -13,7 +13,7 @@ import {
 export { DELETION_CONFIRM_WORD, DELETION_MAX_PASSWORD };
 
 const ONLY_SUPER_OWNER = "Solo el dueño principal puede eliminar usuarios.";
-const NOT_STAFF = `Solo el personal del local elimina su cuenta desde la aplicación. Los clientes piden la baja por email a ${BRAND.contactEmail}.`;
+const COURIER = `Los repartidores no pueden dar de baja su cuenta desde la aplicación. Escribinos a ${BRAND.contactEmail}.`;
 
 // --- Validación -----------------------------------------------------------------------------------------
 
@@ -37,25 +37,33 @@ export const executeBodySchema = z.strictObject({
   confirmEmail: z.string({ error: "Escribí el email del usuario." }).trim().min(1, "Escribí el email del usuario.").max(254, "Email inválido."),
 });
 
-export const deleteOwnBodySchema = z.strictObject({
-  password: z.string({ error: "Ingresá tu contraseña actual." }).min(1, "Ingresá tu contraseña actual.").max(DELETION_MAX_PASSWORD, "La contraseña es demasiado larga."),
-  confirm: z.literal(DELETION_CONFIRM_WORD, { error: `Escribí ${DELETION_CONFIRM_WORD} para confirmar.` }),
-});
+/**
+ * Baja de la propia cuenta: la contraseña actual o, si la cuenta no tiene contraseña (entró con otro proveedor), el email exacto de la cuenta;
+ * más la palabra ELIMINAR. La capa de datos decide cuál de las dos corresponde según la cuenta.
+ */
+export const deleteOwnBodySchema = z
+  .strictObject({
+    password: z.string().max(DELETION_MAX_PASSWORD, "La contraseña es demasiado larga.").optional(),
+    confirmEmail: z.string().trim().max(254, "Email inválido.").optional(),
+    confirm: z.literal(DELETION_CONFIRM_WORD, { error: `Escribí ${DELETION_CONFIRM_WORD} para confirmar.` }),
+  })
+  .refine((v) => Boolean(v.password) || Boolean(v.confirmEmail), { message: "Ingresá tu contraseña actual." });
 
 const firstIssue = (e: z.ZodError) => e.issues[0]?.message ?? "Datos inválidos.";
 
 // --- Puerto hacia la capa de datos --------------------------------------------------------------------------
 
 export type PortOutcome<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
-export type Notifier = (email: string) => Promise<void>;
+/** Aviso por email al dar de baja una cuenta: el texto depende del rol (cliente o personal). */
+export type Notifier = (target: { email: string; role: string }) => Promise<void>;
 
 export interface DeletionPort<A> {
   users(actor: A, exactEmail?: string): Promise<PortOutcome<StaffUserView[]>>;
   recent(actor: A): Promise<DeletionRequestRowView[]>;
   preview(actor: A, userId: string): Promise<PortOutcome<DeletionPreviewView>>;
   execute(actor: A, input: { userId: string; token: string; password: string; confirmEmail: string }, notify?: Notifier): Promise<PortOutcome<DeletionResultView>>;
-  eligibility(userId: string): Promise<{ canDelete: true } | { canDelete: false; status: number; reason: string }>;
-  deleteOwn(userId: string, password: string, notify?: Notifier): Promise<PortOutcome<DeletionResultView>>;
+  eligibility(userId: string): Promise<{ canDelete: true; method: "password" | "email" } | { canDelete: false; status: number; reason: string }>;
+  deleteOwn(userId: string, input: { password?: string; confirmEmail?: string }, notify?: Notifier): Promise<PortOutcome<DeletionResultView>>;
 }
 
 export interface ApiResult {
@@ -117,26 +125,28 @@ export function executeApi<A>(port: DeletionPort<A>, ctx: SuperOwnerContext, act
   });
 }
 
-// --- La propia cuenta (solo personal) -------------------------------------------------------------------------
+// --- La propia cuenta (personal y clientes) --------------------------------------------------------------------
 
 export interface SelfContext {
   userId: string;
-  /** Rol de la sesión: admin = personal del local; cliente y repartidor no pueden eliminar su cuenta desde la aplicación. */
+  /** Rol de la sesión: admin (personal del local) y cliente pueden dar de baja su cuenta; el repartidor y cualquier otro rol, no. */
   role: string;
 }
 
+const canSelfDelete = (role: string) => role === "admin" || role === "cliente";
+
 export async function eligibilityApi<A>(port: DeletionPort<A>, ctx: SelfContext): Promise<ApiResult> {
-  if (ctx.role !== "admin") return err(403, NOT_STAFF);
+  if (!canSelfDelete(ctx.role)) return err(403, COURIER);
   const e = await port.eligibility(ctx.userId);
-  const body: DeletionEligibilityView = e.canDelete ? { canDelete: true, reason: null } : { canDelete: false, reason: e.reason };
+  const body: DeletionEligibilityView = e.canDelete ? { canDelete: true, reason: null, method: e.method } : { canDelete: false, reason: e.reason };
   return ok(200, body);
 }
 
 export async function deleteOwnApi<A>(port: DeletionPort<A>, ctx: SelfContext, rawBody: unknown, notify?: Notifier): Promise<ApiResult> {
-  if (ctx.role !== "admin") return err(403, NOT_STAFF);
+  if (!canSelfDelete(ctx.role)) return err(403, COURIER);
   const parsed = deleteOwnBodySchema.safeParse(rawBody);
   if (!parsed.success) return err(400, firstIssue(parsed.error));
-  const result = await port.deleteOwn(ctx.userId, parsed.data.password, notify);
+  const result = await port.deleteOwn(ctx.userId, { password: parsed.data.password, confirmEmail: parsed.data.confirmEmail }, notify);
   return result.ok ? ok(200, { ok: true }) : err(result.status, result.error);
 }
 

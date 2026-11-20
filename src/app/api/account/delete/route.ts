@@ -6,12 +6,13 @@ import { dataBackend, dataDeletionApp, type Actor } from "@/lib/data";
 import { authCookiesToExpire, deleteOwnApi, eligibilityApi, type DeletionPort } from "@/lib/deletion/api";
 import { accountDeletedNotifier } from "@/lib/deletion/notify";
 
-// Eliminar la propia cuenta: SOLO el personal del local (rol admin). Clientes y repartidores reciben 403: los clientes piden la baja por
-// email. Pide la contraseña actual y la palabra ELIMINAR; borra de inmediato solo la cuenta de acceso (el historial no se toca), cierra la
-// sesión, avisa por email y deja el registro (canal "autoservicio"). El dueño principal y el último dueño activo no pueden. El usuario sale
+// Dar de baja la propia cuenta: el personal del local (rol admin) y los CLIENTES. Los repartidores reciben 403. Pide la contraseña actual (si
+// la cuenta no tiene, el email exacto de la cuenta) y la palabra ELIMINAR; borra de inmediato solo la cuenta de acceso (el historial no se
+// toca), cierra la sesión, avisa por email y deja el registro (canal "autoservicio"). A un cliente además lo da de baja de promociones y
+// encuestas (su ficha se conserva) y no puede con un pedido en curso. El dueño principal y el último dueño activo no pueden. El usuario sale
 // siempre de la sesión del servidor, nunca del cuerpo. Requiere D1 y DATA_DELETION_HASH_SECRET.
-//   GET  → ¿puede eliminar su cuenta? (para mostrar u ocultar el botón; el servidor valida igual al ejecutar)
-//   POST → { password, confirm: "ELIMINAR" }
+//   GET  → ¿puede dar de baja su cuenta y con qué confirma? (para el botón; el servidor valida igual al ejecutar)
+//   POST → { password | confirmEmail, confirm: "ELIMINAR" }
 
 const UNAVAILABLE = "La eliminación de la cuenta solo está disponible con la base D1.";
 const available = () => dataBackend() === "d1" && !isDemoMode();
@@ -43,8 +44,7 @@ export async function POST(req: NextRequest) {
   if (isAuthorizationError(auth)) return auth.error;
   if (!available()) return NextResponse.json({ error: UNAVAILABLE }, { status: 501 });
   try {
-    const notify = auth.role === "admin" ? await accountDeletedNotifier() : undefined;
-    const r = await deleteOwnApi(port, { userId: auth.user.id, role: auth.role }, await req.json().catch(() => null), notify);
+    const r = await deleteOwnApi(port, { userId: auth.user.id, role: auth.role }, await req.json().catch(() => null), await accountDeletedNotifier());
     const res = NextResponse.json(r.body, { status: r.status, headers: NO_STORE });
     if (r.status === 200) {
       // La sesión ya no existe en la base; se vencen también las cookies para no dejar un navegador con una cookie muerta.

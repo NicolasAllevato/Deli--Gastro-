@@ -1,18 +1,20 @@
 /**
- * Eliminación de usuarios de la app (el personal del panel) sobre D1 + Better Auth. docs/eliminacion-datos.md.
+ * Baja de cuentas de la app (D1 + Better Auth): el personal del panel y los clientes. docs/eliminacion-datos.md.
  *
- * Borrar un usuario elimina SOLO su cuenta de acceso: user, session, account, verification (por su email o su id) y sus intentos de
+ * Dar de baja una cuenta elimina SOLO su cuenta de acceso: user, session, account, verification (por su email o su id) y sus intentos de
  * contraseña. No se toca ninguna otra tabla: pedidos, clientes, puntos, reseñas, pagos, WhatsApp, reclamos y bitácoras quedan como están,
- * y legal_acceptances se conserva (queda con user_id NULL por ON DELETE SET NULL, migración 0019; la ficha de cliente que pudiera
- * tener se desvincula por el trigger de la 0020). El DELETE del usuario lleva `role = 'admin'`: clientes y repartidores no se borran.
+ * y legal_acceptances se conserva (user_id NULL por ON DELETE SET NULL, migración 0019; la ficha de cliente se desvincula por el trigger de
+ * la 0020). Única escritura extra: la ficha de un CLIENTE queda dada de baja de comunicaciones (clients.unsubscribed_at, migración 0021):
+ * deja de recibir promociones y encuestas, pero no se borra. El DELETE del usuario solo toca role admin o cliente (nunca repartidores).
  *
  * Dos caminos:
- * - Herramienta del dueño principal (SUPER_OWNER_EMAIL): vista previa → código de un solo uso (HMAC, 5 min, atado al dueño y al usuario
- *   elegido) → ejecución con ese código, la contraseña del dueño y el email exacto del usuario. Se verifica contra la base, no contra la sesión.
- * - Autoservicio: el personal borra su propia cuenta con su contraseña (la palabra ELIMINAR la pide la ruta). Tope de intentos.
+ * - Herramienta del dueño principal (SUPER_OWNER_EMAIL), solo para el personal: vista previa → código de un solo uso (HMAC, 5 min, atado al
+ *   dueño y al usuario elegido) → ejecución con ese código, la contraseña del dueño y el email exacto del usuario. Se verifica contra la base.
+ * - Autoservicio (cliente o personal): contraseña actual (si la cuenta no tiene, el email exacto de la cuenta); la palabra ELIMINAR la pide la
+ *   ruta. Tope de intentos. Un cliente con un pedido en curso no puede.
  * Nunca se borra al dueño principal ni al último dueño activo: el lote lleva guardas en el mismo SQL (`json('x')` falla y revierte todo).
  * Registro (data_deletion_requests): subject_hash = HMAC-SHA256 del email con DATA_DELETION_HASH_SECRET; nunca el email. Sin ese secreto
- * (o con menos de 32 caracteres) la eliminación queda deshabilitada. El aviso por email al usuario eliminado no condiciona el borrado.
+ * (o con menos de 32 caracteres) la eliminación queda deshabilitada. El aviso por email no condiciona el borrado.
  */
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { actorFromRow, isSuperOwnerEmail } from "../auth/owner-rules.ts";
@@ -32,8 +34,8 @@ export interface DeletionOptions {
   superOwnerEmail: string | null;
   /** DATA_DELETION_HASH_SECRET: firma el código de confirmación y hace el hash del registro. */
   hashSecret: string | null;
-  /** Aviso al usuario eliminado ("tu cuenta fue eliminada"). Si falla solo se registra. */
-  notify?: (email: string) => Promise<void>;
+  /** Aviso al usuario dado de baja (el texto depende del rol: cliente o personal). Si falla solo se registra. */
+  notify?: (target: { email: string; role: string }) => Promise<void>;
   now?: () => Date;
 }
 
@@ -51,13 +53,17 @@ export const MESSAGES = {
   tokenUsed: "Ese código de confirmación ya se usó: volvé a hacer la vista previa.",
   emailMismatch: "El email que escribiste no coincide con el del usuario a eliminar.",
   wrongPassword: "La contraseña no es correcta.",
+  needPassword: "Ingresá tu contraseña actual.",
   noPassword: "Esta cuenta no tiene contraseña.",
   locked: "Demasiados intentos con contraseña incorrecta. Probá de nuevo en un rato.",
   retry: "No se pudo eliminar. No se cambió ningún dato; probá de nuevo.",
 } as const;
 
 export const SELF_MESSAGES = {
-  notStaff: `Solo el personal del local elimina su cuenta desde la aplicación. Los clientes piden la baja por email a ${BRAND.contactEmail}.`,
+  courier: `Los repartidores no pueden dar de baja su cuenta desde la aplicación. Escribinos a ${BRAND.contactEmail}.`,
+  inProgress: "Tenés un pedido en curso. Cuando se entregue o se cancele vas a poder dar de baja tu cuenta.",
+  emailMismatch: "El email no coincide con el de tu cuenta.",
+  needEmail: "Escribí el email de tu cuenta para confirmar.",
   superOwner: "Sos el dueño principal: tu cuenta no se puede eliminar desde la aplicación. Para darla de baja hay que cambiar antes el dueño principal en la configuración del sistema.",
   lastOwner: "Sos el único dueño activo: no podés eliminar tu cuenta. Antes creá o activá a otro dueño.",
 } as const;
@@ -136,10 +142,21 @@ interface Step {
   label: string;
   count: string;
   del: string;
-  binds: (u: UserRow) => SqlValue[];
+  binds: (u: UserRow, nowIso: string) => SqlValue[];
+  /** Si el conteo lleva otros parámetros que el borrado. */
+  countBinds?: (u: UserRow) => SqlValue[];
 }
 
 const ids = (u: UserRow): SqlValue[] => [u.id];
+/**
+ * Fichas de cliente de una cuenta: las atadas por user_id y las que tienen el teléfono de una conversación de WhatsApp vinculada a esa
+ * cuenta (el teléfono VERIFICADO por Meta; el que el cliente escribió a mano en su perfil no cuenta). Recibe el id de la cuenta dos veces.
+ */
+const OWN_FICHAS = `is_anonymous = 0 AND (user_id = ? OR phone_digits IN (SELECT substr(w.client_phone, -10) FROM wa_conversations w JOIN clients c ON c.id = w.client_id WHERE c.user_id = ?))`;
+const IS_CLIENT = `(SELECT role FROM "user" WHERE id = ?) = 'cliente'`;
+const UNSUBSCRIBE_WHERE = `unsubscribed_at IS NULL AND ${IS_CLIENT} AND ${OWN_FICHAS}`;
+/** Pedidos que todavía no se entregaron ni se cancelaron de las fichas de la cuenta. */
+const IN_PROGRESS = `SELECT COUNT(*) AS n FROM orders WHERE status IN ('Recibidos', 'En Preparación', 'En Camino') AND client_id IN (SELECT id FROM clients WHERE ${OWN_FICHAS})`;
 /** Todo lo que se elimina, y nada más. */
 export const DELETION_STEPS: readonly Step[] = [
   { key: "session", label: "Sesiones abiertas", count: "SELECT COUNT(*) AS n FROM session WHERE userId = ?", del: "DELETE FROM session WHERE userId = ?", binds: ids },
@@ -152,12 +169,17 @@ export const DELETION_STEPS: readonly Step[] = [
     key: "intentos", label: "Intentos de contraseña", binds: (u) => [lockKey("delete-account", u.id)],
     count: "SELECT COUNT(*) AS n FROM courier_pin_attempts WHERE key = ?", del: "DELETE FROM courier_pin_attempts WHERE key = ?",
   },
-  { key: "user", label: "Cuenta de usuario", count: `SELECT COUNT(*) AS n FROM "user" WHERE id = ?`, del: `DELETE FROM "user" WHERE id = ? AND role = 'admin'`, binds: ids },
+  {
+    // Antes de borrar el usuario: el trigger de la 0020 le saca el user_id a la ficha y después no se la reconocería.
+    key: "comunicaciones", label: "Baja de promociones y encuestas (la ficha se conserva)", binds: (u, now) => [now, u.id, u.id, u.id], countBinds: (u) => [u.id, u.id, u.id],
+    count: `SELECT COUNT(*) AS n FROM clients WHERE ${UNSUBSCRIBE_WHERE}`, del: `UPDATE clients SET unsubscribed_at = ?, wa_marketing_opt_in = 0 WHERE ${UNSUBSCRIBE_WHERE}`,
+  },
+  { key: "user", label: "Cuenta de usuario", count: `SELECT COUNT(*) AS n FROM "user" WHERE id = ?`, del: `DELETE FROM "user" WHERE id = ? AND role IN ('admin', 'cliente')`, binds: ids },
 ];
 
 async function countsFor(db: SqlDatabase, u: UserRow): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  for (const s of DELETION_STEPS) out[s.key] = Number((await db.prepare(s.count).bind(...s.binds(u)).first<{ n: number }>())?.n ?? 0);
+  for (const s of DELETION_STEPS) out[s.key] = Number((await db.prepare(s.count).bind(...(s.countBinds ?? s.binds)(u, "")).first<{ n: number }>())?.n ?? 0);
   return out;
 }
 
@@ -223,7 +245,7 @@ export async function previewUserDeletion(db: SqlDatabase, actor: Actor, userId:
     ok: true,
     value: {
       user,
-      deletes: DELETION_STEPS.map((s) => ({ key: s.key, label: s.label, count: counts[s.key] })),
+      deletes: DELETION_STEPS.filter((s) => s.key !== "comunicaciones").map((s) => ({ key: s.key, label: s.label, count: counts[s.key] })),
       keeps: KEPT,
       token: user.blockedReason ? null : issueToken(g.secret, g.performer, u.id, nowOf(opts).getTime()),
     },
@@ -234,13 +256,19 @@ const MAX_FAILURES = 5;
 const WINDOW_MS = 15 * 60_000;
 const LOCK_MS = 30 * 60_000;
 
-/** 5 contraseñas incorrectas en 15 minutos bloquean 30 (clave propia en courier_pin_attempts: no toca el tope global del PIN). */
-async function checkPassword(db: SqlDatabase, auth: Auth, key: string, userId: string, password: string, now: Date): Promise<DeletionFailure | null> {
+/** Hash de la contraseña de la cuenta (la de credenciales), o null si no tiene (entró con otro proveedor). */
+async function credentialHash(db: SqlDatabase, userId: string): Promise<string | null> {
+  const row = await db.prepare(`SELECT password FROM "account" WHERE userId = ? AND providerId = 'credential'`).bind(userId).first<{ password: string | null }>();
+  return row?.password ?? null;
+}
+
+const passwordOk = async (auth: Auth, hash: string, password: string): Promise<boolean> => (await auth.$context).password.verify({ hash, password });
+
+/** 5 confirmaciones incorrectas en 15 minutos bloquean 30 (clave propia en courier_pin_attempts: no toca el tope global del PIN). */
+async function attempt(db: SqlDatabase, key: string, now: Date, verify: () => Promise<boolean>, wrong: string): Promise<DeletionFailure | null> {
   const lock = await db.prepare(`SELECT locked_until FROM courier_pin_attempts WHERE key = ?`).bind(key).first<{ locked_until: string | null }>();
   if (lock?.locked_until && lock.locked_until > now.toISOString()) return fail(429, MESSAGES.locked);
-  const account = await db.prepare(`SELECT password FROM "account" WHERE userId = ? AND providerId = 'credential'`).bind(userId).first<{ password: string | null }>();
-  if (!account?.password) return fail(400, MESSAGES.noPassword);
-  if (await (await auth.$context).password.verify({ hash: account.password, password })) return null;
+  if (await verify()) return null;
   const stamp = now.toISOString();
   const windowStart = new Date(now.getTime() - WINDOW_MS).toISOString();
   await db
@@ -253,7 +281,7 @@ async function checkPassword(db: SqlDatabase, auth: Auth, key: string, userId: s
     )
     .bind(key, stamp, windowStart, windowStart, stamp, windowStart, MAX_FAILURES, new Date(now.getTime() + LOCK_MS).toISOString())
     .run();
-  return fail(400, MESSAGES.wrongPassword);
+  return fail(400, wrong);
 }
 
 export interface DeletionResult {
@@ -283,7 +311,7 @@ async function run(db: SqlDatabase, u: UserRow, channel: DeletionChannel, perfor
   try {
     await db.batch([
       ...guards,
-      ...DELETION_STEPS.map((s) => db.prepare(s.del).bind(...s.binds(u))),
+      ...DELETION_STEPS.map((s) => db.prepare(s.del).bind(...s.binds(u, nowOf(opts).toISOString()))),
       db.prepare(`UPDATE data_deletion_requests SET status = 'completed', completed_at = ?, counts = ? WHERE id = ?`).bind(nowOf(opts).toISOString(), JSON.stringify(counts), requestId),
     ]);
   } catch (e: unknown) {
@@ -299,7 +327,7 @@ async function run(db: SqlDatabase, u: UserRow, channel: DeletionChannel, perfor
   let notified: DeletionResult["notified"] = "skipped";
   if (opts.notify) {
     try {
-      await opts.notify(u.email);
+      await opts.notify({ email: u.email, role: u.role });
       notified = "sent";
     } catch (e: unknown) {
       console.error("[eliminar-usuario] no se pudo avisar al usuario", e instanceof Error ? e.message : "error");
@@ -324,7 +352,9 @@ export async function deleteUserAsOwner(
   if (!token) return fail(400, MESSAGES.badToken);
   if (normalizeEmail(input.confirmEmail) !== normalizeEmail(u.email)) return fail(400, MESSAGES.emailMismatch);
   const key = lockKey("delete-user", g.performer);
-  const wrong = await checkPassword(db, auth, key, g.performer, input.password, now);
+  const hash = await credentialHash(db, g.performer);
+  if (!hash) return fail(400, MESSAGES.noPassword);
+  const wrong = await attempt(db, key, now, () => passwordOk(auth, hash, input.password), MESSAGES.wrongPassword);
   if (wrong) return wrong;
   // Un solo uso: se consume recién con todo lo demás en orden (la contraseña mal puesta no quema el código).
   if (!(await claimNonce(db, `deletion:${token.nonce}`, now.getTime(), TOKEN_TTL_MS / 1000))) return fail(409, MESSAGES.tokenUsed);
@@ -364,26 +394,43 @@ export async function listDeletionRequests(db: SqlDatabase, actor: Actor, opts: 
   });
 }
 
-export type Eligibility = { canDelete: true } | { canDelete: false; status: 403 | 404 | 409 | 503; reason: string };
+/** `method`: con qué confirma la persona: su contraseña, o el email exacto de la cuenta si no tiene contraseña. */
+export type Eligibility = { canDelete: true; method: "password" | "email" } | { canDelete: false; status: 403 | 404 | 409 | 503; reason: string };
 
-/** ¿Puede este usuario eliminar su propia cuenta? Solo personal (role admin); ni el dueño principal ni el último dueño activo. */
+/**
+ * ¿Puede esta persona dar de baja su propia cuenta? Personal (role admin) y clientes; no repartidores, ni el dueño principal, ni el último
+ * dueño activo, ni un cliente con un pedido en curso.
+ */
 export async function ownAccountEligibility(db: SqlDatabase, userId: string, opts: DeletionOptions): Promise<Eligibility> {
   if (!secretOf(opts)) return { canDelete: false, status: 503, reason: MESSAGES.disabled };
   const u = await findUser(db, userId);
   if (!u) return { canDelete: false, status: 404, reason: MESSAGES.notFound };
-  if (u.role !== "admin") return { canDelete: false, status: 403, reason: SELF_MESSAGES.notStaff };
+  if (u.role !== "admin" && u.role !== "cliente") return { canDelete: false, status: 403, reason: SELF_MESSAGES.courier };
   const block = await protectionFor(db, u, opts);
   if (block) return { canDelete: false, status: block.status, reason: block.status === 403 ? SELF_MESSAGES.superOwner : SELF_MESSAGES.lastOwner };
-  return { canDelete: true };
+  if (u.role === "cliente" && Number((await db.prepare(IN_PROGRESS).bind(u.id, u.id).first<{ n: number }>())?.n ?? 0) > 0) {
+    return { canDelete: false, status: 409, reason: SELF_MESSAGES.inProgress };
+  }
+  return { canDelete: true, method: (await credentialHash(db, u.id)) ? "password" : "email" };
 }
 
-/** Eliminación de la propia cuenta: pide la contraseña actual y borra de inmediato. El usuario sale de la sesión, nunca del pedido. */
-export async function deleteOwnAccount(db: SqlDatabase, auth: Auth, input: { userId: string; password: string }, opts: DeletionOptions): Promise<DeletionOutcome<DeletionResult>> {
+/** Baja de la propia cuenta: confirma con la contraseña actual (o el email exacto, si no tiene) y borra de inmediato. El usuario sale de la sesión. */
+export async function deleteOwnAccount(
+  db: SqlDatabase, auth: Auth, input: { userId: string; password?: string; confirmEmail?: string }, opts: DeletionOptions,
+): Promise<DeletionOutcome<DeletionResult>> {
   const eligibility = await ownAccountEligibility(db, input.userId, opts);
   if (!eligibility.canDelete) return fail(eligibility.status, eligibility.reason);
-  const secret = secretOf(opts)!;
-  const u = (await findStaff(db, input.userId))!;
-  const wrong = await checkPassword(db, auth, lockKey("delete-account", u.id), u.id, input.password, nowOf(opts));
-  if (wrong) return wrong;
-  return run(db, u, "autoservicio", u.id, secret, opts);
+  const u = (await findUser(db, input.userId))!;
+  const key = lockKey("delete-account", u.id);
+  const now = nowOf(opts);
+  const hash = eligibility.method === "password" ? await credentialHash(db, u.id) : null;
+  let wrong: DeletionFailure | null;
+  if (hash) {
+    wrong = input.password ? await attempt(db, key, now, () => passwordOk(auth, hash, input.password!), MESSAGES.wrongPassword) : fail(400, MESSAGES.needPassword);
+  } else {
+    wrong = input.confirmEmail
+      ? await attempt(db, key, now, async () => normalizeEmail(input.confirmEmail) === normalizeEmail(u.email), SELF_MESSAGES.emailMismatch)
+      : fail(400, SELF_MESSAGES.needEmail);
+  }
+  return wrong ?? run(db, u, "autoservicio", u.id, secretOf(opts)!, opts);
 }

@@ -9,7 +9,7 @@ import type { Actor } from "../src/lib/data/actor.ts";
 import {
   deleteOwnAccount, deleteUserAsOwner, listDeletableUsers, listDeletionRequests, ownAccountEligibility, previewUserDeletion, type DeletionOptions,
 } from "../src/lib/data/data-deletion.ts";
-import { PASSWORD, SECRET, SUPER_EMAIL, seedHistory, seedStaff, setup, type World } from "./helpers/deletion-world.ts";
+import { PASSWORD, SECRET, SUPER_EMAIL, seedClientLogin, seedHistory, seedStaff, setup, type World } from "./helpers/deletion-world.ts";
 
 const { authCookiesToExpire, deleteOwnApi, eligibilityApi, executeApi, executeBodySchema, listApi, previewApi } = await import("../src/lib/deletion/api.ts");
 const { accountDeletedNotifier, buildDeletedEmail } = await import("../src/lib/deletion/notify.ts");
@@ -23,13 +23,14 @@ async function build(superOwnerEmail: string | null = SUPER_EMAIL, hashSecret: s
   const world: World = setup(superOwnerEmail, hashSecret);
   await seedStaff(world);
   seedHistory(world);
+  await seedClientLogin(world);
   const port = (opts: DeletionOptions = world.opts): DeletionPort<Actor> => ({
     users: (actor, email) => listDeletableUsers(world.db, actor, opts, email),
     recent: (actor) => listDeletionRequests(world.db, actor, opts),
     preview: (actor, userId) => previewUserDeletion(world.db, actor, userId, opts),
     execute: (actor, input, notify) => deleteUserAsOwner(world.db, world.auth, actor, input, { ...opts, notify }),
     eligibility: (userId) => ownAccountEligibility(world.db, userId, opts),
-    deleteOwn: (userId, password, notify) => deleteOwnAccount(world.db, world.auth, { userId, password }, { ...opts, notify }),
+    deleteOwn: (userId, input, notify) => deleteOwnAccount(world.db, world.auth, { userId, ...input }, { ...opts, notify }),
   });
   return { world, port: port() };
 }
@@ -118,7 +119,7 @@ describe("POST /api/admin/eliminar-datos", () => {
   it("con el código, la contraseña del dueño y el email exacto elimina y avisa por email", async () => {
     const { port, world } = await build();
     const sent: string[] = [];
-    const r = await executeApi(port, SUPER, asAdmin("dueno"), input(await previewToken(port, "gerente1")), async (to) => void sent.push(to));
+    const r = await executeApi(port, SUPER, asAdmin("dueno"), input(await previewToken(port, "gerente1")), async ({ email }) => void sent.push(email));
     assert.equal(r.status, 200);
     const result = body(r).result as { status: string; total: number; notified: string };
     assert.deepEqual([result.status, result.total, result.notified], ["completed", 5, "sent"]);
@@ -169,17 +170,30 @@ describe("POST /api/admin/eliminar-datos", () => {
 });
 
 describe("GET y POST /api/account/delete", () => {
-  it("elegibilidad: el personal puede; el dueño principal no, con el motivo", async () => {
-    const { port } = await build();
-    assert.deepEqual((await eligibilityApi(port, { userId: "gerente1", role: "admin" })).body, { canDelete: true, reason: null });
+  it("elegibilidad: el personal y los clientes pueden (y con qué confirman); el dueño principal no, con el motivo", async () => {
+    const { port, world } = await build();
+    assert.deepEqual((await eligibilityApi(port, { userId: "gerente1", role: "admin" })).body, { canDelete: true, reason: null, method: "password" });
+    assert.deepEqual((await eligibilityApi(port, { userId: "u-cli", role: "cliente" })).body, { canDelete: true, reason: null, method: "password" });
+    world.db.raw.prepare(`DELETE FROM "account" WHERE userId = 'u-cli'`).run();
+    assert.deepEqual((await eligibilityApi(port, { userId: "u-cli", role: "cliente" })).body, { canDelete: true, reason: null, method: "email" });
     const principal = body(await eligibilityApi(port, { userId: "dueno", role: "admin" }));
     assert.equal(principal.canDelete, false);
     assert.match(String(principal.reason), /dueño principal/);
   });
 
-  it("clientes y repartidores: 403 en ambos métodos, aunque la contraseña sea correcta, y no se toca nada", async () => {
+  it("un cliente con un pedido en curso: la elegibilidad lo dice y la baja se rechaza (409)", async () => {
     const { port, world } = await build();
-    for (const [userId, role] of [["u-cli", "cliente"], ["u-rep", "repartidor"], ["gerente1", "cliente"], ["gerente1", "desconocido"]] as const) {
+    world.db.raw.prepare(`UPDATE orders SET status = 'En Camino' WHERE id = 'o-1'`).run();
+    const e = body(await eligibilityApi(port, { userId: "u-cli", role: "cliente" }));
+    assert.equal(e.canDelete, false);
+    assert.match(String(e.reason), /pedido en curso/);
+    assert.equal((await deleteOwnApi(port, { userId: "u-cli", role: "cliente" }, { password: PASSWORD, confirm: "ELIMINAR" })).status, 409);
+    assert.equal(userCount(world, "u-cli"), 1);
+  });
+
+  it("repartidores y roles desconocidos: 403 en ambos métodos, aunque la contraseña sea correcta, y no se toca nada", async () => {
+    const { port, world } = await build();
+    for (const [userId, role] of [["u-rep", "repartidor"], ["gerente1", "desconocido"], ["u-cli", "anon"]] as const) {
       const e = await eligibilityApi(port, { userId, role });
       assert.equal(e.status, 403, `${userId}/${role} GET`);
       assert.match(String(body(e).error), /contacto@la-gambeta\.com/);
@@ -188,12 +202,36 @@ describe("GET y POST /api/account/delete", () => {
     for (const id of ["u-cli", "u-rep", "gerente1"]) assert.equal(userCount(world, id), 1);
   });
 
-  it("el cuerpo exige contraseña y la palabra ELIMINAR; el usuario sale de la sesión, no del cuerpo", async () => {
+  it("el cuerpo exige contraseña (o el email de la cuenta) y la palabra ELIMINAR; el usuario sale de la sesión, no del cuerpo", async () => {
     const { port, world } = await build();
-    const bad: unknown[] = [{}, { password: "", confirm: "ELIMINAR" }, { password: PASSWORD }, { password: PASSWORD, confirm: "eliminar" }, { password: PASSWORD, confirm: "ELIMINAR", userId: "cajero1" }, { password: "x".repeat(129), confirm: "ELIMINAR" }, null];
-    for (const raw of bad) assert.equal((await deleteOwnApi(port, { userId: "gerente1", role: "admin" }, raw)).status, 400, JSON.stringify(raw));
-    assert.equal(userCount(world, "gerente1"), 1);
+    const bad: unknown[] = [
+      {}, { password: "", confirm: "ELIMINAR" }, { password: PASSWORD }, { confirmEmail: "cliente@example.test" }, { password: PASSWORD, confirm: "eliminar" },
+      { password: PASSWORD, confirm: "ELIMINAR", userId: "cajero1" }, { password: "x".repeat(129), confirm: "ELIMINAR" }, { confirmEmail: "x".repeat(300), confirm: "ELIMINAR" }, null,
+    ];
+    for (const raw of bad) assert.equal((await deleteOwnApi(port, { userId: "u-cli", role: "cliente" }, raw)).status, 400, JSON.stringify(raw));
+    assert.equal(userCount(world, "u-cli"), 1);
     assert.equal(userCount(world, "cajero1"), 1);
+  });
+
+  it("un cliente se da de baja con su contraseña: 200, avisa por email como cliente y su ficha queda dada de baja", async () => {
+    const { port, world } = await build();
+    const sent: Array<{ email: string; role: string }> = [];
+    const r = await deleteOwnApi(port, { userId: "u-cli", role: "cliente" }, { password: PASSWORD, confirm: "ELIMINAR" }, async (t) => void sent.push(t));
+    assert.deepEqual(r, { status: 200, body: { ok: true } });
+    assert.deepEqual(sent, [{ email: "cliente@example.test", role: "cliente" }]);
+    assert.equal(userCount(world, "u-cli"), 0);
+    assert.ok((world.db.raw.prepare(`SELECT unsubscribed_at FROM clients WHERE id = 'c-cli'`).get() as { unsubscribed_at: string | null }).unsubscribed_at);
+  });
+
+  it("sin contraseña, el cliente confirma con el email exacto de su cuenta; uno distinto: 400", async () => {
+    const { port, world } = await build();
+    world.db.raw.prepare(`DELETE FROM "account" WHERE userId = 'u-cli'`).run();
+    const wrong = await deleteOwnApi(port, { userId: "u-cli", role: "cliente" }, { confirmEmail: "otro@example.test", confirm: "ELIMINAR" });
+    assert.equal(wrong.status, 400);
+    assert.equal(userCount(world, "u-cli"), 1);
+    const ok = await deleteOwnApi(port, { userId: "u-cli", role: "cliente" }, { confirmEmail: "cliente@example.test", confirm: "ELIMINAR" });
+    assert.equal(ok.status, 200);
+    assert.equal(userCount(world, "u-cli"), 0);
   });
 
   it("contraseña incorrecta: 400 y no borra; correcta: 200 { ok: true }, borra solo a quien está en la sesión y avisa", async () => {
@@ -203,7 +241,7 @@ describe("GET y POST /api/account/delete", () => {
     assert.equal(body(wrong).error, "La contraseña no es correcta.");
     assert.equal(userCount(world, "gerente1"), 1);
     const sent: string[] = [];
-    const ok = await deleteOwnApi(port, { userId: "gerente1", role: "admin" }, { password: PASSWORD, confirm: "ELIMINAR" }, async (to) => void sent.push(to));
+    const ok = await deleteOwnApi(port, { userId: "gerente1", role: "admin" }, { password: PASSWORD, confirm: "ELIMINAR" }, async ({ email }) => void sent.push(email));
     assert.deepEqual(ok, { status: 200, body: { ok: true } });
     assert.deepEqual(sent, ["gerente@local.test"]);
     assert.equal(userCount(world, "gerente1"), 0);
@@ -230,11 +268,18 @@ describe("cookies de sesión y aviso por email", () => {
     assert.deepEqual(authCookiesToExpire([]), []);
   });
 
-  it("el email de aviso dice que la cuenta fue eliminada y a quién escribir; sin proveedor de correo no hay notificador", async () => {
-    const mail = buildDeletedEmail();
+  it("el email de aviso al personal dice que la cuenta fue eliminada; el del cliente, que fue dada de baja y que no recibirá más promociones; sin proveedor de correo no hay notificador", async () => {
+    const mail = buildDeletedEmail("admin");
     assert.match(mail.subject, /fue eliminada/);
     for (const part of [mail.text, mail.html]) assert.match(part, /contacto@la-gambeta\.com/);
     assert.ok(!/<script/i.test(mail.html));
+    const cliente = buildDeletedEmail("cliente");
+    assert.match(cliente.subject, /fue dada de baja/);
+    for (const part of [cliente.text, cliente.html]) {
+      assert.match(part, /no vas a recibir más promociones/);
+      assert.match(part, /historial de tus pedidos por motivos contables y legales/);
+      assert.match(part, /contacto@la-gambeta\.com/);
+    }
     const saved = { RESEND_API_KEY: process.env.RESEND_API_KEY };
     delete process.env.RESEND_API_KEY;
     try {

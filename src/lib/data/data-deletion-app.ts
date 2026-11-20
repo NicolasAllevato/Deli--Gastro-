@@ -44,9 +44,9 @@ export const dataDeletionApp = {
     return deleteUserAsOwner(db, await appAuth(db), actor, input, options(notify));
   },
   eligibility: async (userId: string): Promise<Eligibility> => ownAccountEligibility(await appDb(), userId, options()),
-  deleteOwn: async (userId: string, password: string, notify?: Notify): Promise<DeletionOutcome<DeletionResult>> => {
+  deleteOwn: async (userId: string, input: { password?: string; confirmEmail?: string }, notify?: Notify): Promise<DeletionOutcome<DeletionResult>> => {
     const db = await appDb();
-    return deleteOwnAccount(db, await appAuth(db), { userId, password }, options(notify));
+    return deleteOwnAccount(db, await appAuth(db), { userId, ...input }, options(notify));
   },
 };
 
