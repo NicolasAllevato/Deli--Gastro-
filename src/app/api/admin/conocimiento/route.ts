@@ -1,20 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimit, getClientIp } from "@/utils/rate-limit";
-import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
-import { actorFromSession, kbApp, kbInputSchema, KB_MAX_ROWS } from "@/lib/data";
+import { kbApp, kbInputSchema, KB_MAX_ROWS } from "@/lib/data";
+import { guard } from "./guard";
 
 const patchSchema = kbInputSchema.partial().extend({ id: z.string().uuid() }).strict();
 const deleteSchema = z.object({ id: z.string().uuid() }).strict();
-
-async function guard(req: NextRequest, limit: number) {
-  if (!(await rateLimit(getClientIp(req), limit, 60_000))) {
-    return { denied: NextResponse.json({ error: "Demasiadas solicitudes." }, { status: 429 }), actor: null };
-  }
-  const auth = await requireRole("admin", req);
-  if (isAuthorizationError(auth)) return { denied: auth.error, actor: null };
-  return { denied: null, actor: actorFromSession({ userId: auth.user.id, role: auth.role }) };
-}
 
 function badRequest(error: z.ZodError) {
   return NextResponse.json({ error: error.issues[0]?.message ?? "Datos inválidos." }, { status: 400 });

@@ -1,0 +1,24 @@
+# Modelo de preguntas frecuentes para el agente de WhatsApp.
+# Cada pregunta es un bloque; los bloques se separan con una línea en blanco.
+# Las líneas que empiezan con "# " son comentarios y no se cargan.
+#
+#   P: la pregunta, como la hace el cliente
+#   R: la respuesta que tiene que dar el agente (hasta 1000 caracteres; si es más larga se parte sola)
+#   Claves: otras formas de decirlo, separadas por coma (opcional, hasta 300 caracteres)
+#
+# También podés usar "Pregunta:" y "Respuesta:", o escribir "## pregunta" y la respuesta en el párrafo de abajo.
+# Si preferís una planilla, usá un .csv con las columnas: pregunta, respuesta, palabras_clave.
+#
+# IMPORTANTE: los tres bloques de abajo son solo ejemplos de formato, sin datos reales.
+# Borralos y escribí tus preguntas con tus respuestas antes de cargar el archivo.
+
+P: [Ejemplo] ¿Cuál es la pregunta que más te hacen?
+R: [Ejemplo] Acá va la respuesta tal como querés que la dé el agente.
+Claves: [ejemplo], otra forma de preguntarlo, sinónimo
+
+Pregunta: [Ejemplo] ¿Otra pregunta?
+Respuesta: [Ejemplo] Otra respuesta. Puede ocupar más de una línea
+si la seguís en la línea de abajo.
+
+## [Ejemplo] ¿Y esta, escrita como título?
+[Ejemplo] La respuesta va en el párrafo de abajo.

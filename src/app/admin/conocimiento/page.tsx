@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
 import { Aprendizaje } from "./Aprendizaje";
+import { ImportarFaq } from "./ImportarFaq";
 import { Reclamos } from "./Reclamos";
 
 type Categoria = "faq" | "politica" | "promo" | "vocabulario" | "otro";
@@ -149,6 +150,8 @@ export default function ConocimientoPage() {
           {draft.id && <Button size="sm" variant="secondary" onClick={() => setDraft(EMPTY)}>Cancelar</Button>}
         </div>
       </section>
+
+      <ImportarFaq onSaved={() => void load()} />
 
       <Reclamos />
       <Aprendizaje onApproved={() => void load()} />

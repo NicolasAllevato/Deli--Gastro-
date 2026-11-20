@@ -210,6 +210,7 @@ export type { DeletionPreview, DeletionRequestView, DeletionResult, DeletionOutc
 
 export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, KB_MAX_ROWS, type KbEntry, type KbInput } from "./kb-negocio.ts";
+export { KbCapacityError, type FaqImportResult, type FaqImportRow } from "./kb-importar.ts";
 export { kbAprendizajeApp } from "./kb-aprendizaje-app.ts";
 export {
   reclamosApp, reclamoEstadoSchema, reclamoAccionSchema, reclamoFiltrosSchema, RECLAMO_CATEGORIAS, RECLAMO_ESTADOS,
