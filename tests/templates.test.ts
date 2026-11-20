@@ -81,7 +81,7 @@ describe("metaPayload", () => {
 
 describe("detectKeyword", () => {
   it("reconoce la baja de promociones", () => {
-    for (const text of ["BAJA", "baja", " Baja. ", "STOP", "no quiero más promos", "dar de baja"]) {
+    for (const text of ["BAJA", "baja", " Baja. ", "STOP", "Stop!", "no quiero más promos", "dar de baja", "No quiero recibir más", "no quiero recibir más promociones", "NO QUIERO RECIBIR MÁS."]) {
       assert.equal(detectKeyword(text), "opt_out", text);
     }
   });
@@ -93,7 +93,7 @@ describe("detectKeyword", () => {
   });
 
   it("no confunde una conversación normal con una palabra clave", () => {
-    for (const text of ["hola", "quiero una pizza", "dame de baja el volumen", "la baja temperatura", "tenés alta cocina?"]) {
+    for (const text of ["hola", "quiero una pizza", "dame de baja el volumen", "la baja temperatura", "tenés alta cocina?", "no quiero recibir más tarde mi pedido", "no quiero más cebolla", "no quiero más", "stop por favor"]) {
       assert.equal(detectKeyword(text), null, text);
     }
   });

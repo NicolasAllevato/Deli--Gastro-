@@ -71,6 +71,17 @@ describe("fase 4: turno del bot", () => {
     assert.equal(sent.length, 0);
   });
 
+  it("STOP y \"no quiero recibir más\" también son una baja: sin IA, se confirma y el opt-in queda en false", async () => {
+    for (const text of ["STOP", "No quiero recibir más"]) {
+      const { repo, sent, state } = fakeRepo();
+      const { run, calls } = fakeRun("otro", 1, "x");
+      assert.equal(await processTurn(turn(text), deps(repo, run)), "keyword", text);
+      assert.equal(state.optIn, false, text);
+      assert.equal(sent[0].body, REPLIES.optOut, text);
+      assert.equal(calls.length, 0, text);
+    }
+  });
+
   it("ALTA y BAJA se resuelven sin IA", async () => {
     const { repo, sent, state } = fakeRepo();
     const { run, calls } = fakeRun("otro", 1, "x");

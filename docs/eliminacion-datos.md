@@ -20,7 +20,7 @@ Hecho
 - [x] `src/lib/data/data-deletion.ts`: lista, vista previa con código de un solo uso, ejecución del dueño, baja propia (personal y clientes), registro con HMAC, aviso por email.
 - [x] API `/api/admin/eliminar-datos` (GET lista o email exacto, POST ejecuta), `/api/admin/eliminar-datos/vista-previa` (POST) y `/api/account/delete` (personal y clientes; repartidores 403).
 - [x] Pantallas: `/admin/eliminar-datos` (solo dueño principal), "Mi cuenta" del panel, "Configuración de la cuenta" del perfil del cliente (modal con aviso destacado y casilla "Entiendo"), `/cuenta-eliminada`, `/eliminar-datos`.
-- [x] Baja de comunicaciones respetada por campañas de WhatsApp y encuestas (ver la tabla de envíos), con filtros que fallan cerrado.
+- [x] Baja de comunicaciones respetada por campañas de WhatsApp y encuestas (ver la tabla de envíos), con filtros por ficha que fallan cerrado. BAJA / STOP / "no quiero recibir más" por WhatsApp marcan la baja de ese número verificado (Worker).
 - [x] Aviso por email al terminar: el cliente recibe "tu cuenta fue dada de baja y no vas a recibir más promociones"; el personal, "tu cuenta fue eliminada".
 - [x] `DATA_DELETION_HASH_SECRET` en `.env.example`; sin el secreto la eliminación queda deshabilitada (503 con mensaje claro).
 - [x] Arreglo aparte: `/api/admin/legal` leía solo Supabase; ahora lee D1 con `DATA_BACKEND=d1`.
@@ -49,11 +49,11 @@ y la baja sigue siendo válida (`notified: sent | failed | skipped`).
 
 | Envío | Qué es | Cómo elige destinatarios | Con la baja |
 |---|---|---|---|
-| Campañas de promociones por WhatsApp (`lib/whatsapp/campaigns.ts`, rutas `/api/whatsapp/campaigns` y `/preview`) | Promoción (plantilla `promocion`) | Clientes con `wa_marketing_opt_in = 1` y teléfono de su conversación de WhatsApp | **Respeta la baja** al armar la lista (`resolveRecipients`) y otra vez justo antes de enviar (`runCampaign`: por id de ficha y por teléfono de conversaciones enlazadas a fichas de baja). **Falla cerrado**: si la consulta da error se lanza y la campaña queda `failed` sin enviar nada; sin `IN` (D1 limita los parámetros): pide los dados de baja y cruza en memoria. |
-| Encuestas de satisfacción (`sendDueSurveys`, cron `workers/encuestas-cron` → `/api/cron/surveys`) | Plantilla `encuesta_satisfaccion` por pedido entregado | Pedidos `Finalizados` sin reseña ni encuesta, con la conversación del cliente | **Respeta la baja**: no se manda ni se reclama el pedido, también si la conversación está enlazada a la ficha dada de baja. Falla cerrado (error de lectura = falla, no envío). |
+| Campañas de promociones por WhatsApp (`lib/whatsapp/campaigns.ts`, rutas `/api/whatsapp/campaigns` y `/preview`) | Promoción (plantilla `promocion`) | Clientes con `wa_marketing_opt_in = 1` y teléfono de su conversación de WhatsApp | **Respeta la baja de la ficha destinataria** al armar la lista (`resolveRecipients`) y otra vez justo antes de enviar (`runCampaign`). **Falla cerrado**: si la consulta da error se lanza y la campaña queda `failed` sin enviar nada; sin `IN` (D1 limita los parámetros): pide los dados de baja y cruza en memoria. |
+| Encuestas de satisfacción (`sendDueSurveys`, cron `workers/encuestas-cron` → `/api/cron/surveys`) | Plantilla `encuesta_satisfaccion` por pedido entregado | Pedidos `Finalizados` sin reseña ni encuesta, con la conversación del cliente | **Respeta la baja de la ficha del pedido**: no se manda ni se reclama. Falla cerrado (error de lectura = falla, no envío). |
 | Avisos de un pedido (`notifyOrderEvent`: confirmación, en preparación, en camino, entregado) | Transaccional | El cliente del pedido | **No aplica**: responden al pedido que él mismo hizo (y la baja se rechaza con un pedido en curso). |
 | Respuestas del asistente y del Worker `whatsapp-bot`, respuestas manuales desde Conversaciones, aviso de resolución de un reclamo | Respuestas a un mensaje que el propio cliente inició | — | **No aplica**. El Worker no manda nada por iniciativa propia. |
-| ALTA / BAJA por WhatsApp (Worker, `repo/d1.ts`) | Consentimiento explícito del cliente | Por teléfono del mensaje (verificado por Meta) | ALTA levanta `unsubscribed_at` (el cliente lo pide él mismo); BAJA no lo toca. |
+| BAJA / ALTA entrantes por WhatsApp (Worker `whatsapp-bot`: `bot/turn.ts` → `repo/d1.ts`) | Consentimiento explícito del cliente | Mensaje que es exactamente `BAJA`, `STOP`, `dar de baja`, `no quiero más promos/promociones/mensajes` o `no quiero recibir más [promos/promociones/mensajes]` (sin tildes ni signos), o `ALTA` | El número del remitente ya está verificado por Meta: BAJA marca `unsubscribed_at` y `wa_marketing_opt_in = 0` en las fichas con ESE teléfono exacto y le confirma con un mensaje; ALTA los levanta. Repetir la BAJA no cambia la fecha. |
 | Resumen diario (`lib/daily-summary/send.ts`) y aviso de reclamos (`lib/reclamos/notify.ts`) | Email y WhatsApp al personal | Los destinatarios que el local cargó en Configuración | **No aplica**: no leen la tabla de clientes (una prueba lo verifica). |
 | Emails | Recuperación de contraseña, aviso de baja, resumen y reclamos | — | **No existe ningún email promocional a clientes** hoy. Si se agrega, tiene que respetar `unsubscribed_at` (hay un helper por ficha en `campaigns.ts`). |
 
@@ -68,10 +68,11 @@ y la baja sigue siendo válida (`notified: sent | failed | skipped`).
 
 Baja propia (personal y clientes): contraseña actual o, si la cuenta no tiene (entró con otro proveedor), el email exacto de la cuenta; más `ELIMINAR` y el mismo tope de intentos.
 
-**La baja de comunicaciones nunca expande por teléfono ni por email.** Solo se da de baja la ficha con `clients.user_id` = la cuenta que se da de baja. El teléfono que un cliente carga en su perfil no está verificado: si se usara para
-buscar otras fichas, alguien podría escribir el de otra persona, darse de baja y dejarla sin comunicaciones. Lo mismo vale para el bloqueo por pedido en curso (solo las fichas atadas por `user_id`). El WhatsApp de la ficha dada de baja se frena al enviar:
-el teléfono de una conversación enlazada a esa ficha no recibe promociones ni encuestas (`unsubscribedPhones`, y la encuesta mira la ficha enlazada a la conversación). Una ficha creada por WhatsApp con el mismo teléfono pero sin
-enlace queda como está.
+**La baja de comunicaciones nunca expande por teléfono ni por email, ni al dar la baja ni al enviar.** Solo se da de baja la ficha con `clients.user_id` = la cuenta que se da de baja, y cada envío promocional se saltea cuando la ficha
+destinataria de ESE envío (la del pedido, o la del cliente elegido en la campaña) tiene `unsubscribed_at`; nunca se mira otra ficha alcanzada por teléfono. El teléfono que un cliente carga en su perfil no está verificado, y `wa_conversations.client_id`
+se vincula comparando con esos teléfonos: si se usaran para dar de baja a otras fichas, alguien podría escribir el número de otra persona, darse de baja y dejarla sin comunicaciones (hay pruebas de esto: la ficha de A con el teléfono de V se da de baja y
+a V las campañas y encuestas le siguen llegando). Lo mismo vale para el bloqueo por pedido en curso. Limitación conocida: la baja de la cuenta de un cliente no frena el WhatsApp de una ficha ajena con su mismo número; para eso el cliente
+escribe BAJA desde su WhatsApp (el número lo verifica Meta) y el Worker marca la baja en las fichas con ese teléfono exacto.
 
 ## Claves foráneas a `"user"` (revisadas)
 
@@ -99,5 +100,5 @@ Todo lo que no es la cuenta de acceso:
 - `tests/data-deletion.test.ts` (D1 real con node:sqlite y Better Auth real): hash HMAC y secreto, código (vigencia, atado, un solo uso), lista y búsqueda exacta, permisos (403 para todo el que no es el dueño principal), vista previa, ejecución,
   registro sin datos en claro, aviso por email, contraseña y bloqueo, guarda atómica, protecciones, **el historial no cambia ni una fila** (comparación de todas las tablas), trigger de la 0020, revisión de claves foráneas, baja del personal y
   **baja de un cliente** (con contraseña, sin contraseña con email exacto, tope de intentos, pedido en curso, ficha de baja, **dos fichas con el mismo teléfono de cuentas distintas: la de B no se modifica**).
-- `tests/clients-baja-envios.test.ts`: cada envío con D1 real y Meta simulado (campañas: selección, reenvío, falla cerrado, más de 90 destinatarios con bajas repartidas; encuestas; avisos de pedido; ALTA del Worker; teléfono enlazado a una ficha de baja).
+- `tests/clients-baja-envios.test.ts`: cada envío con D1 real y Meta simulado (campañas: selección, reenvío, falla cerrado, más de 90 destinatarios con bajas repartidas; encuestas; avisos de pedido; **A con el teléfono de V se da de baja y a V le siguen llegando campañas y encuestas**; **BAJA entrante: ese número deja de recibir**; ALTA).
 - `tests/data-deletion-api.test.ts`: validación con zod, 400/403/404/409/503, clientes y repartidores, cookies y los dos emails de aviso. `tests/legal-admin-list.test.ts`, `tests/permissions.test.ts`, `tests/origin-guard-coverage.test.ts`, `tests/data-guard.test.ts`.

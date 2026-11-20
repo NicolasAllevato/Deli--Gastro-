@@ -15,6 +15,8 @@ const { selectRecipients } = await import("../src/lib/whatsapp/segments.ts");
 const campaigns = await import("../src/lib/whatsapp/campaigns.ts");
 const notify = await import("../src/lib/whatsapp/notify.ts");
 const { d1BotRepo } = await import("../workers/whatsapp-bot/src/repo/d1.ts");
+const { createAuth } = await import("../src/lib/data/auth.ts");
+const { deleteOwnAccount } = await import("../src/lib/data/data-deletion.ts");
 
 const NOW = new Date("2026-11-10T15:00:00.000Z"); // 12:00 en Buenos Aires: dentro de la franja de encuestas
 const AT = "2026-11-09T10:00:00.000Z";
@@ -186,39 +188,70 @@ describe("encuestas: falla cerrado", () => {
   });
 });
 
-describe("el teléfono de una ficha dada de baja no recibe promociones ni encuestas aunque lo pida otra ficha", () => {
-  /** Ficha de la cuenta (dada de baja, enlazada a la conversación) y una ficha creada por WhatsApp con el mismo teléfono, con un pedido. */
-  function seedLinked() {
-    seedClient("a", PHONES.a, { unsubscribed: true });
-    sqlite.raw.prepare(`INSERT INTO clients (id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('wa', 'Cliente wa', ?, ?, 1)`).run(`+${PHONES.a}`, PHONES.a.slice(-10));
-    sqlite.raw.prepare(`INSERT INTO orders (id, client_id, status, items_desc, total_cents, channel, created_at, delivered_at) VALUES ('o-wa', 'wa', 'Finalizados', '1x Flan', 100, 'web', ?, ?)`)
-      .run(new Date(NOW.getTime() - 90 * 60_000).toISOString(), new Date(NOW.getTime() - 60 * 60_000).toISOString());
-    sqlite.raw.prepare(`UPDATE orders SET survey_sent_at = ? WHERE id = 'o-a'`).run(AT);
+describe("la baja es por ficha: nunca se mira otra ficha alcanzada por teléfono", () => {
+  const SECRET = "secreto-de-prueba-de-32-caracteres-o-mas";
+
+  /** V: la víctima, con su ficha y su conversación de WhatsApp. A: otra persona con cuenta que cargó en su perfil el teléfono de V. */
+  async function seedVictimAndSpoofer() {
+    seedClient("v", PHONES.a);
+    const auth = createAuth({ database: sqlite.raw, secret: SECRET + SECRET, baseURL: "https://opsyndely.la-gambeta.com" });
+    const hash = await (await auth.$context).password.hash("clave-segura-123");
+    sqlite.raw.prepare(`INSERT INTO "user" (id, name, email, emailVerified, role, createdAt, updatedAt) VALUES ('ua', 'A', 'a@example.test', 1, 'cliente', 'x', 'x')`).run();
+    sqlite.raw.prepare(`INSERT INTO "account" (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES ('aa', 'ua', 'credential', 'ua', ?, 'x', 'x')`).run(hash);
+    sqlite.raw.prepare(`INSERT INTO clients (id, user_id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('a', 'ua', 'A', ?, ?, 1)`).run(`+${PHONES.a}`, PHONES.a.slice(-10));
+    return auth;
   }
 
-  it("encuesta: el pedido de la otra ficha va al teléfono cuya conversación está enlazada a la ficha dada de baja, y no se manda", async () => {
-    seedLinked();
-    const result = await notify.sendDueSurveys(db as never, "https://app.example.test", NOW);
-    assert.deepEqual({ sent: result.sent, skipped: result.skipped, failed: result.failed }, { sent: 0, skipped: 1, failed: 0 });
-    assert.equal(sent.length, 0);
-    assert.equal((sqlite.raw.prepare(`SELECT survey_sent_at FROM orders WHERE id = 'o-wa'`).get() as { survey_sent_at: string | null }).survey_sent_at, null);
-  });
+  it("A carga el teléfono de V y se da de baja: la ficha de A queda de baja y las campañas y encuestas le siguen llegando a V", async () => {
+    const auth = await seedVictimAndSpoofer();
+    const result = await deleteOwnAccount(sqlite, auth, { userId: "ua", password: "clave-segura-123" }, { superOwnerEmail: null, hashSecret: SECRET });
+    assert.ok(result.ok, result.ok ? "" : result.error);
+    const row = (id: string) => sqlite.raw.prepare(`SELECT unsubscribed_at AS un, wa_marketing_opt_in AS opt FROM clients WHERE id = ?`).get(id) as { un: string | null; opt: number };
+    assert.ok(row("a").un, "la ficha de A quedó de baja");
+    assert.deepEqual({ ...row("v") }, { un: null, opt: 1 }, "la ficha de V no se tocó");
 
-  it("unsubscribedPhones: solo los teléfonos de conversaciones enlazadas a fichas dadas de baja; falla cerrado ante un error", async () => {
-    seedLinked();
-    seedClient("b", PHONES.b);
-    assert.deepEqual([...(await campaigns.unsubscribedPhones(db as never))], [PHONES.a]);
-    breakReads = true;
-    await assert.rejects(campaigns.unsubscribedPhones(db as never), /no se pudo saber/i);
-  });
-
-  it("campaña: una lista armada antes de la baja no llega al teléfono de la ficha dada de baja, aunque el destinatario sea otra ficha", async () => {
-    seedClient("a", PHONES.a);
+    const recipients = await campaigns.resolveRecipients(db as never, { kind: "all" });
+    assert.deepEqual(recipients.map((r) => r.id), ["v"]);
     sqlite.raw.prepare(`INSERT INTO wa_campaigns (id, name, segment, message) VALUES ('camp-1', 'Prueba', '{"kind":"all"}', 'Hay promo')`).run();
-    sqlite.raw.prepare(`UPDATE clients SET unsubscribed_at = ? WHERE id = 'a'`).run(AT);
-    // Destinatario de otra ficha con el mismo teléfono (no estaba de baja cuando se armó la lista).
-    await campaigns.runCampaign(db as never, "camp-1", [{ id: "otra-ficha", name: "Otra", phone: PHONES.a }], "Hay promo");
-    assert.equal(sent.length, 0);
+    await campaigns.runCampaign(db as never, "camp-1", recipients, "Hay promo");
+    const survey = await notify.sendDueSurveys(db as never, "https://app.example.test", NOW);
+    assert.equal(survey.sent, 1);
+    assert.deepEqual(sent.map((s) => [s.to, s.template]), [[PHONES.a, "promocion"], [PHONES.a, "encuesta_satisfaccion"]]);
+  });
+
+  it("aunque la conversación de V quede enlazada a la ficha de A, solo cuenta la ficha de cada envío: el pedido de otra ficha con ese teléfono sigue recibiendo la encuesta", async () => {
+    seedClient("a", PHONES.a, { unsubscribed: true });
+    sqlite.raw.prepare(`INSERT INTO clients (id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('v', 'V', ?, ?, 1)`).run(`+${PHONES.a}`, PHONES.a.slice(-10));
+    sqlite.raw.prepare(`INSERT INTO orders (id, client_id, status, items_desc, total_cents, channel, created_at, delivered_at) VALUES ('o-v', 'v', 'Finalizados', '1x Flan', 100, 'web', ?, ?)`)
+      .run(new Date(NOW.getTime() - 90 * 60_000).toISOString(), new Date(NOW.getTime() - 60 * 60_000).toISOString());
+    sqlite.raw.prepare(`UPDATE orders SET survey_sent_at = ? WHERE id = 'o-a'`).run(AT);
+    const result = await notify.sendDueSurveys(db as never, "https://app.example.test", NOW);
+    assert.equal(result.sent, 1, "la ficha del pedido (v) no está de baja: es la única que se mira");
+  });
+});
+
+describe("BAJA entrante por WhatsApp: el número verificado por Meta deja de recibir", () => {
+  it("el Worker marca la baja de marketing en las fichas con ese teléfono exacto: sale de las campañas y de las encuestas; ALTA lo revierte", async () => {
+    seedClient("a", PHONES.a);
+    seedClient("b", PHONES.b);
+    const bot = d1BotRepo(sqlite);
+    assert.equal(await bot.setMarketingOptIn(PHONES.a, false), 1, "solo la ficha con ese teléfono");
+    const row = (id: string) => sqlite.raw.prepare(`SELECT unsubscribed_at AS un, wa_marketing_opt_in AS opt FROM clients WHERE id = ?`).get(id) as { un: string | null; opt: number };
+    assert.ok(row("a").un);
+    assert.equal(row("a").opt, 0);
+    assert.deepEqual({ ...row("b") }, { un: null, opt: 1 }, "otro teléfono: no se toca");
+
+    assert.deepEqual((await campaigns.resolveRecipients(db as never, { kind: "all" })).map((r) => r.id), ["b"]);
+    const result = await notify.sendDueSurveys(db as never, "https://app.example.test", NOW);
+    assert.deepEqual({ sent: result.sent, skipped: result.skipped }, { sent: 1, skipped: 1 });
+    assert.deepEqual(sent.map((s) => s.to), [PHONES.b]);
+
+    // Repetir la baja no cambia la fecha original; el ALTA (consentimiento explícito) la levanta.
+    const first = row("a").un;
+    await bot.setMarketingOptIn(PHONES.a, false);
+    assert.equal(row("a").un, first);
+    assert.equal(await bot.setMarketingOptIn(PHONES.a, true), 1);
+    assert.deepEqual({ ...row("a") }, { un: null, opt: 1 });
   });
 });
 
@@ -232,12 +265,13 @@ describe("avisos de un pedido (transaccionales)", () => {
 });
 
 describe("ALTA y BAJA por WhatsApp (Worker whatsapp-bot, D1)", () => {
-  it("ALTA es consentimiento explícito: activa el opt-in y levanta la baja de la cuenta; BAJA no toca la baja", async () => {
+  it("ALTA es consentimiento explícito: activa el opt-in y levanta la baja de la cuenta; BAJA no cambia la fecha de una baja que ya existía", async () => {
     seedClient("b", PHONES.b, { optIn: false, unsubscribed: true });
     const bot = d1BotRepo(sqlite);
     assert.equal(await bot.setMarketingOptIn(PHONES.b, false), 1);
     const afterBaja = sqlite.raw.prepare(`SELECT wa_marketing_opt_in AS opt, unsubscribed_at AS un FROM clients WHERE id = 'b'`).get() as { opt: number; un: string | null };
-    assert.deepEqual({ ...afterBaja }, { opt: 0, un: AT });
+    assert.equal(afterBaja.opt, 0);
+    assert.equal(afterBaja.un, AT, "la baja ya existente conserva su fecha original");
     assert.equal(await bot.setMarketingOptIn(PHONES.b, true), 1);
     const afterAlta = sqlite.raw.prepare(`SELECT wa_marketing_opt_in AS opt, unsubscribed_at AS un FROM clients WHERE id = 'b'`).get() as { opt: number; un: string | null };
     assert.deepEqual({ ...afterAlta }, { opt: 1, un: null });

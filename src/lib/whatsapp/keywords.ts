@@ -1,6 +1,6 @@
 export type Keyword = "opt_in" | "opt_out";
 
-const OPT_OUT = /^(baja|stop|dar de baja|no quiero mas (promos|promociones|mensajes))$/;
+const OPT_OUT = /^(baja|stop|dar de baja|no quiero mas (promos|promociones|mensajes)|no quiero recibir mas( promos| promociones| mensajes)?)$/;
 const OPT_IN = /^(alta|quiero (recibir )?(promos|promociones))$/;
 
 /** Minúsculas, sin tildes ni signos: "¡Baja!" → "baja". */

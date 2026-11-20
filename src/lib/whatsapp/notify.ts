@@ -56,21 +56,16 @@ async function loadContact(db: Db, clientId: string, promotional: boolean): Prom
 }
 
 /**
- * `promotional`: el envío no responde a algo que el cliente inició (la encuesta de satisfacción), así que respeta la baja de la
- * cuenta (clients.unsubscribed_at). Los avisos de un pedido (transaccionales) no la miran: responden al pedido que él hizo.
+ * `promotional`: el envío no responde a algo que el cliente inició (la encuesta de satisfacción), así que respeta la baja
+ * (clients.unsubscribed_at) de la ficha del pedido. Solo esa ficha: nunca otra alcanzada por teléfono (los teléfonos de los perfiles
+ * no están verificados). Los avisos de un pedido (transaccionales) no la miran: responden al pedido que él hizo.
  */
 async function loadTarget(db: Db, order: OrderRow, promotional = false): Promise<Target | null> {
   if (!order.client_id) return null;
   const client = await loadContact(db, order.client_id, promotional);
   if (!client?.phone || client.unsubscribed) return null;
   const conversation = await findConversation(db, order.client_id, client.phone);
-  if (!conversation) return null;
-  // La conversación puede estar enlazada a OTRA ficha (la de la cuenta que dio de baja): ese número tampoco recibe lo promocional.
-  if (promotional && conversation.client_id && conversation.client_id !== order.client_id) {
-    const linked = await loadContact(db, conversation.client_id, true);
-    if (linked?.unsubscribed) return null;
-  }
-  return { order, name: firstName(client.name), conversation };
+  return conversation ? { order, name: firstName(client.name), conversation } : null;
 }
 
 async function sendTemplateTo(db: Db, conversation: Conversation, templateName: string, params: readonly string[]) {

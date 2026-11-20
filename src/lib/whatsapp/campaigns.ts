@@ -57,24 +57,10 @@ export async function unsubscribedIds(db: Db, clientIds: readonly string[]): Pro
 }
 
 /**
- * Teléfonos (normalizados) de las conversaciones de WhatsApp vinculadas a una ficha dada de baja: ese número no recibe nada promocional.
- * Solo cuenta la ficha ENLAZADA a la conversación (el teléfono lo verifica Meta); el teléfono escrito a mano en un perfil no se usa para
- * dar de baja a nadie. Falla cerrado igual que `unsubscribedIds`: ante un error se lanza.
- */
-export async function unsubscribedPhones(db: Db): Promise<Set<string>> {
-  const { data: baja, error } = await db.from("clients").select("id").not("unsubscribed_at", "is", null);
-  if (error) throw new Error(`No se pudo saber quién dio de baja su cuenta: ${error.message}`);
-  const ids = new Set((baja ?? []).map((c) => c.id));
-  if (ids.size === 0) return new Set();
-  const { data: conversations, error: convError } = await db.from("wa_conversations").select("client_id, client_phone").not("client_id", "is", null);
-  if (convError) throw new Error(`No se pudo saber quién dio de baja su cuenta: ${convError.message}`);
-  return new Set((conversations ?? []).filter((c) => c.client_id && ids.has(c.client_id)).map((c) => normalizePhone(c.client_phone)));
-}
-
-/**
  * Envía la plantilla de promoción a cada destinatario, de a uno. Una falla individual no
  * corta la campaña; al terminar queda el recuento y el estado. Antes de mandar se vuelve a
- * mirar la baja: quien la dio entre que se armó la lista y se envió no recibe nada.
+ * mirar la baja de la ficha destinataria: quien la dio entre que se armó la lista y se envió no
+ * recibe nada. Solo cuenta la ficha de cada destinatario: nunca otra ficha alcanzada por teléfono.
  */
 export async function runCampaign(db: Db, campaignId: string, recipients: readonly Recipient[], message: string): Promise<void> {
   const template = templateByName("promocion");
@@ -89,17 +75,15 @@ export async function runCampaign(db: Db, campaignId: string, recipients: readon
 
   // Falla cerrado: sin poder confirmar las bajas la campaña se cancela entera (queda en "failed") y se avisa con la excepción.
   let unsubscribed: Set<string>;
-  let blockedPhones: Set<string>;
   try {
     unsubscribed = await unsubscribedIds(db, recipients.map((r) => r.id));
-    blockedPhones = await unsubscribedPhones(db);
   } catch (error: unknown) {
     console.error("[campaña] no se envió: no se pudieron confirmar las bajas", safeError(error));
     await db.from("wa_campaigns").update({ status: "failed", finished_at: new Date().toISOString() }).eq("id", campaignId);
     throw error;
   }
   for (const recipient of recipients) {
-    if (unsubscribed.has(recipient.id) || blockedPhones.has(normalizePhone(recipient.phone))) continue;
+    if (unsubscribed.has(recipient.id)) continue;
     try {
       const params = [firstName(recipient.name), sanitizeParam(message)];
       const to = normalizePhone(recipient.phone);

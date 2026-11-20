@@ -150,8 +150,8 @@ interface Step {
 const ids = (u: UserRow): SqlValue[] => [u.id];
 /**
  * Fichas de cliente de una cuenta: SOLO las atadas por user_id. No se expande por teléfono: el que el cliente cargó en su perfil no está
- * verificado, y alguien podría escribir el de otra persona, darse de baja y dejarla sin comunicaciones. (El WhatsApp de la ficha dada de
- * baja se frena al enviar: ver unsubscribedPhones en whatsapp/campaigns.ts y la encuesta en whatsapp/notify.ts.)
+ * verificado, y alguien podría escribir el de otra persona, darse de baja y dejarla sin comunicaciones. Los envíos promocionales miran
+ * solo la ficha de cada destinatario; el número de WhatsApp de una persona se da de baja cuando ELLA escribe BAJA (lo verifica Meta).
  */
 const OWN_FICHAS = `is_anonymous = 0 AND user_id = ?`;
 const IS_CLIENT = `(SELECT role FROM "user" WHERE id = ?) = 'cliente'`;
