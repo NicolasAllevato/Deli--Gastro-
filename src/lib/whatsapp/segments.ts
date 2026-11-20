@@ -5,6 +5,8 @@ export interface CampaignClient {
   tier: string;
   /** Aceptó recibir promociones por WhatsApp. */
   optedIn: boolean;
+  /** Dio de baja su cuenta (clients.unsubscribed_at): no recibe nada promocional aunque el opt-in esté en 1. */
+  unsubscribed?: boolean;
 }
 
 export interface CampaignOrder {
@@ -31,7 +33,7 @@ const FREQUENT_WINDOW_DAYS = 60;
 
 /**
  * A quién va una campaña. Regla fija: solo clientes con teléfono que aceptaron recibir
- * promociones; el segmento afina sobre ese grupo. Los pedidos cancelados no cuentan.
+ * promociones y no dieron de baja su cuenta; el segmento afina sobre ese grupo. Los pedidos cancelados no cuentan.
  */
 export function selectRecipients(
   clients: readonly CampaignClient[],
@@ -47,7 +49,7 @@ export function selectRecipients(
     timesByClient.set(order.client_id!, list);
   }
 
-  const eligible = clients.filter((c): c is CampaignClient & { phone: string } => c.optedIn && Boolean(c.phone));
+  const eligible = clients.filter((c): c is CampaignClient & { phone: string } => c.optedIn && !c.unsubscribed && Boolean(c.phone));
 
   const matches = (client: CampaignClient): boolean => {
     const times = timesByClient.get(client.id) ?? [];

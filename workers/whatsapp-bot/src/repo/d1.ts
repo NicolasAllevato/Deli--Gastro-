@@ -371,7 +371,11 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
     async setMarketingOptIn(phone, optIn) {
       const tail = phoneTail(phone);
       if (tail.length !== 10) return 0;
-      const r = await db.prepare("UPDATE clients SET wa_marketing_opt_in = ? WHERE phone_digits = ?").bind(optIn ? 1 : 0, tail).run();
+      // ALTA es consentimiento explícito del propio cliente: también levanta la baja de comunicaciones de la cuenta (migración 0021).
+      const r = await db
+        .prepare("UPDATE clients SET wa_marketing_opt_in = ?, unsubscribed_at = CASE WHEN ? = 1 THEN NULL ELSE unsubscribed_at END WHERE phone_digits = ?")
+        .bind(optIn ? 1 : 0, optIn ? 1 : 0, tail)
+        .run();
       return r.meta.changes;
     },
 

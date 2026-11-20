@@ -14,10 +14,10 @@ const DAY_MS = 86_400_000;
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || "";
 
-/** Destinatarios actuales de un segmento (clientes con teléfono que aceptaron promociones). */
+/** Destinatarios actuales de un segmento (clientes con teléfono que aceptaron promociones y no dieron de baja su cuenta). */
 export async function resolveRecipients(db: Db, segment: Segment): Promise<Recipient[]> {
   const [{ data: clients }, { data: orders }, { data: conversations }] = await Promise.all([
-    db.from("clients").select("id, name, tier, wa_marketing_opt_in").eq("wa_marketing_opt_in", true),
+    db.from("clients").select("id, name, tier, wa_marketing_opt_in, unsubscribed_at").eq("wa_marketing_opt_in", true),
     db.from("orders").select("client_id, created_at, status"),
     db.from("wa_conversations").select("client_id, client_phone").not("client_id", "is", null),
   ]);
@@ -26,6 +26,7 @@ export async function resolveRecipients(db: Db, segment: Segment): Promise<Recip
   return selectRecipients(
     (clients ?? []).map((c) => ({
       id: c.id, name: c.name, phone: verifiedPhone.get(c.id) ?? null, tier: c.tier, optedIn: c.wa_marketing_opt_in,
+      unsubscribed: Boolean(c.unsubscribed_at),
     })),
     orders ?? [],
     segment,
@@ -39,9 +40,17 @@ export async function campaignsToday(db: Db, now: Date = new Date()): Promise<nu
   return (data ?? []).filter((c) => c.status !== "failed").length;
 }
 
+/** Ids de los clientes que dieron de baja su cuenta (clients.unsubscribed_at): a ellos no se les manda nada promocional. */
+export async function unsubscribedIds(db: Db, clientIds: readonly string[]): Promise<Set<string>> {
+  if (clientIds.length === 0) return new Set();
+  const { data } = await db.from("clients").select("id, unsubscribed_at").in("id", [...clientIds]);
+  return new Set((data ?? []).filter((c) => c.unsubscribed_at).map((c) => c.id));
+}
+
 /**
  * Envía la plantilla de promoción a cada destinatario, de a uno. Una falla individual no
- * corta la campaña; al terminar queda el recuento y el estado.
+ * corta la campaña; al terminar queda el recuento y el estado. Antes de mandar se vuelve a
+ * mirar la baja: quien la dio entre que se armó la lista y se envió no recibe nada.
  */
 export async function runCampaign(db: Db, campaignId: string, recipients: readonly Recipient[], message: string): Promise<void> {
   const template = templateByName("promocion");
@@ -54,7 +63,9 @@ export async function runCampaign(db: Db, campaignId: string, recipients: readon
     return;
   }
 
+  const unsubscribed = await unsubscribedIds(db, recipients.map((r) => r.id));
   for (const recipient of recipients) {
+    if (unsubscribed.has(recipient.id)) continue;
     try {
       const params = [firstName(recipient.name), sanitizeParam(message)];
       const to = normalizePhone(recipient.phone);

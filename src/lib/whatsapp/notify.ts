@@ -35,10 +35,15 @@ interface Target {
   conversation: Conversation;
 }
 
-async function loadTarget(db: Db, order: OrderRow): Promise<Target | null> {
+/**
+ * `promotional`: el envío no responde a algo que el cliente inició (la encuesta de satisfacción), así que respeta la baja de la
+ * cuenta (clients.unsubscribed_at). Los avisos de un pedido (transaccionales) no la miran: responden al pedido que él hizo.
+ */
+async function loadTarget(db: Db, order: OrderRow, promotional = false): Promise<Target | null> {
   if (!order.client_id) return null;
-  const { data: client } = await db.from("clients").select("name, phone").eq("id", order.client_id).maybeSingle();
+  const { data: client } = await db.from("clients").select("name, phone, unsubscribed_at").eq("id", order.client_id).maybeSingle();
   if (!client?.phone) return null;
+  if (promotional && client.unsubscribed_at) return null;
   const conversation = await findConversation(db, order.client_id, client.phone);
   return conversation ? { order, name: firstName(client.name), conversation } : null;
 }
@@ -148,7 +153,7 @@ export async function sendDueSurveys(db: Db, appUrl: string, now: Date = new Dat
       if (error) throw new Error(`No se pudieron leer las reseñas: ${error.message}`);
       return new Set((data ?? []).map((r) => r.order_id));
     },
-    loadTarget: (order) => loadTarget(db, order),
+    loadTarget: (order) => loadTarget(db, order, true),
     async claim(orderId, nowIso) {
       const { data, error } = await db
         .from("orders")

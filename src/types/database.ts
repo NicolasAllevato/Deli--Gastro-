@@ -20,6 +20,8 @@ export interface Database {
           tier: ClientTier
           total_points: number
           wa_marketing_opt_in: boolean
+          /** Baja de comunicaciones (migración 0021): con fecha, no recibe promociones ni encuestas. Solo la escribe el servidor. */
+          unsubscribed_at?: string | null
           channel: string | null
           is_anonymous: boolean
           fudo_customer_id: number | null

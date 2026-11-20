@@ -63,7 +63,7 @@ describe("G3 clients: edición con columnas protegidas", () => {
     const row = db.raw.prepare("SELECT total_points FROM clients WHERE id='c-ana'").get() as { total_points: number };
     assert.equal(row.total_points, 100);
   });
-  for (const field of ["tier", "user_id", "wa_marketing_opt_in", "id"]) {
+  for (const field of ["tier", "user_id", "wa_marketing_opt_in", "unsubscribed_at", "id"]) {
     it(`el cliente no puede cambiar ${field}`, async () => {
       await forbidden(clients.updateClient(db, actors.ana, "c-ana", { [field]: "x" }));
     });
