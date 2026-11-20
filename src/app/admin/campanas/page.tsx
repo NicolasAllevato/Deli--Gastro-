@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useCallback, useEffect, useState } from "react";
 import { Megaphone } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -57,7 +58,7 @@ const post = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-export default function CampanasPage() {
+function CampanasPageContent() {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [kind, setKind] = useState<Kind>("all");
@@ -223,5 +224,14 @@ export default function CampanasPage() {
         )}
       </section>
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function CampanasPage() {
+  return (
+    <EditableArea section="comunicacion">
+      <CampanasPageContent />
+    </EditableArea>
   );
 }

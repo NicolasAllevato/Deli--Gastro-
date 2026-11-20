@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { getUserRole } from "@/lib/auth/roles";
+import { adminPageDecision } from "@/lib/auth/staff-guard";
 import { DEMO_COOKIE, isDemoMode } from "@/lib/demo/mode";
 import { cleanEnv } from "@/lib/clean-env";
 import { accountByRole } from "@/lib/demo/users";
@@ -82,6 +83,17 @@ async function supabaseProxy(req: NextRequest): Promise<NextResponse> {
   return res;
 }
 
+/**
+ * Permisos por sección del personal (gerente, cajero) sobre las páginas del panel. Sin al menos "ver" en la
+ * sección de la página, va a la primera sección permitida (o a /login si no tiene ninguna). El dueño pasa siempre.
+ * Los endpoints /api no pasan por acá: los cubre requireRole en cada ruta.
+ */
+function guardStaffSection(req: NextRequest, user: Pick<User, "app_metadata">, res: NextResponse): NextResponse {
+  const decision = adminPageDecision(user.app_metadata, req.nextUrl.pathname);
+  if (decision.kind === "allow") return res;
+  return decision.kind === "redirect" ? NextResponse.redirect(new URL(decision.to, req.url)) : toLogin(req);
+}
+
 /** Mismas reglas que supabaseProxy, con el usuario que deja la sesión de Better Auth. */
 function guardPortal(req: NextRequest, user: Pick<User, "app_metadata"> | null, res: NextResponse): NextResponse {
   if (!user) return toLogin(req);
@@ -91,6 +103,7 @@ function guardPortal(req: NextRequest, user: Pick<User, "app_metadata"> | null, 
     return NextResponse.redirect(new URL(HOME_BY_ROLE[role], req.url));
   }
   if (user.app_metadata?.legal_version !== LEGAL_BUNDLE_VERSION) return toLegal(req);
+  if (portal === "/admin") return guardStaffSection(req, user, res);
   return res;
 }
 

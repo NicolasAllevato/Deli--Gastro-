@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useEffect, useState } from "react";
 import { Lightbulb, Plus, Save, Tag, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/Switch";
@@ -19,7 +20,7 @@ const newPromo = (): Promo => ({
 
 const inputClass = "w-full rounded-2xl px-4 py-2.5 text-sm text-gray-800 bg-white border border-gray-300";
 
-export default function PromosAdminPage() {
+function PromosAdminPageContent() {
   const [promos, setPromos] = useState<Promo[] | null>(null);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -174,5 +175,14 @@ export default function PromosAdminPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function PromosAdminPage() {
+  return (
+    <EditableArea section="configuracion">
+      <PromosAdminPageContent />
+    </EditableArea>
   );
 }

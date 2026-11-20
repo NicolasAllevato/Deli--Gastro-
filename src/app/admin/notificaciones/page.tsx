@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useEffect, useState } from "react";
 import { Mail, MessageCircle, Plus, Save, Send, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/Switch";
@@ -38,7 +39,7 @@ async function errorOf(res: Response, fallback: string): Promise<string> {
   return ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? fallback;
 }
 
-export default function NotificacionesPage() {
+function NotificacionesPageContent() {
   const [settings, setSettings] = useState<DailySummarySettings | null>(null);
   const [last, setLast] = useState<LastSend | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -221,5 +222,14 @@ export default function NotificacionesPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function NotificacionesPage() {
+  return (
+    <EditableArea section="configuracion">
+      <NotificacionesPageContent />
+    </EditableArea>
   );
 }

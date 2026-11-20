@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui";
@@ -66,7 +67,7 @@ function toId(value: string): number | null {
 const isInvalidDraft = (value: string): boolean => value.trim() !== "" && toId(value) === null;
 const invalidRing = "ring-2 ring-red-400";
 
-export default function FudoMapPage() {
+function FudoMapPageContent() {
   const [data, setData] = useState<MapResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -511,5 +512,14 @@ export default function FudoMapPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function FudoMapPage() {
+  return (
+    <EditableArea section="configuracion">
+      <FudoMapPageContent />
+    </EditableArea>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useState, useEffect, useCallback, type ReactNode, type Dispatch, type SetStateAction } from "react";
 import {
   Save, Settings, Star, Bell, Zap, ChevronRight, Plus, Trash2,
@@ -360,7 +361,7 @@ function ToggleRow({ label, hint, defaultChecked = false }: { label: string; hin
   );
 }
 
-export default function ConfiguracionPage() {
+function ConfiguracionPageContent() {
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
   const [niveles, setNiveles] = useState<Nivel[]>(DEFAULT_NIVELES);
@@ -484,5 +485,14 @@ export default function ConfiguracionPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function ConfiguracionPage() {
+  return (
+    <EditableArea section="configuracion">
+      <ConfiguracionPageContent />
+    </EditableArea>
   );
 }

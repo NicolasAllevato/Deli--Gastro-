@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Copy, KeyRound, MessageCircle, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -96,7 +97,7 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 
 const BOT_WEBHOOK_URL = "https://bot.la-gambeta.com/webhook";
 
-export default function WhatsAppPage() {
+function WhatsAppPageContent() {
   const [state, setState] = useState<State | null>(null);
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [wabaId, setWabaId] = useState("");
@@ -434,5 +435,14 @@ export default function WhatsAppPage() {
         </div>
       </details>
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function WhatsAppPage() {
+  return (
+    <EditableArea section="comunicacion">
+      <WhatsAppPageContent />
+    </EditableArea>
   );
 }

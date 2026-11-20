@@ -1,5 +1,6 @@
 "use client";
 
+import { EditableArea } from "../_components/AdminAccess";
 import { useCallback, useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -38,7 +39,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return json;
 }
 
-export default function PlantillasPage() {
+function PlantillasPageContent() {
   const [data, setData] = useState<Payload | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,5 +131,14 @@ export default function PlantillasPage() {
         })}
       </ul>
     </div>
+  );
+}
+
+/** Con acceso de solo lectura la pantalla se ve completa, pero sus campos y botones quedan deshabilitados. */
+export default function PlantillasPage() {
+  return (
+    <EditableArea section="comunicacion">
+      <PlantillasPageContent />
+    </EditableArea>
   );
 }

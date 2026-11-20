@@ -13,6 +13,7 @@ import { FiltersBar } from "./_components/FiltersBar";
 import { KpiCard } from "./_components/KpiCard";
 import { PunctualityPrepChart } from "./_components/PunctualityPrepChart";
 import { SettingsDrawer } from "./_components/SettingsDrawer";
+import { useCanEdit } from "../_components/AdminAccess";
 import { EmptyView, ErrorView, LoadingView } from "./_components/StateViews";
 import { ChannelResultsTable } from "./_components/ChannelResultsTable";
 import { ClosingTimesTable } from "./_components/ClosingTimesTable";
@@ -51,6 +52,8 @@ function Dashboard({ data, settings, theme }: { data: ExecutiveSnapshot; setting
 }
 
 export default function EjecutivoClient() {
+  // Con "ver" el tablero se lee completo, pero los ajustes (se guardan para todos) no se editan.
+  const canEdit = useCanEdit("dashboard");
   const [range, setRange] = useState<RangeKey | null>(null);
   const [zone, setZone] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -70,10 +73,12 @@ export default function EjecutivoClient() {
           <DataStatus loading={loading} error={error} orders={data?.kpis.current.orders ?? null} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="exec-chip" onClick={() => setSettingsOpen(true)}>
-            <Settings size={15} aria-hidden="true" />
-            Ajustes
-          </button>
+          {canEdit && (
+            <button type="button" className="exec-chip" onClick={() => setSettingsOpen(true)}>
+              <Settings size={15} aria-hidden="true" />
+              Ajustes
+            </button>
+          )}
         </div>
       </header>
 
