@@ -25,11 +25,17 @@ Hecho
 - [x] `DATA_DELETION_HASH_SECRET` en `.env.example`; sin el secreto la eliminación queda deshabilitada (503 con mensaje claro).
 - [x] Arreglo aparte: `/api/admin/legal` leía solo Supabase; ahora lee D1 con `DATA_BACKEND=d1`.
 
-Falta (lo decide el dueño)
-- [ ] Definir el secreto en el Worker: `wrangler secret put DATA_DELETION_HASH_SECRET --name opsyn-dely` (mínimo 32 caracteres, por ejemplo `openssl rand -hex 32`).
-- [ ] Aplicar la 0020 y la 0021 en la D1 remota (`wrangler d1 migrations apply`, con OK; la 0021 ANTES de desplegar la app y el Worker) y desplegar la app **y el Worker `whatsapp-bot`** (ALTA levanta la baja).
+Falta (lo decide el dueño; con OK explícito, nada está aplicado ni desplegado)
+- [ ] Desplegar según la sección "Para desplegar" (migraciones, secreto y Workers, en ese orden).
 - [ ] Prueba en vivo con una cuenta de cliente y una de personal de prueba (el borrado de verdad solo se probó contra node:sqlite).
 - [ ] Decidir qué hacer con el email, la IP y el navegador que conservan las constancias legales de una cuenta dada de baja (ver "Lo que se conserva").
+
+## Para desplegar (en este orden)
+
+1. **Migraciones D1** (base `deli-gastro`, `wrangler d1 migrations apply`): **0019** (si todavía no está en producción; ya está en staging), **0020** y **0021**. La 0021 tiene que estar aplicada ANTES de desplegar la app y el Worker (las consultas leen `clients.unsubscribed_at`).
+2. **Secreto**: `DATA_DELETION_HASH_SECRET` en el Worker `opsyn-dely` (`wrangler secret put DATA_DELETION_HASH_SECRET --name opsyn-dely`, mínimo 32 caracteres, por ejemplo `openssl rand -hex 32`). Sin él la eliminación (herramienta y baja propia) queda deshabilitada con un 503. `SUPER_OWNER_EMAIL` ya existe de la entrega de usuarios.
+3. **Workers**: **`opsyn-dely`** (la app: API, pantallas, campañas y encuestas) y **`whatsapp-bot`** (BAJA/STOP/"no quiero recibir más" marcan la baja del número verificado y ALTA la levanta; `workers/whatsapp-bot/src/repo/d1.ts` y `src/lib/whatsapp/keywords.ts`). No hay cambios en `encuestas-cron`, `fudo-gateway`, `pedidos-webhook`, `finanzas-sync` ni `uploads` (el cron de encuestas llama a la app).
+4. Sin cambios de configuración: `wrangler.jsonc` no cambia (el binding `RECLAMOS` ya existente deja de usarse para borrar fotos, que ya no se borran).
 
 ## Cómo se usa
 
