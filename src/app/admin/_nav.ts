@@ -6,6 +6,8 @@ import { canAccessPath, type Section, type StaffAccess } from "@/lib/auth/permis
 export interface NavTab {
   href: string;
   label: string;
+  /** Solo el dueño principal (SUPER_OWNER_EMAIL): eliminación de usuarios de la app. */
+  superOwnerOnly?: true;
 }
 
 export interface NavSection {
@@ -68,6 +70,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
       { href: "/admin/notificaciones", label: "Notificaciones" },
       { href: "/admin/usuarios", label: "Usuarios" },
       { href: "/admin/legal", label: "Documentos legales" },
+      { href: "/admin/eliminar-datos", label: "Eliminar usuarios", superOwnerOnly: true },
     ],
   },
 ];
@@ -79,11 +82,12 @@ const isWithin = (pathname: string, href: string) =>
  * Menú que ve este usuario: solo las pestañas a las que puede entrar (con al menos "ver"; Usuarios, solo el dueño).
  * Una sección sin pestañas visibles no aparece, y su enlace apunta a la primera pestaña que sí puede abrir.
  * Es solo presentación: la autorización la decide siempre el servidor (proxy y guards de las rutas).
+ * Las pestañas `superOwnerOnly` solo aparecen si `superOwner` es true (el dueño principal).
  */
-export function visibleNavSections(access: StaffAccess): ReadonlyArray<NavSection> {
+export function visibleNavSections(access: StaffAccess, opts: { superOwner?: boolean } = {}): ReadonlyArray<NavSection> {
   return NAV_SECTIONS.flatMap((s) => {
     if (s.tabs.length === 0) return canAccessPath(access, s.href) ? [s] : [];
-    const tabs = s.tabs.filter((t) => canAccessPath(access, t.href));
+    const tabs = s.tabs.filter((t) => canAccessPath(access, t.href) && (!t.superOwnerOnly || opts.superOwner === true));
     if (tabs.length === 0) return [];
     const href = tabs.some((t) => t.href === s.href) ? s.href : tabs[0].href;
     return [{ ...s, href, tabs }];

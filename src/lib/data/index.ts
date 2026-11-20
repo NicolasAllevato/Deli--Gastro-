@@ -74,7 +74,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       createOwn: bind(reviews.createOwnReview, db, actor),
       eligibility: bind(reviews.reviewEligibility, db, actor),
     },
-    legal: { own: bind(legal.listOwnLegal, db, actor), accept: bind(legal.acceptOwnLegal, db, actor) },
+    legal: { own: bind(legal.listOwnLegal, db, actor), accept: bind(legal.acceptOwnLegal, db, actor), all: bind(legal.listAllLegal, db, actor) },
     catalog: {
       products: bind(catalog.listProducts, db, actor),
       categories: bind(catalog.listCategories, db, actor),
@@ -204,6 +204,9 @@ export async function courierSessionCookies(userId: string): Promise<string[] | 
 
 export { staffUsersApp, type StaffUsersApp } from "./staff-users-app.ts";
 export type { StaffUser, CourierUser, CreateStaffInput, UpdateStaffInput, UserResult, UserFailure } from "./staff-users.ts";
+
+export { dataDeletionApp, type DataDeletionApp } from "./data-deletion-app.ts";
+export type { DeletionPreview, DeletionRequestView, DeletionResult, DeletionOutcome, Eligibility, StaffUserView } from "./data-deletion.ts";
 
 export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, type KbEntry, type KbInput } from "./kb-negocio.ts";

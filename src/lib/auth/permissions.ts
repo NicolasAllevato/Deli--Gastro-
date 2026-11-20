@@ -218,21 +218,32 @@ const PAGE_RULES: ReadonlyArray<readonly [string, Section]> = [
   ["/admin/notificaciones", "configuracion"],
   ["/admin/legal", "configuracion"],
   ["/admin/usuarios", "configuracion"],
+  ["/admin/eliminar-datos", "configuracion"],
 ];
 
 /**
  * Solo el dueño, aunque tengan la sección en "editar": la gestión de usuarios y la Conexión de WhatsApp
  * (credenciales, token, webhook, registro del número y diagnóstico). El resto de Comunicación no cambia.
+ * La eliminación de usuarios de la app es además solo del dueño PRINCIPAL: eso lo exigen la ruta y la capa de datos
+ * (acá se corta a gerentes y cajeros; un dueño común recibe el 403 del servidor).
  */
 const OWNER_ONLY_PREFIXES: readonly string[] = [
   "/admin/usuarios",
   "/api/admin/usuarios",
+  "/admin/eliminar-datos",
+  "/api/admin/eliminar-datos",
   "/admin/whatsapp",
   "/api/whatsapp/config",
   "/api/whatsapp/link",
   "/api/whatsapp/embedded-signup",
   "/api/whatsapp/test",
 ];
+
+/**
+ * Pantallas del panel que puede abrir TODO el personal, sin permiso de sección: "Mi cuenta" (cambiar o eliminar la propia cuenta).
+ * Los endpoints propios (`/api/account/*`) no pasan por acá: autentican la sesión y operan siempre sobre quien llama.
+ */
+const SELF_SERVICE_PAGES: readonly string[] = ["/admin/mi-cuenta"];
 
 interface ApiRule {
   prefix: string;
@@ -335,6 +346,7 @@ export function evaluateAccess(access: StaffAccess, pathname: string, method = "
   if (canManageUsers(access)) return allow;
   const path = normalizePath(pathname);
   if (path === "/admin") return allow; // solo redirige a la primera pantalla; la pantalla se valida aparte
+  if (SELF_SERVICE_PAGES.some((p) => within(path, p))) return allow;
   if (isOwnerOnlyPath(path)) {
     return deny("owner-only", path.startsWith("/api/") ? sectionForApi(path) : sectionForPath(path));
   }
