@@ -205,6 +205,9 @@ export async function courierSessionCookies(userId: string): Promise<string[] | 
 export { staffUsersApp, type StaffUsersApp } from "./staff-users-app.ts";
 export type { StaffUser, CourierUser, CreateStaffInput, UpdateStaffInput, UserResult, UserFailure } from "./staff-users.ts";
 
+export { dataDeletionApp, type DataDeletionApp } from "./data-deletion-app.ts";
+export type { DeletionPreview, DeletionRequestView, DeletionResult, DeletionOutcome, Eligibility, FileStore } from "./data-deletion.ts";
+
 export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, type KbEntry, type KbInput } from "./kb-negocio.ts";
 export { kbAprendizajeApp } from "./kb-aprendizaje-app.ts";
