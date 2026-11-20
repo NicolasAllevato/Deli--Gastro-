@@ -140,6 +140,9 @@ function allTools(
           estimated_minutes: settings.estimatedMinutes,
           zones: (await repo.zones()).map((z) => ({ name: z.name, delivery_fee: z.fee, delivery_fee_text: money(z.fee), min_order: z.minOrder, min_order_text: money(z.minOrder) })),
           payment_methods: PAYMENT_METHODS,
+          // Cobertura por distancia (si el local la cargó): el bot no puede prometer envíos más lejos ni otra tarifa por km.
+          ...(settings.deliveryRadiusKm !== null ? { delivery_radius_km: settings.deliveryRadiusKm } : {}),
+          ...(settings.deliveryCostPerKm !== null ? { delivery_cost_per_km_text: money(settings.deliveryCostPerKm) } : {}),
           // Cargado por el dueño en /admin/conocimiento: solo lo relacionado con `tema` (el vocabulario va al prompt, no acá).
           knowledge: found.map(({ category, topic, content }) => ({ category, topic, content })),
           ...(tema.trim() && found.length === 0

@@ -48,7 +48,7 @@ Ejemplos:
 
 ## 2. Respondedor
 
-- **Origen:** `workers/whatsapp-bot/src/bot/prompts.ts`, función `buildResponderPrompt(settings, intent, customerName, suspicious, vocabulary, lessons, profile)`, usada por `answer()` en `bot/turn.ts`. Si el borrador del modelo se descarta, se reintenta con el mismo prompt + `\n\nCORRECCIÓN: <pista>` (`RETRY_HINT` de `turn.ts`).
+- **Origen:** `workers/whatsapp-bot/src/bot/prompts.ts`, función `buildResponderPrompt(settings, intent, customerName, suspicious, vocabulary, lessons, profile)`, usada por `answer()` en `bot/turn.ts`. Si el borrador del modelo se descarta, se reintenta con el mismo prompt + `\n\nCORRECCIÓN: <pista>` (`RETRY_HINT` de `turn.ts`). Motivos de descarte (`draftIssue`): `empty`, `template`, `state`, `price` (el costo por km de la configuración cuenta como monto válido), `hours` (el borrador nombra una hora de apertura o cierre distinta de `horario_apertura`/`horario_cierre`), `zone` (promete envío a un barrio que no es ninguna zona cargada o a más km que `radio_delivery_km`; sin datos de zonas no marca nada), `promise` y `blocked`. Si insiste con `hours` o `zone` sale «Dejame consultarlo con el local y te confirmo.».
 - **Variables que se insertan:**
   - `{settings.name}` = `agente_nombre` (o "Deli"), `{settings.businessName}` = `negocio_nombre`, `{settings.tone}` = `agente_tono`.
   - Estado: `abierto` o `cerrado o en pausa (horario {horario_apertura} a {horario_cierre})`; `{settings.estimatedMinutes}` = `tiempo_entrega_min`.

@@ -14,6 +14,7 @@ import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
 import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
+import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
 import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
@@ -167,13 +168,15 @@ export function historyMessages(items: { direction: "in" | "out"; body: string }
 }
 
 /** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
-type DraftIssue = "empty" | "template" | "state" | "price" | "promise" | "blocked";
+export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "blocked";
 
 const RETRY_HINT: Record<DraftIssue, string> = {
   empty: "Tu respuesta anterior quedó vacía. Respondé ahora al cliente en 1 a 3 líneas.",
   template: "No escribas resúmenes de pedido ni pidas que respondan SÍ: para cotizar llamá quote_order y el sistema manda el resumen.",
   state: "No digas que el pedido está confirmado, pagado o en camino: eso lo informa solo el sistema.",
   price: "No escribas montos calculados por vos: usá price_text/total_text tal cual o llamá quote_order.",
+  hours: "El horario que dijiste no coincide con el del local: decí solo el que devuelve get_business_info (hours). Si no lo tenés, decí que lo consultás con el local.",
+  zone: "No prometas envíos a zonas ni distancias que no figuren en get_business_info (zones, delivery_radius_km). Si no está, decí que lo consultás con el local.",
   promise: "No prometas hacerlo después ni digas «un momento»: hacelo ahora con las herramientas o decí qué dato falta.",
   blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
 };
@@ -185,23 +188,42 @@ const ORDER_STATE_SOFT_REPLY =
 /** Cuando no se puede contestar bien una consulta por su pedido: empatía y una persona lo revisa. */
 const STATUS_HANDOFF_REPLY = "Perdón por la espera 🙏 Te paso con una persona del local para que revise tu pedido ya mismo.";
 
-const SAFE_FALLBACK: Record<DraftIssue, string> = {
+/** Cuando el modelo insiste en afirmar un dato del local que no coincide con la configuración: no se afirma nada y se consulta. */
+const CONSULT_LOCAL_REPLY = "Dejame consultarlo con el local y te confirmo.";
+
+export const SAFE_FALLBACK: Record<DraftIssue, string> = {
   empty: REPLIES.failure,
   template: ORDER_REPLIES.startOver,
   state: ORDER_STATE_SOFT_REPLY,
   price: PRICE_SAFE_REPLY,
+  hours: CONSULT_LOCAL_REPLY,
+  zone: CONSULT_LOCAL_REPLY,
   promise: "Cualquier cosa que necesites, escribime y te ayudo 😊",
   blocked: REPLIES.failure,
 };
 
-async function draftIssue(draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, order?: OrderTurn): Promise<DraftIssue | null> {
+/**
+ * Revisa el borrador del modelo antes de enviarlo. Devuelve por qué se descarta (null = se puede enviar):
+ * vacío, plantilla de pedido, estado del pedido, monto inventado, horario o zona de envío que no coinciden con los datos del local,
+ * promesa de «un momento» o datos que no se pueden mandar.
+ */
+export async function draftIssue(
+  draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, settings: BotSettings, order?: OrderTurn,
+): Promise<DraftIssue | null> {
   if (!draft.trim()) return "empty";
   if (order && imitatesTemplate(draft)) return "template";
   if (intent !== "pedido_estado" && claimsOrderState(draft)) return "state";
   if (draft.includes("$")) {
     const [menu, zones] = await Promise.all([deps.repo.menu(), deps.repo.zones()]);
-    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder])];
+    // El costo por km del local (config) también es un monto real que el bot puede decir.
+    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder]), ...(settings.deliveryCostPerKm ? [settings.deliveryCostPerKm] : [])];
     if (unknownPrices(draft, allowed).length > 0) return "price";
+  }
+  if (hoursMismatch(draft, settings.hours)) return "hours";
+  // Solo se leen las zonas si el texto habla de envíos o distancias. Sin zonas ni radio cargados no hay con qué comparar: no marca nada.
+  if (/\b(?:enviamos|entregamos|repartimos|mandamos|llegamos|delivery|env[ií]os?|km)\b/i.test(draft)) {
+    const zones = await deps.repo.zones();
+    if (zoneMismatch(draft, { zones, radiusKm: settings.deliveryRadiusKm })) return "zone";
   }
   if (promisesLater(draft)) return "promise";
   const appHost = new URL(deps.appUrl).host;
@@ -279,7 +301,7 @@ async function answer(
       await reply(deps, conversation, order.state.fixedReply ?? CANCEL_PROMPT, !order.state.handedOff);
       return "answered";
     }
-    issue = await draftIssue(draft, intent, conversation, deps, order);
+    issue = await draftIssue(draft, intent, conversation, deps, settings, order);
     // Sin problemas, o derivó en este turno (sale su mensaje si es válido, si no el aviso de traspaso).
     if (!issue || handedOffNow) break;
     deps.log("[whatsapp-bot] borrador descartado", { conversation: conversation.id, intent, issue, attempt });
