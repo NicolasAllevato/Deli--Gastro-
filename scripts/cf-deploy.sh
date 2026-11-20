@@ -17,11 +17,7 @@ ACCOUNT_ID="e7351dd776e005da826ba6f2a5aae4c1"
 [ -f "$ENV_FILE" ] || { echo "No está $ENV_FILE; no despliego." >&2; exit 1; }
 grep -q "\"account_id\": \"$ACCOUNT_ID\"" wrangler.jsonc || { echo "wrangler.jsonc no apunta a la cuenta $ACCOUNT_ID." >&2; exit 1; }
 
-# Copia de respaldo (nunca se toca el original).
-BACKUP_DIR="${HOME}/.deli-gastro-env-backups"
-mkdir -p "$BACKUP_DIR"
-cp "$ENV_FILE" "$BACKUP_DIR/env.local.$(date +%Y%m%d-%H%M%S).copia"
-
+# Sin copias de respaldo: solo existe el original (decisión de la usuaria, 2026-11-20).
 check_env() { [ -f "$ENV_FILE" ] || { echo "ALERTA: falta $ENV_FILE" >&2; exit 1; }; }
 trap check_env EXIT
 
