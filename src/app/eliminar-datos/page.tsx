@@ -27,33 +27,21 @@ export default function EliminarDatosPage() {
       }
       sections={[
         {
-          title: "Si sos cliente: pedilo por email",
+          title: "Si sos cliente o escribiste por WhatsApp",
           body: (
             <p>
-              Los clientes piden la baja por email a {mail} con el asunto «Eliminar mis datos», desde el correo de tu cuenta o indicando
-              el teléfono con el que escribiste al comercio. Te confirmamos por el mismo medio.
+              Mandá un email a {mail} con el asunto «Eliminar mis datos», desde el correo de tu cuenta o indicando el teléfono con el
+              que escribiste al comercio. Te respondemos por el mismo medio.
             </p>
           ),
         },
         {
-          title: "Si escribiste por WhatsApp",
+          title: "Si conectaste Facebook",
           body: (
             <p>
-              Mandá un email a {mail} con el asunto «Eliminar mis datos» indicando el teléfono con el que escribiste
-              al comercio.
+              Si conectaste tu cuenta de WhatsApp Business con Facebook, podés quitar el acceso desde Facebook en Configuración →
+              Seguridad e inicio de sesión → Apps y sitios web → {BRAND.appName} → Eliminar. También podés pedirlo por email a {mail}.
             </p>
-          ),
-        },
-        {
-          title: "Si tenés una cuenta o conectaste Facebook",
-          body: (
-            <>
-              <p>
-                Mandá un email a {mail} con el asunto «Eliminar mis datos» desde el correo de tu cuenta. Si conectaste
-                tu cuenta de WhatsApp Business con Facebook, también podés quitar el acceso desde Facebook en
-                Configuración → Seguridad e inicio de sesión → Apps y sitios web → {BRAND.appName} → Eliminar.
-              </p>
-            </>
           ),
         },
         {
@@ -70,9 +58,9 @@ export default function EliminarDatosPage() {
           title: "Qué borramos y en cuánto tiempo",
           body: (
             <p>
-              Borramos tu cuenta, teléfono, direcciones, conversaciones, audios transcriptos y tokens de acceso
-              dentro de los 30 días de recibido el pedido, y te confirmamos por el mismo medio. Solo conservamos lo
-              que la ley exige guardar para fines contables o fiscales de los pedidos ya realizados.
+              Respondemos los pedidos por email dentro de los 30 días de recibidos. Se eliminan tu cuenta de acceso, tus sesiones y tu
+              contraseña. El historial de pedidos ya realizados y las constancias de aceptación de los términos se conservan, porque
+              hacen falta para fines contables, fiscales y legales.
             </p>
           ),
         },

@@ -6,7 +6,7 @@ export const BRAND = {
   year: 2026,
   tagline: "Delivery inteligente: pedidos, WhatsApp con IA y fidelización en una sola plataforma.",
   contactEmail: "contacto@la-gambeta.com",
-  legalUpdated: "5 de noviembre de 2026",
+  legalUpdated: "20 de noviembre de 2026",
   /** Titular del servicio, tal como figura en la constancia de ARCA (lo pide Meta para verificar). */
   legal: {
     holder: "Nicolás Hernán Allevato",
