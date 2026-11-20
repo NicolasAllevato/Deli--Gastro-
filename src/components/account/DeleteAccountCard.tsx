@@ -33,9 +33,9 @@ async function requestDeletion(password: string): Promise<void> {
 }
 
 /**
- * "Eliminar cuenta" de la configuración personal (cliente y personal del local). Pide la contraseña actual y escribir ELIMINAR,
- * elimina de inmediato y manda a la página de confirmación. El servidor valida todo otra vez: acá solo se muestra u oculta la acción.
- * Repartidores, dueño principal y último dueño activo no pueden (el servidor dice por qué).
+ * "Eliminar cuenta" de "Mi cuenta" (solo personal del local: los clientes piden la baja por email). Pide la contraseña actual y escribir
+ * ELIMINAR, elimina de inmediato y manda a la página de confirmación. El servidor valida todo otra vez: acá solo se muestra u oculta la acción.
+ * El dueño principal y el último dueño activo no pueden (el servidor dice por qué).
  */
 export function DeleteAccountCard() {
   const router = useRouter();
@@ -92,8 +92,8 @@ export function DeleteAccountCard() {
         <Trash2 size={16} className="text-red-600" aria-hidden /> Eliminar cuenta
       </h3>
       <p className="text-sm text-gray-600 leading-relaxed">
-        Borramos tu cuenta, tus datos de contacto y de entrega, tu historial de WhatsApp, tus puntos y tus reseñas. Los pedidos que ya hiciste se
-        conservan sin tus datos personales (solo fecha, importes y estado), porque la ley lo exige para fines contables. No se puede deshacer.
+        Eliminamos tu usuario del panel: tu cuenta, tus sesiones abiertas y tu contraseña. Lo que se hizo en el local (pedidos, clientes, WhatsApp y el
+        resto del historial) queda como está. Te mandamos un email para avisarte. No se puede deshacer.
       </p>
       {blocked && (
         <p role="note" className="flex items-start gap-2 text-xs text-gray-600 rounded-xl neumorphic-inset px-4 py-2.5">
@@ -124,7 +124,7 @@ export function DeleteAccountCard() {
         onClose={close}
         size="md"
         title="Eliminar mi cuenta"
-        description="Esta acción es definitiva: no vas a poder recuperar tu cuenta ni tus datos."
+        description="Esta acción es definitiva: no vas a poder volver a ingresar con este usuario."
         closeOnBackdrop={!busy}
         footer={
           <>

@@ -1,66 +1,44 @@
 /**
- * Lógica de /api/admin/eliminar-datos (solo el dueño principal) y /api/account/delete (la propia cuenta), separada de las rutas
- * para probarla sin Next. La ruta autentica (sesión, CSRF, límite) y entrega acá quién llama; este módulo valida los datos con
+ * Lógica de /api/admin/eliminar-datos (solo el dueño principal) y /api/account/delete (la propia cuenta del personal), separada de las
+ * rutas para probarla sin Next. La ruta autentica (sesión, CSRF, límite) y entrega acá quién llama; este módulo valida los datos con
  * zod, exige las condiciones de cada herramienta y traduce los resultados de la capa de datos a HTTP. Errores en español.
  */
 import { z } from "zod";
+import { BRAND } from "../brand.ts";
 import {
   DELETION_CONFIRM_WORD, DELETION_MAX_PASSWORD,
-  type DeletionAdminListing, type DeletionEligibilityView, type DeletionPreviewView, type DeletionRequestRowView, type DeletionResultView,
+  type DeletionAdminListing, type DeletionEligibilityView, type DeletionPreviewView, type DeletionRequestRowView, type DeletionResultView, type StaffUserView,
 } from "./types.ts";
 
 export { DELETION_CONFIRM_WORD, DELETION_MAX_PASSWORD };
 
-const ONLY_SUPER_OWNER = "Solo el dueño principal puede eliminar datos personales.";
-const COURIER = "Los repartidores no pueden eliminar su cuenta desde acá. Pedíselo al local.";
-const FILES_NOTE = "No se pudieron borrar algunos archivos de fotos; quedaron anotados en el registro.";
+const ONLY_SUPER_OWNER = "Solo el dueño principal puede eliminar usuarios.";
+const NOT_STAFF = `Solo el personal del local elimina su cuenta desde la aplicación. Los clientes piden la baja por email a ${BRAND.contactEmail}.`;
 
 // --- Validación -----------------------------------------------------------------------------------------
 
-const phoneSchema = z
-  .string({ error: "Indicá un teléfono." })
-  .trim()
-  .regex(/^[0-9+()\s.-]{8,32}$/, "El teléfono tiene que tener solo números, espacios, + o guiones.")
-  .refine((v) => {
-    const digits = v.replace(/\D/g, "").length;
-    return digits >= 8 && digits <= 15;
-  }, "El teléfono tiene que tener entre 8 y 15 dígitos.");
+/** Ids de Better Auth: uuid (los de esta app) o cadenas alfanuméricas propias de la librería. */
+export const userIdSchema = z.string({ error: "Elegí un usuario." }).min(1, "Elegí un usuario.").max(64).regex(/^[A-Za-z0-9_-]+$/, "Usuario inválido.");
 
 const emailSchema = z.email({ error: "Email inválido." }).max(254, "Email inválido.");
 
-/** Exactamente uno de los dos (teléfono o email): así se sabe de qué persona se habla sin ambigüedad. */
-const exactlyOne = (v: { phone?: string; email?: string }) => (v.phone === undefined) !== (v.email === undefined);
-const ONE_MESSAGE = "Indicá un teléfono o un email (uno solo).";
+/** Búsqueda por email EXACTO (sin parciales). */
+export const listQuerySchema = z.strictObject({ email: emailSchema.optional() });
 
-export const previewQuerySchema = z
-  .strictObject({ phone: phoneSchema.optional(), email: emailSchema.optional() })
-  .refine(exactlyOne, { message: ONE_MESSAGE });
+export const previewBodySchema = z.strictObject({ userId: userIdSchema });
 
-/** Ids de cuentas (uuid o alfanuméricos de Better Auth) y de fichas (uuid) que el dueño confirma. */
-const idSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "Id inválido.");
-const MAX_CONFIRMED_IDS = 10;
-
-export const executeBodySchema = z
-  .strictObject({
-    phone: phoneSchema.optional(),
-    email: emailSchema.optional(),
-    /**
-     * Obligatorios si la previsualización encontró más de una cuenta o más de una ficha (`requiresConfirmation`): los ids que
-     * se eligen eliminar, que tienen que ser un subconjunto de lo previsualizado (la capa de datos lo verifica).
-     */
-    confirmedUserIds: z.array(idSchema, { error: "Ids de cuenta inválidos." }).max(MAX_CONFIRMED_IDS, "Demasiados ids.").optional(),
-    confirmedClientIds: z.array(idSchema, { error: "Ids de ficha inválidos." }).max(MAX_CONFIRMED_IDS, "Demasiados ids.").optional(),
-    /** De dónde llegó el pedido: por email (lo habitual) o iniciado desde el panel. */
-    channel: z.enum(["email", "admin"], { error: "Canal inválido." }).default("email"),
-    confirm: z.literal(DELETION_CONFIRM_WORD, { error: `Escribí ${DELETION_CONFIRM_WORD} para confirmar.` }),
-  })
-  .refine(exactlyOne, { message: ONE_MESSAGE });
+export const executeBodySchema = z.strictObject({
+  userId: userIdSchema,
+  /** El código de un solo uso que devolvió la vista previa. */
+  token: z.string({ error: "Falta el código de confirmación." }).min(1, "Falta el código de confirmación.").max(512, "Código inválido."),
+  /** La contraseña del dueño principal. */
+  password: z.string({ error: "Ingresá tu contraseña." }).min(1, "Ingresá tu contraseña.").max(DELETION_MAX_PASSWORD, "La contraseña es demasiado larga."),
+  /** El email exacto del usuario a eliminar. */
+  confirmEmail: z.string({ error: "Escribí el email del usuario." }).trim().min(1, "Escribí el email del usuario.").max(254, "Email inválido."),
+});
 
 export const deleteOwnBodySchema = z.strictObject({
-  password: z
-    .string({ error: "Ingresá tu contraseña actual." })
-    .min(1, "Ingresá tu contraseña actual.")
-    .max(DELETION_MAX_PASSWORD, "La contraseña es demasiado larga."),
+  password: z.string({ error: "Ingresá tu contraseña actual." }).min(1, "Ingresá tu contraseña actual.").max(DELETION_MAX_PASSWORD, "La contraseña es demasiado larga."),
   confirm: z.literal(DELETION_CONFIRM_WORD, { error: `Escribí ${DELETION_CONFIRM_WORD} para confirmar.` }),
 });
 
@@ -68,24 +46,16 @@ const firstIssue = (e: z.ZodError) => e.issues[0]?.message ?? "Datos inválidos.
 
 // --- Puerto hacia la capa de datos --------------------------------------------------------------------------
 
-export type PortFailure = { ok: false; status: number; error: string };
-export type PortOutcome<T> = { ok: true; value: T } | PortFailure;
-
-/** Un archivo borrable: lo inyecta la ruta (R2 no vive en la capa de datos). */
-export interface PortFiles {
-  delete(keys: string[]): Promise<void>;
-}
+export type PortOutcome<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
+export type Notifier = (email: string) => Promise<void>;
 
 export interface DeletionPort<A> {
-  preview(actor: A, subject: { phone?: string; email?: string }): Promise<PortOutcome<DeletionPreviewView>>;
-  execute(
-    actor: A,
-    input: { phone?: string; email?: string; channel: "admin" | "email"; confirmedUserIds?: string[]; confirmedClientIds?: string[] },
-    files?: PortFiles | null,
-  ): Promise<PortOutcome<DeletionResultView>>;
+  users(actor: A, exactEmail?: string): Promise<PortOutcome<StaffUserView[]>>;
   recent(actor: A): Promise<DeletionRequestRowView[]>;
+  preview(actor: A, userId: string): Promise<PortOutcome<DeletionPreviewView>>;
+  execute(actor: A, input: { userId: string; token: string; password: string; confirmEmail: string }, notify?: Notifier): Promise<PortOutcome<DeletionResultView>>;
   eligibility(userId: string): Promise<{ canDelete: true } | { canDelete: false; status: number; reason: string }>;
-  deleteOwn(userId: string, password: string, files?: PortFiles | null): Promise<PortOutcome<DeletionResultView>>;
+  deleteOwn(userId: string, password: string, notify?: Notifier): Promise<PortOutcome<DeletionResultView>>;
 }
 
 export interface ApiResult {
@@ -102,75 +72,72 @@ export interface SuperOwnerContext {
   isSuperOwner: boolean;
 }
 
+/** Corre la operación de la herramienta: solo el dueño principal; la capa de datos lo vuelve a verificar contra la base. */
+async function asSuperOwner(ctx: SuperOwnerContext, run: () => Promise<ApiResult>): Promise<ApiResult> {
+  if (!ctx.isSuperOwner) return err(403, ONLY_SUPER_OWNER);
+  try {
+    return await run();
+  } catch (e: unknown) {
+    if (isForbidden(e)) return err(403, ONLY_SUPER_OWNER);
+    throw e;
+  }
+}
+
 // --- Herramienta del dueño principal --------------------------------------------------------------------------
 
-export async function previewApi<A>(
-  port: DeletionPort<A>, ctx: SuperOwnerContext, actor: A, query: Record<string, string | undefined>,
-): Promise<ApiResult> {
-  if (!ctx.isSuperOwner) return err(403, ONLY_SUPER_OWNER);
-  const hasQuery = query.phone !== undefined || query.email !== undefined;
-  try {
-    if (!hasQuery) {
-      const listing: DeletionAdminListing = { preview: null, recent: await port.recent(actor) };
-      return ok(200, listing);
-    }
-    const parsed = previewQuerySchema.safeParse({ phone: query.phone, email: query.email });
+/** GET: el personal que se puede elegir (o el del email exacto) y los pedidos recientes. */
+export function listApi<A>(port: DeletionPort<A>, ctx: SuperOwnerContext, actor: A, query: { email?: string }): Promise<ApiResult> {
+  return asSuperOwner(ctx, async () => {
+    const parsed = listQuerySchema.safeParse(query);
     if (!parsed.success) return err(400, firstIssue(parsed.error));
-    const preview = await port.preview(actor, parsed.data);
-    if (!preview.ok) return err(preview.status, preview.error);
-    const listing: DeletionAdminListing = { preview: preview.value, recent: await port.recent(actor) };
-    return ok(200, listing);
-  } catch (e: unknown) {
-    if (isForbidden(e)) return err(403, ONLY_SUPER_OWNER);
-    throw e;
-  }
+    const users = await port.users(actor, parsed.data.email);
+    if (!users.ok) return err(users.status, users.error);
+    const body: DeletionAdminListing = { users: users.value, recent: await port.recent(actor) };
+    return ok(200, body);
+  });
 }
 
-export async function executeApi<A>(
-  port: DeletionPort<A>, ctx: SuperOwnerContext, actor: A, rawBody: unknown, files?: PortFiles | null,
-): Promise<ApiResult> {
-  if (!ctx.isSuperOwner) return err(403, ONLY_SUPER_OWNER);
-  const parsed = executeBodySchema.safeParse(rawBody);
-  if (!parsed.success) return err(400, firstIssue(parsed.error));
-  try {
-    const { phone, email, channel, confirmedUserIds, confirmedClientIds } = parsed.data;
-    const result = await port.execute(actor, { phone, email, channel, confirmedUserIds, confirmedClientIds }, files);
-    if (!result.ok) return err(result.status, result.error);
-    return ok(200, { result: result.value, note: result.value.status === "partial" ? FILES_NOTE : null });
-  } catch (e: unknown) {
-    if (isForbidden(e)) return err(403, ONLY_SUPER_OWNER);
-    throw e;
-  }
+/** POST vista previa: nombre, email, rol, qué se borra y qué se conserva, más el código de un solo uso para ejecutar. */
+export function previewApi<A>(port: DeletionPort<A>, ctx: SuperOwnerContext, actor: A, rawBody: unknown): Promise<ApiResult> {
+  return asSuperOwner(ctx, async () => {
+    const parsed = previewBodySchema.safeParse(rawBody);
+    if (!parsed.success) return err(400, firstIssue(parsed.error));
+    const preview = await port.preview(actor, parsed.data.userId);
+    return preview.ok ? ok(200, { preview: preview.value }) : err(preview.status, preview.error);
+  });
 }
 
-// --- La propia cuenta --------------------------------------------------------------------------------------------
+/** POST ejecución: exige el código de la vista previa, la contraseña del dueño y el email exacto del usuario. */
+export function executeApi<A>(port: DeletionPort<A>, ctx: SuperOwnerContext, actor: A, rawBody: unknown, notify?: Notifier): Promise<ApiResult> {
+  return asSuperOwner(ctx, async () => {
+    const parsed = executeBodySchema.safeParse(rawBody);
+    if (!parsed.success) return err(400, firstIssue(parsed.error));
+    const result = await port.execute(actor, parsed.data, notify);
+    return result.ok ? ok(200, { result: result.value }) : err(result.status, result.error);
+  });
+}
+
+// --- La propia cuenta (solo personal) -------------------------------------------------------------------------
 
 export interface SelfContext {
   userId: string;
-  /** Rol de la sesión: cliente, admin (personal del local) o repartidor. */
+  /** Rol de la sesión: admin = personal del local; cliente y repartidor no pueden eliminar su cuenta desde la aplicación. */
   role: string;
 }
 
 export async function eligibilityApi<A>(port: DeletionPort<A>, ctx: SelfContext): Promise<ApiResult> {
-  if (ctx.role === "repartidor") {
-    const body: DeletionEligibilityView = { canDelete: false, reason: COURIER };
-    return ok(200, body);
-  }
+  if (ctx.role !== "admin") return err(403, NOT_STAFF);
   const e = await port.eligibility(ctx.userId);
   const body: DeletionEligibilityView = e.canDelete ? { canDelete: true, reason: null } : { canDelete: false, reason: e.reason };
   return ok(200, body);
 }
 
-export async function deleteOwnApi<A>(
-  port: DeletionPort<A>, ctx: SelfContext, rawBody: unknown, files?: PortFiles | null,
-): Promise<ApiResult> {
-  if (ctx.role === "repartidor") return err(403, COURIER);
-  if (ctx.role !== "cliente" && ctx.role !== "admin") return err(403, "No tenés permiso para esta acción.");
+export async function deleteOwnApi<A>(port: DeletionPort<A>, ctx: SelfContext, rawBody: unknown, notify?: Notifier): Promise<ApiResult> {
+  if (ctx.role !== "admin") return err(403, NOT_STAFF);
   const parsed = deleteOwnBodySchema.safeParse(rawBody);
   if (!parsed.success) return err(400, firstIssue(parsed.error));
-  const result = await port.deleteOwn(ctx.userId, parsed.data.password, files);
-  if (!result.ok) return err(result.status, result.error);
-  return ok(200, { ok: true });
+  const result = await port.deleteOwn(ctx.userId, parsed.data.password, notify);
+  return result.ok ? ok(200, { ok: true }) : err(result.status, result.error);
 }
 
 // --- Cookies de sesión ---------------------------------------------------------------------------------------------

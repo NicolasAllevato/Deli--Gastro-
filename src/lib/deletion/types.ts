@@ -1,49 +1,31 @@
-/** Formas públicas de la eliminación de datos (API y pantallas). Sin datos personales de nadie. */
+/** Formas públicas de la eliminación de usuarios (API y pantallas). Sin contraseñas, hashes ni datos de la cuenta más allá del nombre y el email. */
 
-/** Lo que hay que escribir para confirmar. La pantalla lo normaliza (mayúsculas, sin espacios) antes de enviarlo. */
+/** Autoservicio: lo que hay que escribir para confirmar. La pantalla lo normaliza (mayúsculas, sin espacios) antes de enviarlo. */
 export const DELETION_CONFIRM_WORD = "ELIMINAR";
 
-/** Igual que MIN_PASSWORD de la config de Better Auth: la contraseña actual puede tener más, hasta este tope. */
+/** La contraseña actual puede tener hasta este largo (igual que el tope de Better Auth). */
 export const DELETION_MAX_PASSWORD = 128;
 
-export interface DeletionCountRowView {
-  key: string;
-  table: string;
-  action: "delete" | "anonymize";
-  label: string;
-  count: number;
-}
-
-/** Una cuenta o ficha que coincidió con el teléfono o email ingresado (sin teléfono, email ni nombre completo). */
-export interface DeletionMatchView {
+/** Un usuario del personal que se puede elegir para eliminar. */
+export interface StaffUserView {
   id: string;
-  kind: "user" | "client";
-  /** Por qué dato coincidió. */
-  matchedBy: "email" | "phone";
-  /** direct = tiene ese dato; link = cuelga por id de algo que sí lo tiene. */
-  via: "direct" | "link";
-  /** Nombre abreviado ("Marta G."). */
-  label: string;
+  name: string;
+  email: string;
+  staffRole: "admin" | "gerente" | "cajero";
+  banned: boolean;
   createdAt: string | null;
-  role?: string;
-  staffRole?: string | null;
-  /** Cuentas: por qué no se puede eliminar, o null. */
-  blockedReason?: string | null;
-  source?: string | null;
-  linkedUserId?: string | null;
+  /** Por qué no se puede eliminar (dueño principal, último dueño activo), o null. */
+  blockedReason: string | null;
 }
 
 export interface DeletionPreviewView {
-  found: boolean;
-  total: number;
-  rows: DeletionCountRowView[];
-  files: number;
-  accounts: Array<{ role: string; staffRole: string | null }>;
-  warnings: string[];
-  blocked: { status: 403 | 409; reason: string } | null;
-  matches: { users: DeletionMatchView[]; clients: DeletionMatchView[] };
-  /** Más de una cuenta o ficha: hay que elegir cuáles eliminar (confirmedUserIds / confirmedClientIds). */
-  requiresConfirmation: boolean;
+  user: StaffUserView;
+  /** Qué se borra y cuántas filas. */
+  deletes: Array<{ key: string; label: string; count: number }>;
+  /** Qué se conserva. */
+  keeps: readonly string[];
+  /** Código de un solo uso (5 minutos) que exige la ejecución; null si el usuario está protegido. */
+  token: string | null;
 }
 
 export interface DeletionRequestRowView {
@@ -59,16 +41,16 @@ export interface DeletionRequestRowView {
 
 export interface DeletionResultView {
   requestId: string;
-  found: boolean;
-  status: "completed" | "partial";
+  status: "completed";
   counts: Record<string, number>;
   total: number;
-  files: { total: number; failed: number };
+  /** Aviso por email al usuario eliminado: enviado, fallido (el borrado vale igual) u omitido (sin proveedor de correo). */
+  notified: "sent" | "failed" | "skipped";
 }
 
-/** Respuesta de GET /api/admin/eliminar-datos. `preview` solo viene cuando se pidió por teléfono o email. */
+/** Respuesta de GET /api/admin/eliminar-datos. */
 export interface DeletionAdminListing {
-  preview: DeletionPreviewView | null;
+  users: StaffUserView[];
   recent: DeletionRequestRowView[];
 }
 

@@ -5,7 +5,6 @@ import { User, Phone, MapPin, Star, ShoppingBag, LogOut, ChevronRight, Bell } fr
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
-import { DeleteAccountCard } from "@/components/account/DeleteAccountCard";
 import { formatDateAR } from "@/lib/time-ar";
 
 interface PerfilData {
@@ -175,12 +174,6 @@ export default function PerfilPage() {
         <LogOut size={18} />
         Cerrar sesión
       </button>
-
-      {/* Configuración de la cuenta */}
-      <div className="space-y-3">
-        <h3 className="font-headline font-black text-base text-gray-800 px-1">Configuración de la cuenta</h3>
-        <DeleteAccountCard />
-      </div>
     </div>
   );
 }

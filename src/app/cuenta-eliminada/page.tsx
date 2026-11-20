@@ -21,11 +21,11 @@ export default function CuentaEliminadaPage() {
         <CircleCheck size={48} className="text-brand-green" aria-hidden />
         <h1 className="mt-4 font-headline text-3xl font-black text-gray-800">Eliminamos tu cuenta</h1>
         <p className="mt-3 text-sm text-gray-600 leading-relaxed">
-          Borramos tu cuenta y tus datos personales y cerramos tu sesión. Los pedidos que ya hiciste se conservan sin tus datos
-          (solo fecha, importes y estado), porque la ley lo exige para fines contables.
+          Eliminamos tu usuario y cerramos tu sesión. Lo que se hizo en el local (pedidos, clientes y el resto del historial) queda
+          como estaba. Te mandamos un email para avisarte.
         </p>
         <p className="mt-3 text-sm text-gray-600 leading-relaxed">
-          Si alguna vez escribiste por WhatsApp desde otro número o querés que revisemos algo más, escribinos a{" "}
+          Si no lo pediste vos o querés que revisemos algo más, escribinos a{" "}
           <a className="font-bold underline" href={`mailto:${BRAND.contactEmail}?subject=Eliminar%20mis%20datos`}>
             {BRAND.contactEmail}
           </a>{" "}
