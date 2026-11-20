@@ -4,6 +4,7 @@ import { BRAND, copyrightLine } from "@/lib/brand";
 const LEGAL_LINKS = [
   { href: "/terminos", label: "Términos y condiciones" },
   { href: "/privacidad", label: "Privacidad" },
+  { href: "/eliminar-datos", label: "Eliminación de datos" },
   { href: "/cookies", label: "Cookies" },
 ] as const;
 

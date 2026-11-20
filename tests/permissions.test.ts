@@ -397,3 +397,51 @@ describe("menú filtrado por permisos", () => {
     assert.equal(menu[0].href, "/admin/conversaciones");
   });
 });
+
+describe("eliminación de datos y Mi cuenta", () => {
+  const ELIMINAR = ["/admin/eliminar-datos", "/api/admin/eliminar-datos", "/ADMIN/eliminar-datos/", "/api/admin/eliminar-datos?phone=1"];
+
+  it("la pantalla de eliminar datos es de Configuración y de solo dueño: gerentes y cajeros reciben owner-only, aunque editen Configuración", () => {
+    assert.equal(P.sectionForPath("/admin/eliminar-datos"), "configuracion");
+    const configEditor = P.staffAccessOf(metaOf("gerente", JSON.stringify({ configuracion: "edit" })));
+    for (const access of [gerente, cajero, configEditor]) {
+      for (const path of ELIMINAR) {
+        const decision = P.evaluateAccess(access, path, "GET");
+        assert.equal(decision.allowed, false, path);
+        assert.equal(decision.allowed === false && decision.reason, "owner-only", path);
+      }
+      assert.equal(P.evaluateAccess(access, "/api/admin/eliminar-datos", "POST").allowed, false);
+    }
+    // El dueño pasa por permisos; que sea el PRINCIPAL lo exigen la ruta y la capa de datos (tests/data-deletion*.test.ts).
+    for (const path of ELIMINAR) assert.equal(P.evaluateAccess(owner, path, "POST").allowed, true, path);
+  });
+
+  it("el servidor corta con 403 a quien no es dueño (staffAccessDenial)", () => {
+    const req = { url: "https://x.test/api/admin/eliminar-datos", method: "POST" };
+    assert.equal(staffAccessDenial(metaOf("gerente"), req), FORBIDDEN_MESSAGE);
+    assert.equal(staffAccessDenial(metaOf("cajero"), req), FORBIDDEN_MESSAGE);
+    assert.equal(staffAccessDenial(metaOf("admin"), req), null);
+  });
+
+  it("Mi cuenta la abre todo el personal, sin depender de ninguna sección", () => {
+    const sinNada = P.staffAccessOf(metaOf("cajero", JSON.stringify({ pedidos: "none", catalogo: "none", comunicacion: "none" })));
+    for (const access of [owner, gerente, cajero, sinNada]) {
+      for (const path of ["/admin/mi-cuenta", "/admin/mi-cuenta/", "/ADMIN/Mi-Cuenta"]) assert.equal(P.evaluateAccess(access, path, "GET").allowed, true, path);
+    }
+    // No es un comodín: un prefijo parecido sigue cerrado.
+    assert.equal(P.evaluateAccess(sinNada, "/admin/mi-cuenta-otra", "GET").allowed, false);
+    assert.deepEqual(adminPageDecision(metaOf("cajero"), "/admin/mi-cuenta"), { kind: "allow" });
+  });
+
+  it("la pestaña Eliminar datos solo aparece para el dueño principal", () => {
+    const tabsOf = (sections: ReadonlyArray<{ tabs: ReadonlyArray<{ href: string }> }>) => sections.flatMap((s) => s.tabs.map((t) => t.href));
+    assert.equal(tabsOf(visibleNavSections(owner)).includes("/admin/eliminar-datos"), false, "dueño común: no");
+    assert.equal(tabsOf(visibleNavSections(owner, { superOwner: false })).includes("/admin/eliminar-datos"), false);
+    assert.ok(tabsOf(visibleNavSections(owner, { superOwner: true })).includes("/admin/eliminar-datos"), "dueño principal: sí");
+    for (const access of [gerente, cajero]) {
+      assert.equal(tabsOf(visibleNavSections(access, { superOwner: true })).includes("/admin/eliminar-datos"), false, "gerente y cajero nunca");
+    }
+    const tab = NAV_SECTIONS.flatMap((s) => s.tabs).find((t) => t.href === "/admin/eliminar-datos");
+    assert.equal(tab?.superOwnerOnly, true);
+  });
+});

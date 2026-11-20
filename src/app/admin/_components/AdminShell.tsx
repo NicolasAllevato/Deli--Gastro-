@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
-import { Bell, Eye, Menu, X } from "lucide-react";
+import { Bell, Eye, Menu, UserRound, X } from "lucide-react";
 import { SignOutButton } from "@/components/ui/SignOutButton";
 import { cn } from "@/lib/cn";
 import { SectionTabs } from "@/components/ui/SectionTabs";
@@ -21,10 +21,10 @@ import { ReclamoNuevoModal, ReclamosAlert, useReclamosResumen } from "./Reclamos
  * muestra solo lo que el usuario puede abrir y avisa cuando una sección es de solo lectura.
  * La autorización real la hacen el proxy y los guards de las rutas; esto es presentación.
  */
-export function AdminShell({ access, children }: { access: StaffAccess; children: ReactNode }) {
+export function AdminShell({ access, superOwner = false, children }: { access: StaffAccess; superOwner?: boolean; children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const sections = useMemo(() => visibleNavSections(access), [access]);
+  const sections = useMemo(() => visibleNavSections(access, { superOwner }), [access, superOwner]);
   const activeSection = findSection(pathname, sections);
   // Las alertas de habilitación piden aprobar o rechazar: solo para quien puede editar Pedidos.
   const canSeeShifts = canAccessPath(access, "/api/admin/courier-shifts", "POST");
@@ -168,6 +168,14 @@ export function AdminShell({ access, children }: { access: StaffAccess; children
                 GE
               </div>
             </div>
+            <Link
+              href="/admin/mi-cuenta"
+              aria-label="Mi cuenta"
+              title="Mi cuenta"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-full neumorphic neumorphic-hover text-gray-600 hover:text-brand-orange transition-colors"
+            >
+              <UserRound size={16} aria-hidden />
+            </Link>
             <SignOutButton />
           </div>
         </header>
