@@ -15,6 +15,7 @@ interface Entry {
   categoria: Categoria;
   tema: string;
   contenido: string;
+  palabras_clave: string;
   activo: boolean;
   orden: number;
 }
@@ -29,7 +30,10 @@ const CATEGORIAS: { value: Categoria; label: string; hint: string }[] = [
   { value: "otro", label: "Otros", hint: "Cualquier dato del local que el agente deba saber." },
 ];
 
-const EMPTY: Draft = { categoria: "faq", tema: "", contenido: "", activo: true, orden: 0 };
+const EMPTY: Draft = { categoria: "faq", tema: "", contenido: "", palabras_clave: "", activo: true, orden: 0 };
+
+/** Tope que usa el servidor si todavía no respondió (se pisa con el valor real). */
+const DEFAULT_LIMIT = 300;
 
 async function request<T>(method: string, body?: unknown): Promise<T> {
   const res = await fetch("/api/admin/conocimiento", {
@@ -47,6 +51,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : "No se pudo co
 
 export default function ConocimientoPage() {
   const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +59,9 @@ export default function ConocimientoPage() {
 
   const load = useCallback(async () => {
     try {
-      setEntries((await request<{ entries: Entry[] }>("GET")).entries);
+      const loaded = await request<{ entries: Entry[]; limit?: number }>("GET");
+      setEntries(loaded.entries);
+      if (loaded.limit) setLimit(loaded.limit);
     } catch (e) {
       setError(message(e));
     }
@@ -93,6 +100,8 @@ export default function ConocimientoPage() {
   }
 
   const hint = CATEGORIAS.find((c) => c.value === draft.categoria)?.hint;
+  const activeCount = (entries ?? []).filter((e) => e.activo).length;
+  const atLimit = (entries?.length ?? 0) >= limit;
 
   return (
     <div className="space-y-5 max-w-3xl mx-auto pb-10">
@@ -125,6 +134,13 @@ export default function ConocimientoPage() {
         </label>
         <Field label="Tema" value={draft.tema} maxLength={120} onChange={(e) => setDraft({ ...draft, tema: e.target.value })} hint={hint} />
         <Field as="textarea" rows={3} label="Contenido" value={draft.contenido} maxLength={1000} onChange={(e) => setDraft({ ...draft, contenido: e.target.value })} />
+        <Field
+          label="Palabras clave (opcional)"
+          value={draft.palabras_clave}
+          maxLength={300}
+          onChange={(e) => setDraft({ ...draft, palabras_clave: e.target.value })}
+          hint="Otras formas en que te lo preguntan, separadas por coma (ej.: abren, cierran, hora). Ayudan al agente a encontrar esta entrada."
+        />
         <Switch checked={draft.activo} onChange={(activo) => setDraft({ ...draft, activo })} label="Activa" hint="Si la apagás, el agente deja de usarla." />
         <div className="flex gap-2">
           <Button size="sm" onClick={save} loading={busy} disabled={!draft.tema.trim() || !draft.contenido.trim()}>
@@ -137,6 +153,16 @@ export default function ConocimientoPage() {
       <Reclamos />
       <Aprendizaje onApproved={() => void load()} />
 
+      {entries !== null && (
+        <p className="text-xs font-bold text-gray-600" role="status">
+          {activeCount} {activeCount === 1 ? "entrada activa" : "entradas activas"} de {entries.length} cargadas
+        </p>
+      )}
+      {atLimit && (
+        <p role="alert" className="text-xs font-bold text-yellow-800 px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-200">
+          Llegaste al tope de {limit} entradas: las que superen ese número no se muestran acá. Borrá o unificá las que no uses antes de cargar más.
+        </p>
+      )}
       {entries === null && !error && <p className="text-sm text-gray-500">Cargando...</p>}
       {entries?.length === 0 && <p className="text-sm text-gray-500">Todavía no cargaste nada. Empezá por las preguntas que más te hacen.</p>}
 
@@ -149,6 +175,7 @@ export default function ConocimientoPage() {
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-bold ${e.activo ? "text-gray-800" : "text-gray-500 line-through"}`}>{e.tema}</p>
                   <p className="text-xs text-gray-600 whitespace-pre-wrap mt-1">{e.contenido}</p>
+                  {e.palabras_clave && <p className="text-xs text-gray-500 mt-1">Palabras clave: {e.palabras_clave}</p>}
                 </div>
                 <Switch
                   checked={e.activo}

@@ -91,7 +91,8 @@ export async function seedClientLogin(world: World, opts: { password?: boolean }
 
 /** Contenido de cada tabla, sin las columnas indicadas (`tabla.columna`). Lo único que puede cambiar al eliminar un usuario. */
 export function dumpAll(raw: DatabaseSync, omit: readonly string[] = []): Record<string, string> {
-  const tables = (raw.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as { name: string }[]).map((t) => t.name);
+  // Sin el índice FTS5 de kb_negocio ni sus tablas auxiliares (algunas son WITHOUT ROWID): es una copia derivada que mantienen los triggers.
+  const tables = (raw.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'kb_negocio_fts%' ORDER BY name`).all() as { name: string }[]).map((t) => t.name);
   return Object.fromEntries(
     tables.map((t) => {
       const cols = (raw.prepare(`SELECT name FROM pragma_table_info('${t}')`).all() as { name: string }[]).map((c) => c.name).filter((c) => !omit.includes(`${t}.${c}`));

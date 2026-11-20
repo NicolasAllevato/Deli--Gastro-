@@ -172,6 +172,17 @@ async function draftIssue(draft: string, intent: Intent, conversation: BotConver
   return check.verdict === "block" ? "blocked" : null;
 }
 
+/** Lee algo que el turno puede hacer sin: ante un error lo deja en el log (solo el mensaje, sin datos del cliente) y devuelve `fallback`. */
+async function readOptional<T>(deps: TurnDeps, what: string, read: (() => Promise<T>) | undefined, fallback: T): Promise<T> {
+  if (!read) return fallback;
+  try {
+    return await read();
+  } catch (error: unknown) {
+    deps.log(`[whatsapp-bot] no se pudo leer ${what}; el turno sigue sin eso`, { error: error instanceof Error ? error.message : "error" });
+    return fallback;
+  }
+}
+
 async function answer(
   turnText: string, intent: Intent, suspicious: boolean, conversation: BotConversation, settings: BotSettings, deps: TurnDeps, order?: OrderTurn,
   knownAddress: string | null = null, reminder: string | null = null, extras: TurnExtras = { images: [], wamid: undefined },
@@ -179,10 +190,11 @@ async function answer(
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
   while (history.at(-1)?.direction === "in") history.pop();
-  const knowledge = (await deps.repo.knowledge?.().catch(() => [])) ?? [];
-  const lessons = (await deps.repo.lessons?.().catch(() => [])) ?? [];
+  // Lecturas opcionales: si fallan se sigue sin ese bloque, pero queda en el log (antes se tragaba el error en silencio).
+  const vocabulary = await readOptional(deps, "el vocabulario", deps.repo.vocabulary?.bind(deps.repo), []);
+  const lessons = await readOptional(deps, "las lecciones", deps.repo.lessons?.bind(deps.repo), []);
   // Perfil del cliente habitual: siempre el de ESTE teléfono (etapa 2). Si falla, se sigue sin perfil.
-  const profile = (await deps.repo.customerProfile?.(conversation.phone).catch(() => null)) ?? null;
+  const profile = await readOptional(deps, "el perfil del cliente", deps.repo.customerProfile ? () => deps.repo.customerProfile!(conversation.phone) : undefined, null);
   const clientTexts = history.filter((h) => h.direction === "in").map((h) => h.body);
   const lastBot = history.filter((h) => h.direction === "out").at(-1)?.body ?? null;
   const guard = (address: string) => profileAddressUnconfirmed(address, profile?.lastAddress, clientTexts, lastBot, turnText);
@@ -207,8 +219,8 @@ async function answer(
         }
       : {}),
   };
-  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, knowledge, lessons, profile);
-  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard);
+  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile);
+  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard, deps.log);
   const ask = (extra?: string) =>
     respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history, settings.ordersEnabled), userText: wrapUntrusted(turnText), tools });
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit, getClientIp } from "@/utils/rate-limit";
 import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
-import { actorFromSession, kbApp, kbInputSchema } from "@/lib/data";
+import { actorFromSession, kbApp, kbInputSchema, KB_MAX_ROWS } from "@/lib/data";
 
 const patchSchema = kbInputSchema.partial().extend({ id: z.string().uuid() }).strict();
 const deleteSchema = z.object({ id: z.string().uuid() }).strict();
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   const { denied, actor } = await guard(req, 60);
   if (denied || !actor) return denied;
   try {
-    return NextResponse.json({ entries: await kbApp.list(actor) });
+    return NextResponse.json({ entries: await kbApp.list(actor), limit: KB_MAX_ROWS });
   } catch (err) {
     return serverError("list", err);
   }

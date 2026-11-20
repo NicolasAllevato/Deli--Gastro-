@@ -14,6 +14,8 @@ export const kbInputSchema = z
     categoria: z.enum(KB_CATEGORIAS),
     tema: z.string().trim().min(1, "Falta el tema.").max(120, "El tema admite hasta 120 caracteres."),
     contenido: z.string().trim().min(1, "Falta el contenido.").max(1000, "El contenido admite hasta 1000 caracteres."),
+    /** Sinónimos y formas de decirlo ("abren, cierran, hora"): ayudan a que el agente encuentre la entrada. Opcional. */
+    palabras_clave: z.string().trim().max(300, "Las palabras clave admiten hasta 300 caracteres.").optional(),
     activo: z.boolean().optional(),
     orden: z.number().int().min(0).max(9999).optional(),
   })
@@ -26,6 +28,7 @@ export interface KbEntry {
   categoria: KbCategoria;
   tema: string;
   contenido: string;
+  palabras_clave: string;
   activo: boolean;
   orden: number;
   updated_at: string;
@@ -36,13 +39,15 @@ interface KbRow {
   categoria: KbCategoria;
   tema: string;
   contenido: string;
+  palabras_clave: string;
   activo: number;
   orden: number;
   updated_at: string;
 }
 
-const COLS = "id, categoria, tema, contenido, activo, orden, updated_at";
-const MAX_ROWS = 300;
+const COLS = "id, categoria, tema, contenido, palabras_clave, activo, orden, updated_at";
+/** Tope de entradas que lista el panel (y que acepta la carga por archivo). */
+export const KB_MAX_ROWS = 300;
 
 const toApi = (r: KbRow): KbEntry => ({ ...r, activo: r.activo === 1 });
 
@@ -55,7 +60,7 @@ export async function listKb(db: SqlDatabase, actor: Actor): Promise<KbEntry[]> 
   requireStaff(actor);
   const { results } = await db
     .prepare(`SELECT ${COLS} FROM kb_negocio ORDER BY categoria, orden, tema LIMIT ?`)
-    .bind(MAX_ROWS)
+    .bind(KB_MAX_ROWS)
     .all<KbRow>();
   return results.map(toApi);
 }
@@ -63,15 +68,15 @@ export async function listKb(db: SqlDatabase, actor: Actor): Promise<KbEntry[]> 
 export async function createKb(db: SqlDatabase, actor: Actor, id: string, input: KbInput): Promise<KbEntry> {
   requireStaff(actor);
   await db
-    .prepare("INSERT INTO kb_negocio (id, categoria, tema, contenido, activo, orden) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, input.categoria, input.tema, input.contenido, input.activo === false ? 0 : 1, input.orden ?? 0)
+    .prepare("INSERT INTO kb_negocio (id, categoria, tema, contenido, palabras_clave, activo, orden) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, input.categoria, input.tema, input.contenido, input.palabras_clave ?? "", input.activo === false ? 0 : 1, input.orden ?? 0)
     .run();
   const row = await getEntry(db, id);
   if (!row) throw new Error("Entrada no creada");
   return row;
 }
 
-const EDITABLE = new Set(["categoria", "tema", "contenido", "activo", "orden"]);
+const EDITABLE = new Set(["categoria", "tema", "contenido", "palabras_clave", "activo", "orden"]);
 
 /** Devuelve null si la entrada no existe. */
 export async function updateKb(db: SqlDatabase, actor: Actor, id: string, patch: Partial<KbInput>): Promise<KbEntry | null> {

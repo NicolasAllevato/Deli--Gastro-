@@ -151,8 +151,13 @@ export interface BotRepo {
   /** Carta estructurada activa (vacía = no hay, se usa el menú por categorías). Opcional como `knowledge`. */
   carta?(): Promise<CartaSeccion[]>;
   zones(): Promise<ZoneInfo[]>;
-  /** Base de conocimiento activa. Opcional: sin la tabla (backend Supabase, tests viejos) no hay conocimiento extra. */
-  knowledge?(): Promise<KnowledgeEntry[]>;
+  /** Glosario activo (categoría vocabulario, máx. 30): va al prompt. Opcional: sin la tabla (backend Supabase, tests viejos) no hay glosario. */
+  vocabulary?(): Promise<KnowledgeEntry[]>;
+  /**
+   * Entradas activas de la base de conocimiento (todo menos el vocabulario) que tratan de `query` (lo que el cliente pregunta),
+   * las más relevantes primero y como mucho `limit` (8 por defecto). Sin consulta: unas pocas entradas generales. Opcional como `vocabulary`.
+   */
+  searchKnowledge?(query?: string, limit?: number): Promise<KnowledgeEntry[]>;
   /** Correcciones de errores aprobados (kb_errores): "Errores a evitar" en el prompt. Opcional como `knowledge`. */
   lessons?(): Promise<string[]>;
   latestOrder(clientId: string): Promise<OrderInfo | null>;
