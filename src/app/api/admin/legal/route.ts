@@ -1,52 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { guardAdmin } from "@/lib/auth/adminGuard";
-import { LEGAL_DOCUMENTS, legalStatus, type LegalDocumentId } from "@/lib/legal/documents";
+import { dataFor, systemActor, usesD1 } from "@/lib/data";
+import {
+  LEGAL_LIST_MAX_ROWS, groupLegalUsers, legalDocumentsView, type LegalAcceptanceListRow, type LegalUserRow,
+} from "@/lib/legal/admin-list";
 
-export interface LegalUserRow {
-  userId: string;
-  email: string | null;
-  role: string | null;
-  complete: boolean;
-  accepted: Partial<Record<LegalDocumentId, string>>;
-  lastIp: string | null;
+export type { LegalUserRow };
+
+/** Aceptaciones, de la más reciente a la más vieja: con D1 salen de D1 (única fuente), si no, de Supabase. */
+async function readAcceptances(): Promise<LegalAcceptanceListRow[]> {
+  if (usesD1()) {
+    // El permiso ya lo resolvió guardAdmin (rol admin y sección Configuración); la lista no depende de un usuario en particular.
+    return (await dataFor(systemActor("admin-legal-list"))).legal.all(LEGAL_LIST_MAX_ROWS);
+  }
+  const { data, error } = await createAdminClient()
+    .from("legal_acceptances")
+    .select("user_id, email, role, document, version, accepted_at, ip")
+    .order("accepted_at", { ascending: false })
+    .limit(LEGAL_LIST_MAX_ROWS);
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
-
-const MAX_ROWS = 5000;
 
 /** Estado de aceptación de Términos y Privacidad por usuario (solo admin). */
 export async function GET(req: NextRequest) {
   const blocked = await guardAdmin(req, 30);
   if (blocked) return blocked;
 
-  const { data, error } = await createAdminClient()
-    .from("legal_acceptances")
-    .select("user_id, email, role, document, version, accepted_at, ip")
-    .order("accepted_at", { ascending: false })
-    .limit(MAX_ROWS);
-  if (error) {
+  let rows: LegalAcceptanceListRow[];
+  try {
+    rows = await readAcceptances();
+  } catch (error: unknown) {
     console.error("[legal] listado admin", error);
     return NextResponse.json({ error: "No se pudieron leer las aceptaciones." }, { status: 500 });
   }
 
-  const byUser = new Map<string, typeof data>();
-  for (const row of data ?? []) byUser.set(row.user_id, [...(byUser.get(row.user_id) ?? []), row]);
-
-  const users: LegalUserRow[] = [...byUser.entries()].map(([userId, rows]) => {
-    const status = legalStatus(rows);
-    return {
-      userId,
-      email: rows[0]?.email ?? null,
-      role: rows[0]?.role ?? null,
-      complete: status.complete,
-      accepted: status.accepted,
-      lastIp: rows[0]?.ip ?? null,
-    };
-  });
-
   return NextResponse.json({
-    documents: LEGAL_DOCUMENTS.map(({ id, title, version, href }) => ({ id, title, version, href })),
-    users,
-    truncated: (data ?? []).length >= MAX_ROWS,
+    documents: legalDocumentsView(),
+    users: groupLegalUsers(rows),
+    truncated: rows.length >= LEGAL_LIST_MAX_ROWS,
   });
 }

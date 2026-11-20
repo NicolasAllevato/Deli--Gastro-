@@ -74,7 +74,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       createOwn: bind(reviews.createOwnReview, db, actor),
       eligibility: bind(reviews.reviewEligibility, db, actor),
     },
-    legal: { own: bind(legal.listOwnLegal, db, actor), accept: bind(legal.acceptOwnLegal, db, actor) },
+    legal: { own: bind(legal.listOwnLegal, db, actor), accept: bind(legal.acceptOwnLegal, db, actor), all: bind(legal.listAllLegal, db, actor) },
     catalog: {
       products: bind(catalog.listProducts, db, actor),
       categories: bind(catalog.listCategories, db, actor),
