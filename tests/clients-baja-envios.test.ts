@@ -186,6 +186,42 @@ describe("encuestas: falla cerrado", () => {
   });
 });
 
+describe("el teléfono de una ficha dada de baja no recibe promociones ni encuestas aunque lo pida otra ficha", () => {
+  /** Ficha de la cuenta (dada de baja, enlazada a la conversación) y una ficha creada por WhatsApp con el mismo teléfono, con un pedido. */
+  function seedLinked() {
+    seedClient("a", PHONES.a, { unsubscribed: true });
+    sqlite.raw.prepare(`INSERT INTO clients (id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('wa', 'Cliente wa', ?, ?, 1)`).run(`+${PHONES.a}`, PHONES.a.slice(-10));
+    sqlite.raw.prepare(`INSERT INTO orders (id, client_id, status, items_desc, total_cents, channel, created_at, delivered_at) VALUES ('o-wa', 'wa', 'Finalizados', '1x Flan', 100, 'web', ?, ?)`)
+      .run(new Date(NOW.getTime() - 90 * 60_000).toISOString(), new Date(NOW.getTime() - 60 * 60_000).toISOString());
+    sqlite.raw.prepare(`UPDATE orders SET survey_sent_at = ? WHERE id = 'o-a'`).run(AT);
+  }
+
+  it("encuesta: el pedido de la otra ficha va al teléfono cuya conversación está enlazada a la ficha dada de baja, y no se manda", async () => {
+    seedLinked();
+    const result = await notify.sendDueSurveys(db as never, "https://app.example.test", NOW);
+    assert.deepEqual({ sent: result.sent, skipped: result.skipped, failed: result.failed }, { sent: 0, skipped: 1, failed: 0 });
+    assert.equal(sent.length, 0);
+    assert.equal((sqlite.raw.prepare(`SELECT survey_sent_at FROM orders WHERE id = 'o-wa'`).get() as { survey_sent_at: string | null }).survey_sent_at, null);
+  });
+
+  it("unsubscribedPhones: solo los teléfonos de conversaciones enlazadas a fichas dadas de baja; falla cerrado ante un error", async () => {
+    seedLinked();
+    seedClient("b", PHONES.b);
+    assert.deepEqual([...(await campaigns.unsubscribedPhones(db as never))], [PHONES.a]);
+    breakReads = true;
+    await assert.rejects(campaigns.unsubscribedPhones(db as never), /no se pudo saber/i);
+  });
+
+  it("campaña: una lista armada antes de la baja no llega al teléfono de la ficha dada de baja, aunque el destinatario sea otra ficha", async () => {
+    seedClient("a", PHONES.a);
+    sqlite.raw.prepare(`INSERT INTO wa_campaigns (id, name, segment, message) VALUES ('camp-1', 'Prueba', '{"kind":"all"}', 'Hay promo')`).run();
+    sqlite.raw.prepare(`UPDATE clients SET unsubscribed_at = ? WHERE id = 'a'`).run(AT);
+    // Destinatario de otra ficha con el mismo teléfono (no estaba de baja cuando se armó la lista).
+    await campaigns.runCampaign(db as never, "camp-1", [{ id: "otra-ficha", name: "Otra", phone: PHONES.a }], "Hay promo");
+    assert.equal(sent.length, 0);
+  });
+});
+
 describe("avisos de un pedido (transaccionales)", () => {
   it("no dependen de la baja: responden al pedido que el propio cliente hizo (ni siquiera la leen)", async () => {
     seedClient("b", PHONES.b, { unsubscribed: true });

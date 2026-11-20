@@ -4,8 +4,8 @@
  * Dar de baja una cuenta elimina SOLO su cuenta de acceso: user, session, account, verification (por su email o su id) y sus intentos de
  * contraseña. No se toca ninguna otra tabla: pedidos, clientes, puntos, reseñas, pagos, WhatsApp, reclamos y bitácoras quedan como están,
  * y legal_acceptances se conserva (user_id NULL por ON DELETE SET NULL, migración 0019; la ficha de cliente se desvincula por el trigger de
- * la 0020). Única escritura extra: la ficha de un CLIENTE queda dada de baja de comunicaciones (clients.unsubscribed_at, migración 0021):
- * deja de recibir promociones y encuestas, pero no se borra. El DELETE del usuario solo toca role admin o cliente (nunca repartidores).
+ * la 0020). Única escritura extra: la ficha de un CLIENTE (la atada por user_id, nada más) queda dada de baja de comunicaciones
+ * (clients.unsubscribed_at, migración 0021): deja de recibir promociones y encuestas, pero no se borra. El DELETE del usuario solo toca role admin o cliente (nunca repartidores).
  *
  * Dos caminos:
  * - Herramienta del dueño principal (SUPER_OWNER_EMAIL), solo para el personal: vista previa → código de un solo uso (HMAC, 5 min, atado al
@@ -149,13 +149,14 @@ interface Step {
 
 const ids = (u: UserRow): SqlValue[] => [u.id];
 /**
- * Fichas de cliente de una cuenta: las atadas por user_id y las que tienen el teléfono de una conversación de WhatsApp vinculada a esa
- * cuenta (el teléfono VERIFICADO por Meta; el que el cliente escribió a mano en su perfil no cuenta). Recibe el id de la cuenta dos veces.
+ * Fichas de cliente de una cuenta: SOLO las atadas por user_id. No se expande por teléfono: el que el cliente cargó en su perfil no está
+ * verificado, y alguien podría escribir el de otra persona, darse de baja y dejarla sin comunicaciones. (El WhatsApp de la ficha dada de
+ * baja se frena al enviar: ver unsubscribedPhones en whatsapp/campaigns.ts y la encuesta en whatsapp/notify.ts.)
  */
-const OWN_FICHAS = `is_anonymous = 0 AND (user_id = ? OR phone_digits IN (SELECT substr(w.client_phone, -10) FROM wa_conversations w JOIN clients c ON c.id = w.client_id WHERE c.user_id = ?))`;
+const OWN_FICHAS = `is_anonymous = 0 AND user_id = ?`;
 const IS_CLIENT = `(SELECT role FROM "user" WHERE id = ?) = 'cliente'`;
 const UNSUBSCRIBE_WHERE = `unsubscribed_at IS NULL AND ${IS_CLIENT} AND ${OWN_FICHAS}`;
-/** Pedidos que todavía no se entregaron ni se cancelaron de las fichas de la cuenta. */
+/** Pedidos que todavía no se entregaron ni se cancelaron de las fichas de la cuenta (las atadas por user_id). */
 const IN_PROGRESS = `SELECT COUNT(*) AS n FROM orders WHERE status IN ('Recibidos', 'En Preparación', 'En Camino') AND client_id IN (SELECT id FROM clients WHERE ${OWN_FICHAS})`;
 /** Todo lo que se elimina, y nada más. */
 export const DELETION_STEPS: readonly Step[] = [
@@ -171,7 +172,7 @@ export const DELETION_STEPS: readonly Step[] = [
   },
   {
     // Antes de borrar el usuario: el trigger de la 0020 le saca el user_id a la ficha y después no se la reconocería.
-    key: "comunicaciones", label: "Baja de promociones y encuestas (la ficha se conserva)", binds: (u, now) => [now, u.id, u.id, u.id], countBinds: (u) => [u.id, u.id, u.id],
+    key: "comunicaciones", label: "Baja de promociones y encuestas (la ficha se conserva)", binds: (u, now) => [now, u.id, u.id], countBinds: (u) => [u.id, u.id],
     count: `SELECT COUNT(*) AS n FROM clients WHERE ${UNSUBSCRIBE_WHERE}`, del: `UPDATE clients SET unsubscribed_at = ?, wa_marketing_opt_in = 0 WHERE ${UNSUBSCRIBE_WHERE}`,
   },
   { key: "user", label: "Cuenta de usuario", count: `SELECT COUNT(*) AS n FROM "user" WHERE id = ?`, del: `DELETE FROM "user" WHERE id = ? AND role IN ('admin', 'cliente')`, binds: ids },
@@ -408,7 +409,7 @@ export async function ownAccountEligibility(db: SqlDatabase, userId: string, opt
   if (u.role !== "admin" && u.role !== "cliente") return { canDelete: false, status: 403, reason: SELF_MESSAGES.courier };
   const block = await protectionFor(db, u, opts);
   if (block) return { canDelete: false, status: block.status, reason: block.status === 403 ? SELF_MESSAGES.superOwner : SELF_MESSAGES.lastOwner };
-  if (u.role === "cliente" && Number((await db.prepare(IN_PROGRESS).bind(u.id, u.id).first<{ n: number }>())?.n ?? 0) > 0) {
+  if (u.role === "cliente" && Number((await db.prepare(IN_PROGRESS).bind(u.id).first<{ n: number }>())?.n ?? 0) > 0) {
     return { canDelete: false, status: 409, reason: SELF_MESSAGES.inProgress };
   }
   return { canDelete: true, method: (await credentialHash(db, u.id)) ? "password" : "email" };

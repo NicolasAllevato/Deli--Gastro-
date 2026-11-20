@@ -440,18 +440,17 @@ describe("baja de un cliente (autoservicio)", () => {
     const before = dumpAll(world.db.raw, HISTORY_OMIT);
     const notified: Array<{ email: string; role: string }> = [];
     const result = expectOk(await ownCli(world, { password: PASSWORD }, { notify: async (t) => void notified.push(t) }));
-    assert.deepEqual(result.counts, { session: 1, account: 1, verification: 1, intentos: 0, comunicaciones: 2, user: 1 });
+    assert.deepEqual(result.counts, { session: 1, account: 1, verification: 1, intentos: 0, comunicaciones: 1, user: 1 });
     assert.deepEqual(notified, [{ email: "cliente@example.test", role: "cliente" }]);
     assert.equal(count(world, "user", "id = 'u-cli'") + count(world, "session", "userId = 'u-cli'") + count(world, "account", "userId = 'u-cli'") + count(world, "verification", "id = 'v-cli'"), 0);
     const after = fichas(world);
-    // Su ficha y la ficha de WhatsApp con el mismo teléfono verificado: de baja, sin opt-in y sin vínculo con la cuenta. La ficha NO se borra.
+    // Su ficha (la atada por user_id): de baja, sin opt-in y sin vínculo con la cuenta. La ficha NO se borra.
     assert.equal(after["c-cli"].user_id, null);
-    for (const id of ["c-cli", "c-cli-wa"]) {
-      assert.ok(after[id].un, `${id} no quedó de baja`);
-      assert.equal(after[id].opt, 0, `${id} sigue con opt-in`);
-    }
-    // Otras fichas (la del gerente, la de un cliente sin relación) siguen igual.
-    for (const id of ["c-ger", "c-otro"]) assert.deepEqual({ un: after[id].un, opt: after[id].opt }, { un: null, opt: 1 }, id);
+    assert.ok(after["c-cli"].un, "c-cli no quedó de baja");
+    assert.equal(after["c-cli"].opt, 0);
+    // Ninguna otra ficha se toca, tampoco la de WhatsApp con el mismo teléfono (no se expande por teléfono): la del gerente, la de un cliente
+    // sin relación y la creada por WhatsApp siguen igual.
+    for (const id of ["c-ger", "c-otro", "c-cli-wa"]) assert.deepEqual({ un: after[id].un, opt: after[id].opt }, { un: null, opt: 1 }, id);
     const afterDump = dumpAll(world.db.raw, HISTORY_OMIT);
     for (const t of Object.keys(before).filter((k) => !ACCOUNT_TABLES.includes(k))) assert.equal(afterDump[t], before[t], `cambió ${t}`);
     assert.equal(count(world, "orders"), 3, "los pedidos quedan");
@@ -494,17 +493,20 @@ describe("baja de un cliente (autoservicio)", () => {
     assert.ok(fichas(world)["c-cli"].un);
   });
 
-  it("un pedido en curso lo impide (409), también el de la ficha de WhatsApp con su teléfono; con el pedido entregado o cancelado, puede", async () => {
+  it("un pedido en curso de su ficha lo impide (409); con el pedido entregado o cancelado, puede", async () => {
     const world = await buildClient();
     world.db.raw.prepare(`UPDATE orders SET status = 'En Camino' WHERE id = 'o-1'`).run();
     assert.equal(expectFail(await ownCli(world, { password: PASSWORD }), 409), SELF_MESSAGES.inProgress);
     assert.deepEqual(await ownAccountEligibility(world.db, "u-cli", world.opts), { canDelete: false, status: 409, reason: SELF_MESSAGES.inProgress });
-    world.db.raw.prepare(`UPDATE orders SET status = 'Finalizados' WHERE id = 'o-1'`).run();
-    world.db.raw.prepare(`UPDATE orders SET status = 'En Preparación' WHERE id = 'o-wa'`).run();
-    expectFail(await ownCli(world, { password: PASSWORD }), 409);
-    world.db.raw.prepare(`UPDATE orders SET status = 'Cancelado' WHERE id = 'o-wa'`).run();
+    world.db.raw.prepare(`UPDATE orders SET status = 'Cancelado' WHERE id = 'o-1'`).run();
     expectOk(await ownCli(world, { password: PASSWORD }));
     assert.equal(count(world, "user", "id = 'u-cli'"), 0);
+  });
+
+  it("el pedido en curso de una ficha que no es suya (aunque tenga su mismo teléfono) no lo bloquea", async () => {
+    const world = await buildClient();
+    world.db.raw.prepare(`UPDATE orders SET status = 'En Preparación' WHERE id = 'o-wa'`).run();
+    expectOk(await ownCli(world, { password: PASSWORD }));
   });
 
   it("el pedido en curso de OTRA persona no lo bloquea", async () => {
@@ -513,22 +515,33 @@ describe("baja de un cliente (autoservicio)", () => {
     expectOk(await ownCli(world, { password: PASSWORD }));
   });
 
-  it("no se da de baja a otra persona por un teléfono que el cliente escribió a mano en su perfil (solo el verificado por la conversación de WhatsApp)", async () => {
+  it("dos fichas con el mismo teléfono, una de la cuenta A y otra de la cuenta B: A se da de baja y la ficha (y la cuenta) de B no se modifican", async () => {
     const world = await buildClient();
-    // El perfil dice el teléfono de c-otro, pero la conversación vinculada a su cuenta es de otro número.
+    // B cargó en su perfil el mismo teléfono que A (o al revés): para el sistema son dos personas distintas.
+    world.db.raw.prepare(`INSERT INTO "user" (id, name, email, emailVerified, role, createdAt, updatedAt) VALUES ('u-b', 'Cliente B', 'b@example.test', 1, 'cliente', 'x', 'x')`).run();
+    world.db.raw.prepare(`INSERT INTO "session" (id, expiresAt, token, createdAt, updatedAt, userId) VALUES ('s-b', '2099-01-01', 'tok-b', 'x', 'x', 'u-b')`).run();
+    world.db.raw.prepare(`INSERT INTO clients (id, user_id, name, phone, phone_digits, wa_marketing_opt_in) VALUES ('c-b', 'u-b', 'Cliente B', '+54 9 11 5555-0101', '1155550101', 1)`).run();
+    const bBefore = JSON.stringify(world.db.raw.prepare(`SELECT * FROM clients WHERE id = 'c-b'`).get());
+    expectOk(await ownCli(world, { password: PASSWORD }));
+    assert.ok(fichas(world)["c-cli"].un, "la ficha de A quedó de baja");
+    assert.equal(JSON.stringify(world.db.raw.prepare(`SELECT * FROM clients WHERE id = 'c-b'`).get()), bBefore, "la ficha de B no se modificó (ni user_id, ni opt-in, ni baja)");
+    assert.equal(count(world, "user", "id = 'u-b'") + count(world, "session", "userId = 'u-b'"), 2, "la cuenta de B sigue");
+  });
+
+  it("tampoco se da de baja a otra persona por un teléfono que el cliente escribió a mano en su perfil", async () => {
+    const world = await buildClient();
+    // El perfil de c-cli dice el teléfono de c-otro, pero c-otro no es suyo.
     world.db.raw.prepare(`UPDATE clients SET phone = '+54 9 11 7777-0303', phone_digits = '1177770303' WHERE id = 'c-cli'`).run();
     expectOk(await ownCli(world, { password: PASSWORD }));
-    assert.equal(fichas(world)["c-otro"].un, null, "la ficha ajena no se toca");
-    assert.equal(fichas(world)["c-otro"].opt, 1);
+    assert.deepEqual({ un: fichas(world)["c-otro"].un, opt: fichas(world)["c-otro"].opt }, { un: null, opt: 1 });
     assert.ok(fichas(world)["c-cli"].un);
-    assert.ok(fichas(world)["c-cli-wa"].un, "el teléfono verificado de la conversación sí");
   });
 
   it("una ficha que ya estaba dada de baja conserva su fecha original", async () => {
     const world = await buildClient();
     world.db.raw.prepare(`UPDATE clients SET unsubscribed_at = '2026-10-01T00:00:00.000Z' WHERE id = 'c-cli'`).run();
     const result = expectOk(await ownCli(world, { password: PASSWORD }));
-    assert.equal(result.counts.comunicaciones, 1, "solo la que faltaba (la de WhatsApp)");
+    assert.equal(result.counts.comunicaciones, 0, "ya estaba de baja");
     assert.equal(fichas(world)["c-cli"].un, "2026-10-01T00:00:00.000Z");
   });
 

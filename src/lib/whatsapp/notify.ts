@@ -64,7 +64,13 @@ async function loadTarget(db: Db, order: OrderRow, promotional = false): Promise
   const client = await loadContact(db, order.client_id, promotional);
   if (!client?.phone || client.unsubscribed) return null;
   const conversation = await findConversation(db, order.client_id, client.phone);
-  return conversation ? { order, name: firstName(client.name), conversation } : null;
+  if (!conversation) return null;
+  // La conversación puede estar enlazada a OTRA ficha (la de la cuenta que dio de baja): ese número tampoco recibe lo promocional.
+  if (promotional && conversation.client_id && conversation.client_id !== order.client_id) {
+    const linked = await loadContact(db, conversation.client_id, true);
+    if (linked?.unsubscribed) return null;
+  }
+  return { order, name: firstName(client.name), conversation };
 }
 
 async function sendTemplateTo(db: Db, conversation: Conversation, templateName: string, params: readonly string[]) {
