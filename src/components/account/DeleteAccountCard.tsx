@@ -18,7 +18,7 @@ const CONSEQUENCES: Record<AccountRole, readonly string[]> = {
   cliente: [
     "No vas a poder volver a ingresar con esta cuenta.",
     "Vas a dejar de recibir emails promocionales.",
-    "Vas a dejar de recibir mensajes de WhatsApp del local.",
+    "Vas a dejar de recibir las promociones por WhatsApp asociadas a tu cuenta. Para frenar cualquier mensaje promocional en tu número, respondé BAJA por WhatsApp.",
     "Conservamos el historial de tus pedidos por motivos contables y legales.",
   ],
   admin: [
@@ -29,7 +29,8 @@ const CONSEQUENCES: Record<AccountRole, readonly string[]> = {
 
 const SUMMARY: Record<AccountRole, string> = {
   cliente:
-    "Si das de baja tu cuenta no vas a poder volver a ingresar con ella, vas a dejar de recibir emails promocionales y mensajes de WhatsApp del local. " +
+    "Si das de baja tu cuenta no vas a poder volver a ingresar con ella y vas a dejar de recibir emails promocionales y las promociones por WhatsApp asociadas a tu cuenta. " +
+    "Para frenar cualquier mensaje promocional en tu número, respondé BAJA por WhatsApp. " +
     "Conservamos el historial de tus pedidos por motivos contables y legales. No se puede deshacer.",
   admin:
     "Eliminamos tu usuario del panel: tu cuenta, tus sesiones abiertas y tu contraseña. Lo que se hizo en el local (pedidos, clientes, WhatsApp y el " +
