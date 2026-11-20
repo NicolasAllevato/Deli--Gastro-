@@ -20,10 +20,16 @@ export default function EliminarDatosPage() {
     <LegalPage
       title="Cómo eliminar tus datos"
       intro={
-        <p>
-          Podés pedir en cualquier momento que borremos los datos personales que {BRAND.appName} guarda sobre vos,
-          incluidos los que se obtuvieron al iniciar sesión con Facebook o al escribir por WhatsApp.
-        </p>
+        <>
+          <p>
+            Podés dar de baja tu cuenta de {BRAND.appName} en cualquier momento desde tu panel. Al hacerlo no vas a poder volver a ingresar con esa
+            cuenta y dejás de recibir los emails promocionales y las promociones por WhatsApp asociadas a ella. Conservamos el historial de tus
+            pedidos por motivos contables y legales.
+          </p>
+          <p className="mt-2">
+            Abajo te explicamos el paso a paso, cómo frenar los mensajes promocionales en tu número de WhatsApp y qué hacer si conectaste Facebook.
+          </p>
+        </>
       }
       sections={[
         {
@@ -39,7 +45,10 @@ export default function EliminarDatosPage() {
               <ul className="list-disc pl-5 flex flex-col gap-1">
                 <li>No vas a poder volver a ingresar con esa cuenta.</li>
                 <li>Vas a dejar de recibir emails promocionales.</li>
-                <li>Vas a dejar de recibir mensajes de WhatsApp del local.</li>
+                <li>
+                  Vas a dejar de recibir las promociones por WhatsApp asociadas a tu cuenta. Para frenar cualquier mensaje promocional en tu
+                  número, respondé <strong>BAJA</strong> por WhatsApp.
+                </li>
                 <li>Conservamos el historial de tus pedidos por motivos contables y legales.</li>
               </ul>
               <p>Si tenés un pedido en curso, vas a poder dar de baja la cuenta cuando se entregue o se cancele.</p>
@@ -70,8 +79,9 @@ export default function EliminarDatosPage() {
           title: "Qué borramos y en cuánto tiempo",
           body: (
             <p>
-              La baja desde el panel es inmediata: se eliminan tu cuenta de acceso, tus sesiones y tu contraseña, y quedás dado de baja de las
-              promociones y de las encuestas. El historial de pedidos ya realizados y las constancias de aceptación de los términos se
+              La baja desde el panel es inmediata: se eliminan tu cuenta de acceso, tus sesiones y tu contraseña, y tu ficha de cliente queda
+              dada de baja de las promociones y de las encuestas. Para frenar cualquier mensaje promocional en tu número, respondé BAJA por
+              WhatsApp. El historial de pedidos ya realizados y las constancias de aceptación de los términos se
               conservan, porque hacen falta para fines contables, fiscales y legales. Si pedís ayuda por email, te respondemos dentro de los
               30 días.
             </p>
