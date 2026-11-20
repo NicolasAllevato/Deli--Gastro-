@@ -433,7 +433,7 @@ describe("eliminación de datos y Mi cuenta", () => {
     assert.deepEqual(adminPageDecision(metaOf("cajero"), "/admin/mi-cuenta"), { kind: "allow" });
   });
 
-  it("la pestaña Eliminar datos solo aparece para el dueño principal", () => {
+  it("la pestaña Eliminar usuarios solo aparece para el dueño principal", () => {
     const tabsOf = (sections: ReadonlyArray<{ tabs: ReadonlyArray<{ href: string }> }>) => sections.flatMap((s) => s.tabs.map((t) => t.href));
     assert.equal(tabsOf(visibleNavSections(owner)).includes("/admin/eliminar-datos"), false, "dueño común: no");
     assert.equal(tabsOf(visibleNavSections(owner, { superOwner: false })).includes("/admin/eliminar-datos"), false);

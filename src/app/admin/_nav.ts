@@ -6,7 +6,7 @@ import { canAccessPath, type Section, type StaffAccess } from "@/lib/auth/permis
 export interface NavTab {
   href: string;
   label: string;
-  /** Solo el dueño principal (SUPER_OWNER_EMAIL): eliminación de datos personales. */
+  /** Solo el dueño principal (SUPER_OWNER_EMAIL): eliminación de usuarios de la app. */
   superOwnerOnly?: true;
 }
 
@@ -70,7 +70,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
       { href: "/admin/notificaciones", label: "Notificaciones" },
       { href: "/admin/usuarios", label: "Usuarios" },
       { href: "/admin/legal", label: "Documentos legales" },
-      { href: "/admin/eliminar-datos", label: "Eliminar datos", superOwnerOnly: true },
+      { href: "/admin/eliminar-datos", label: "Eliminar usuarios", superOwnerOnly: true },
     ],
   },
 ];

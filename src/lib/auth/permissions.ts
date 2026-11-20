@@ -224,7 +224,7 @@ const PAGE_RULES: ReadonlyArray<readonly [string, Section]> = [
 /**
  * Solo el dueño, aunque tengan la sección en "editar": la gestión de usuarios y la Conexión de WhatsApp
  * (credenciales, token, webhook, registro del número y diagnóstico). El resto de Comunicación no cambia.
- * La eliminación de datos personales es además solo del dueño PRINCIPAL: eso lo exigen la ruta y la capa de datos
+ * La eliminación de usuarios de la app es además solo del dueño PRINCIPAL: eso lo exigen la ruta y la capa de datos
  * (acá se corta a gerentes y cajeros; un dueño común recibe el 403 del servidor).
  */
 const OWNER_ONLY_PREFIXES: readonly string[] = [

@@ -8,7 +8,7 @@ import type { Auth } from "./auth.ts";
 import {
   deleteOwnAccount, deleteUserAsOwner, listDeletableUsers, listDeletionRequests, ownAccountEligibility, previewUserDeletion,
   type DeletionOptions, type DeletionOutcome, type DeletionPreview, type DeletionRequestView, type DeletionResult, type Eligibility, type StaffUserView,
-} from "./account-deletion.ts";
+} from "./data-deletion.ts";
 import type { SqlDatabase } from "./sql.ts";
 
 async function appDb(): Promise<SqlDatabase> {

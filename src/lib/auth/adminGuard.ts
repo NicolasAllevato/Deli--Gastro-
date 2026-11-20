@@ -42,7 +42,7 @@ export async function guardOwner(req: NextRequest, limitPerMinute: number): Prom
 export type SuperOwnerGuardResult = { error: NextResponse } | { user: User; access: StaffAccess };
 
 /**
- * Solo el dueño principal (el email de SUPER_OWNER_EMAIL): eliminación de datos personales. Un dueño común, un gerente
+ * Solo el dueño principal (el email de SUPER_OWNER_EMAIL): eliminación de usuarios de la app. Un dueño común, un gerente
  * o un cajero reciben 403. Sin SUPER_OWNER_EMAIL configurada nadie pasa (modo seguro). La capa de datos lo vuelve a
  * verificar contra la base: acá se corta temprano, antes de leer el cuerpo.
  */
@@ -50,7 +50,7 @@ export async function guardSuperOwner(req: NextRequest, limitPerMinute: number):
   const guard = await guardOwner(req, limitPerMinute);
   if ("error" in guard) return guard;
   if (!isSuperOwnerEmail(guard.user.email, superOwnerEmailFrom(process.env))) {
-    return { error: NextResponse.json({ error: "Solo el dueño principal puede eliminar datos personales." }, { status: 403 }) };
+    return { error: NextResponse.json({ error: "Solo el dueño principal puede eliminar usuarios." }, { status: 403 }) };
   }
   return guard;
 }

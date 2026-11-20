@@ -206,7 +206,7 @@ export { staffUsersApp, type StaffUsersApp } from "./staff-users-app.ts";
 export type { StaffUser, CourierUser, CreateStaffInput, UpdateStaffInput, UserResult, UserFailure } from "./staff-users.ts";
 
 export { dataDeletionApp, type DataDeletionApp } from "./data-deletion-app.ts";
-export type { DeletionPreview, DeletionRequestView, DeletionResult, DeletionOutcome, Eligibility, StaffUserView } from "./account-deletion.ts";
+export type { DeletionPreview, DeletionRequestView, DeletionResult, DeletionOutcome, Eligibility, StaffUserView } from "./data-deletion.ts";
 
 export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, type KbEntry, type KbInput } from "./kb-negocio.ts";

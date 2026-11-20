@@ -8,8 +8,8 @@ import "./helpers/alias.ts";
 import type { Actor } from "../src/lib/data/actor.ts";
 import {
   deleteOwnAccount, deleteUserAsOwner, listDeletableUsers, listDeletionRequests, ownAccountEligibility, previewUserDeletion, type DeletionOptions,
-} from "../src/lib/data/account-deletion.ts";
-import { PASSWORD, SECRET, SUPER_EMAIL, seedHistory, seedStaff, setup, type World } from "./helpers/staff-deletion-world.ts";
+} from "../src/lib/data/data-deletion.ts";
+import { PASSWORD, SECRET, SUPER_EMAIL, seedHistory, seedStaff, setup, type World } from "./helpers/deletion-world.ts";
 
 const { authCookiesToExpire, deleteOwnApi, eligibilityApi, executeApi, executeBodySchema, listApi, previewApi } = await import("../src/lib/deletion/api.ts");
 const { accountDeletedNotifier, buildDeletedEmail } = await import("../src/lib/deletion/notify.ts");
@@ -160,7 +160,7 @@ describe("POST /api/admin/eliminar-datos", () => {
 
   it("el dueño principal no se puede eliminar aun con un código armado a mano: 403", async () => {
     const { port, world } = await build();
-    const { issueToken } = await import("../src/lib/data/account-deletion.ts");
+    const { issueToken } = await import("../src/lib/data/data-deletion.ts");
     const forged = issueToken(SECRET, "dueno", "dueno", Date.now());
     const r = await executeApi(port, SUPER, asAdmin("dueno"), { userId: "dueno", token: forged, password: PASSWORD, confirmEmail: SUPER_EMAIL });
     assert.equal(r.status, 403);

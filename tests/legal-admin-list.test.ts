@@ -8,10 +8,10 @@ import "./helpers/alias.ts";
 import { createTestDb } from "./helpers/sqlite-d1.ts";
 import { ForbiddenError, type Actor } from "../src/lib/data/actor.ts";
 import { listAllLegal } from "../src/lib/data/legal.ts";
-import { deleteSubjectData } from "../src/lib/data/data-deletion.ts";
+import { deleteUserAsOwner, issueToken } from "../src/lib/data/data-deletion.ts";
 import { LEGAL_DOCUMENTS } from "../src/lib/legal/documents.ts";
 import { LEGAL_LIST_MAX_ROWS, groupLegalUsers, legalDocumentsView } from "../src/lib/legal/admin-list.ts";
-import { seedStaff, setup } from "./helpers/deletion-world.ts";
+import { PASSWORD, SECRET, seedStaff, setup } from "./helpers/deletion-world.ts";
 
 const [TERMINOS, PRIVACIDAD] = LEGAL_DOCUMENTS;
 const admin: Actor = { kind: "admin", userId: "dueno" };
@@ -80,22 +80,19 @@ describe("groupLegalUsers", () => {
   });
 });
 
-describe("el panel y la baja de datos", () => {
-  it("tras eliminar a un usuario su constancia sigue en la base pero ya no aparece en el panel", async () => {
+describe("el panel y la baja de un usuario", () => {
+  it("tras eliminar a un usuario del personal su constancia sigue en la base (con el email y la IP de entonces) pero sin usuario, y ya no aparece en el panel", async () => {
     const world = setup();
-    seedStaff(world);
-    const now = "2026-11-10T12:00:00.000Z";
-    world.db.raw.prepare(`INSERT INTO "user" (id, email, role, createdAt, updatedAt) VALUES ('u-ana', 'ana@x.test', 'cliente', ?, ?)`).run(now, now);
+    await seedStaff(world);
     world.db.raw
-      .prepare(`INSERT INTO legal_acceptances (id, user_id, email, role, document, version, ip) VALUES ('a1', 'u-ana', 'ana@x.test', 'cliente', ?, ?, '10.0.0.9')`)
+      .prepare(`INSERT INTO legal_acceptances (id, user_id, email, role, document, version, ip) VALUES ('a1', 'cajero1', 'cajero@local.test', 'admin', ?, ?, '10.0.0.9')`)
       .run(TERMINOS.id, TERMINOS.version);
     assert.equal(groupLegalUsers(await listAllLegal(world.db, admin)).length, 1);
-    const r = await deleteSubjectData(world.db, admin, { email: "ana@x.test", channel: "email" }, world.opts);
+    const token = issueToken(SECRET, "dueno", "cajero1", Date.now());
+    const r = await deleteUserAsOwner(world.db, world.auth, admin, { userId: "cajero1", token, password: PASSWORD, confirmEmail: "cajero@local.test" }, world.opts);
     assert.ok(r.ok);
     assert.deepEqual(groupLegalUsers(await listAllLegal(world.db, admin)), []);
     const kept = world.db.raw.prepare(`SELECT user_id, email, ip, document, version FROM legal_acceptances WHERE id = 'a1'`).get() as Record<string, unknown>;
-    assert.equal(kept.user_id, null);
-    assert.equal(kept.ip, null);
-    assert.equal(kept.document, TERMINOS.id);
+    assert.deepEqual({ ...kept }, { user_id: null, email: "cajero@local.test", ip: "10.0.0.9", document: TERMINOS.id, version: TERMINOS.version });
   });
 });
