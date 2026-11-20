@@ -15,7 +15,7 @@ export default function MiCuentaPage() {
         <p className="text-sm text-gray-500 mt-1">Ajustes de tu usuario del panel.</p>
       </header>
       <h2 className="text-[11px] font-bold uppercase tracking-widest text-gray-500">Configuración de la cuenta</h2>
-      <DeleteAccountCard />
+      <DeleteAccountCard role="admin" />
     </div>
   );
 }

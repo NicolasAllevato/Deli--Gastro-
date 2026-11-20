@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: `Eliminación de datos | ${BRAND.appN
 
 /**
  * URL de instrucciones de eliminación de datos que exige Meta para la revisión de la app (la ruta está registrada en Meta: no cambiarla).
- * Clientes: piden la baja por email. Personal del local: elimina su usuario desde "Mi cuenta" (docs/eliminacion-datos.md).
+ * Clientes: dan de baja su cuenta desde su panel (Mi perfil). Personal del local: desde "Mi cuenta" (docs/eliminacion-datos.md).
  * Editar esta página NO cambia LEGAL_BUNDLE_VERSION (solo las versiones de LEGAL_DOCUMENTS obligan a volver a aceptar).
  */
 export default function EliminarDatosPage() {
@@ -27,12 +27,24 @@ export default function EliminarDatosPage() {
       }
       sections={[
         {
-          title: "Si sos cliente o escribiste por WhatsApp",
+          title: "Si sos cliente: dá de baja tu cuenta desde tu panel",
           body: (
-            <p>
-              Mandá un email a {mail} con el asunto «Eliminar mis datos», desde el correo de tu cuenta o indicando el teléfono con el
-              que escribiste al comercio. Te respondemos por el mismo medio.
-            </p>
+            <>
+              <p>
+                Ingresá a tu cuenta y andá a <strong>Mi perfil → Configuración de la cuenta → Dar de baja la cuenta</strong>. Te pedimos tu
+                contraseña actual (o el email de tu cuenta, si no tenés contraseña) y que escribas ELIMINAR. La baja es inmediata y no se hace
+                por WhatsApp.
+              </p>
+              <p>Antes de confirmar tenés que tildar que entendés lo que implica:</p>
+              <ul className="list-disc pl-5 flex flex-col gap-1">
+                <li>No vas a poder volver a ingresar con esa cuenta.</li>
+                <li>Vas a dejar de recibir emails promocionales.</li>
+                <li>Vas a dejar de recibir mensajes de WhatsApp del local.</li>
+                <li>Conservamos el historial de tus pedidos por motivos contables y legales.</li>
+              </ul>
+              <p>Si tenés un pedido en curso, vas a poder dar de baja la cuenta cuando se entregue o se cancele.</p>
+              <p>Si no podés ingresar a tu cuenta, escribinos a {mail} y te ayudamos.</p>
+            </>
           ),
         },
         {
@@ -58,9 +70,10 @@ export default function EliminarDatosPage() {
           title: "Qué borramos y en cuánto tiempo",
           body: (
             <p>
-              Respondemos los pedidos por email dentro de los 30 días de recibidos. Se eliminan tu cuenta de acceso, tus sesiones y tu
-              contraseña. El historial de pedidos ya realizados y las constancias de aceptación de los términos se conservan, porque
-              hacen falta para fines contables, fiscales y legales.
+              La baja desde el panel es inmediata: se eliminan tu cuenta de acceso, tus sesiones y tu contraseña, y quedás dado de baja de las
+              promociones y de las encuestas. El historial de pedidos ya realizados y las constancias de aceptación de los términos se
+              conservan, porque hacen falta para fines contables, fiscales y legales. Si pedís ayuda por email, te respondemos dentro de los
+              30 días.
             </p>
           ),
         },
