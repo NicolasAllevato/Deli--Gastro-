@@ -18,7 +18,7 @@ import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
-import { attachPhotos, complaintUpdateReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
+import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
 import { esQueja } from "../../../../src/lib/reclamos/categoria.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
@@ -96,6 +96,43 @@ async function complaintFlow(
   await deps.repo.setTakeover(conversation.id);
   await reply(deps, conversation, openReply, false);
   return "answered";
+}
+
+/**
+ * El modelo no tiene la respuesta a una consulta del local (handoff_to_human con motivo «consulta»): queda registrada como ticket
+ * (el local la ve en el panel y la contesta), con el local abierto pasa a una persona y cerrado el bot sigue atendiendo.
+ * El cliente recibe un aviso fijo (sin «reclamo» ni «perdón por el mal momento»: no es una queja).
+ */
+async function consultaFlow(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, text: string, extras: TurnExtras): Promise<TurnOutcome> {
+  const mode = complaintMode(settings);
+  const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, mode, openAt: settings.hours.open, kind: "consulta" });
+  if (done) {
+    if (mode === "abierto") await deps.repo.setTakeover(conversation.id);
+    await reply(deps, conversation, done.text, mode !== "abierto");
+    return "ticket";
+  }
+  // El ticket no se pudo registrar: abierto, igual se pasa a una persona; cerrado, solo se avisa (sin decir que quedó registrado).
+  deps.log("[whatsapp-bot] no se pudo registrar la consulta sin respuesta", { conversation: conversation.id });
+  if (settings.trainingMode || !openNow(settings)) {
+    await reply(deps, conversation, consultaReply(complaintMode(settings), settings.hours.open));
+    return "answered";
+  }
+  await deps.repo.setTakeover(conversation.id);
+  await reply(deps, conversation, REPLIES.handoff, false);
+  return "answered";
+}
+
+/** Motivo de la consulta sin lo que repite el texto del cliente: el ticket guarda su mensaje y el motivo del modelo sin el «consulta:» del principio. */
+export function consultaText(turnText: string, motivo: string): string {
+  const detail = motivo.replace(/^\s*consulta\s*[:\-–]?\s*/i, "").trim();
+  return detail && detail !== turnText.trim() ? `${turnText}\n${detail}`.trim() : turnText.trim();
+}
+
+/** El modelo derivó con handoff_to_human: reclamo (como siempre) o consulta sin respuesta. */
+function ticketFlow(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, turnText: string, ticket: { motivo: string; kind: "reclamo" | "consulta" }, extras: TurnExtras): Promise<TurnOutcome> {
+  return ticket.kind === "consulta"
+    ? consultaFlow(deps, conversation, settings, consultaText(turnText, ticket.motivo), extras)
+    : complaintFlow(deps, conversation, settings, `${turnText}\n${ticket.motivo}`.trim(), extras);
 }
 
 /** Una persona escribió desde la app mientras se preparaba la respuesta: el turno se aborta sin enviar nada. */
@@ -202,7 +239,7 @@ async function answer(
   // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
   let handedOffNow = false;
   // El modelo llamó handoff_to_human: el reclamo lo registra complaintFlow (con pedido, fotos y aviso), no la herramienta.
-  let ticketNow: string | null = null;
+  let ticketNow: { motivo: string; kind: "reclamo" | "consulta" } | null = null;
   const createComplaint = deps.repo.createComplaint;
   const toolRepo = {
     ...deps.repo,
@@ -213,7 +250,7 @@ async function answer(
     ...(createComplaint
       ? {
           createComplaint: async (input: Parameters<typeof createComplaint>[0]) => {
-            ticketNow = input.motivo;
+            ticketNow = { motivo: input.motivo, kind: input.kind ?? "reclamo" };
             return null;
           },
         }
@@ -229,7 +266,7 @@ async function answer(
   // Un reintento con la corrección: el cliente no recibe el mensaje genérico si el modelo lo puede arreglar.
   for (let attempt = 0; attempt < 2; attempt++) {
     // El modelo derivó: reclamo registrado (si es queja o el local está cerrado) y aviso fijo con el número.
-    if (ticketNow !== null) return complaintFlow(deps, conversation, settings, `${turnText}\n${ticketNow}`.trim(), extras);
+    if (ticketNow !== null) return ticketFlow(deps, conversation, settings, turnText, ticketNow, extras);
     // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
     if (order?.state.fixedReply) {
       await reply(deps, conversation, order.state.fixedReply, !order.state.handedOff && !handedOffNow);
@@ -257,7 +294,7 @@ async function answer(
     return "answered";
   }
   // Consulta por su pedido que el modelo no pudo contestar sin prometer: una persona lo revisa ya (no un saludo vacío).
-  if (ticketNow !== null) return complaintFlow(deps, conversation, settings, `${turnText}\n${ticketNow}`.trim(), extras);
+  if (ticketNow !== null) return ticketFlow(deps, conversation, settings, turnText, ticketNow, extras);
   if (issue && intent === "pedido_estado") {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], handoff: true });
     const done = await complaintFlow(deps, conversation, settings, turnText, extras, STATUS_HANDOFF_REPLY);

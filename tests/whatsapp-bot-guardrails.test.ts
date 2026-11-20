@@ -125,11 +125,11 @@ describe("guardrails: delimitación y herramientas por intención", () => {
   });
 
   it("solo los pedidos tienen herramientas que escriben", () => {
-    assert.deepEqual(toolsForIntent("consulta_menu"), ["get_menu", "get_categoria", "get_business_info", "get_promos_hoy", "quote_order"]);
+    assert.deepEqual(toolsForIntent("consulta_menu"), ["get_menu", "get_categoria", "get_business_info", "get_promos_hoy", "quote_order", "handoff_to_human"]);
     assert.ok(!toolsForIntent("saludo").includes("confirm_order"));
     assert.ok(toolsForIntent("pedido_confirmar").includes("confirm_order"));
-    // "otro" (mensaje dudoso) solo lee carta/promos/local para sugerir opciones; nunca escribe.
-    assert.deepEqual(toolsForIntent("otro"), ["get_menu", "get_categoria", "get_promos_hoy", "get_business_info"]);
+    // "otro" (mensaje dudoso) solo lee carta/promos/local para sugerir opciones (y deriva si no hay respuesta); nunca escribe pedidos.
+    assert.deepEqual(toolsForIntent("otro"), ["get_menu", "get_categoria", "get_promos_hoy", "get_business_info", "handoff_to_human"]);
     assert.deepEqual(toolsForIntent("intencion_inventada"), []);
   });
 
@@ -143,5 +143,17 @@ describe("guardrails: delimitación y herramientas por intención", () => {
     assert.ok(!toolsForIntent("pedido_nuevo").includes("confirm_order"));
     assert.ok(!toolsForIntent("pedido_datos").includes("confirm_order"));
     assert.ok(!toolsForIntent("pedido_cancelar").includes("get_business_info"));
+  });
+
+  it("handoff_to_human (consulta sin respuesta) está en las intenciones donde el bot puede quedarse sin dato", () => {
+    for (const intent of ["consulta_local", "consulta_menu", "saludo", "otro", "pedido_nuevo", "pedido_datos", "pedido_confirmar"]) {
+      assert.ok(toolsForIntent(intent).includes("handoff_to_human"), intent);
+    }
+    // Las que ya la tenían la conservan y las de cancelar no la ganan (su flujo es fijo).
+    assert.ok(toolsForIntent("pedido_estado").includes("handoff_to_human"));
+    assert.deepEqual(toolsForIntent("humano"), ["handoff_to_human"]);
+    assert.ok(!toolsForIntent("pedido_cancelar").includes("handoff_to_human"));
+    // Una intención desconocida sigue sin ninguna herramienta.
+    assert.deepEqual(toolsForIntent("intencion_inventada"), []);
   });
 });

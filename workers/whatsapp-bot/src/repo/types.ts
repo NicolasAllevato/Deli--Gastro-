@@ -125,6 +125,8 @@ export interface ComplaintInput {
   categoria?: ComplaintCategory;
   /** Pedido reciente al que se vincula (solo si el reclamo no tenía uno). */
   orderId?: string | null;
+  /** `consulta`: no es un reclamo sino una pregunta del local sin respuesta (lo usa el turno; el repo lo ignora). Por defecto `reclamo`. */
+  kind?: "reclamo" | "consulta";
 }
 
 /** Reclamo abierto (abierto o en curso) de una conversación. */

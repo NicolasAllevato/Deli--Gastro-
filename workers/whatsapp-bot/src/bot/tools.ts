@@ -24,6 +24,9 @@ async function searchKnowledge(repo: BotRepo, tema: string, log: ToolLog): Promi
   }
 }
 
+/** El motivo del traspaso empieza con «consulta»: no es un reclamo sino una pregunta del local sin respuesta cargada. */
+export const isConsultaReason = (reason: string): boolean => /^\s*consulta\b/i.test(reason);
+
 const minutesSince = (date: Date, now: number): number => Math.max(0, Math.round((now - date.getTime()) / 60_000));
 
 const OBJECT_NO_EXTRA = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
@@ -140,7 +143,7 @@ function allTools(
           // Cargado por el dueño en /admin/conocimiento: solo lo relacionado con `tema` (el vocabulario va al prompt, no acá).
           knowledge: found.map(({ category, topic, content }) => ({ category, topic, content })),
           ...(tema.trim() && found.length === 0
-            ? { knowledge_note: `No hay nada cargado sobre «${tema.replace(/\s+/g, " ").trim().slice(0, 80)}». Si tampoco está en los datos de arriba, no lo inventes: decile que lo consultás con el local.` }
+            ? { knowledge_note: `No hay nada cargado sobre «${tema.replace(/\s+/g, " ").trim().slice(0, 80)}». Si tampoco está en los datos de arriba, no lo inventes: decile que lo consultás con el local y derivá con handoff_to_human con motivo "consulta".` }
             : {}),
         };
       },
@@ -177,14 +180,26 @@ function allTools(
     },
     {
       name: "handoff_to_human",
-      description: "Queja o reclamo, o el cliente pide una persona. Registra el reclamo (siempre) y, con el local abierto, deriva a una persona.",
+      description:
+        "Queja o reclamo, el cliente pide una persona, o hizo una consulta sobre el local que no pudiste responder con las herramientas. Registra el caso (siempre) y, con el local abierto, deriva a una persona. " +
+        "`reason`: qué pasó. Si es una consulta sin respuesta, empezalo con «consulta:» y la pregunta del cliente (ej.: \"consulta: si hacen pizzas sin gluten\").",
       parameters: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] },
       run: async (args) => {
         // Con reclamos disponibles, el turno registra el ticket y manda el aviso fijo (número de reclamo, pedido, foto).
         if (repo.createComplaint) {
           const reason = typeof (args as { reason?: unknown })?.reason === "string" ? (args as { reason: string }).reason : "";
-          await repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo: reason });
+          const kind = isConsultaReason(reason) ? "consulta" : "reclamo";
+          await repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo: reason, kind });
           const closed = !openNow(settings, new Date(now()));
+          if (kind === "consulta") {
+            return {
+              ok: true,
+              ticket: true,
+              note: closed
+                ? `El local está cerrado: NO digas que te atiende una persona. La consulta quedó registrada; el local la responde cuando abra (a las ${settings.hours.open}).`
+                : "La consulta quedó registrada y una persona del local le va a responder a la brevedad.",
+            };
+          }
           return {
             ok: true,
             ticket: true,

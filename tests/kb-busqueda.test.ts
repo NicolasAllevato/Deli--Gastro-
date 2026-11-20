@@ -212,6 +212,7 @@ describe("get_business_info: filtra por tema", () => {
     assert.deepEqual(out.knowledge, []);
     assert.match(out.knowledge_note ?? "", /sushi/);
     assert.match(out.knowledge_note ?? "", /no lo inventes/);
+    assert.match(out.knowledge_note ?? "", /handoff_to_human con motivo "consulta"/);
   });
 
   it("sin `tema` devuelve unas pocas entradas generales y no falla", async () => {

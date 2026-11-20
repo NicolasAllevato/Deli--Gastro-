@@ -65,6 +65,16 @@ function closingLine(mode: ComplaintMode, numero: number, openAt: string): strin
   return `Lo registramos (reclamo #${numero}). Te contactamos cuando abramos a las ${openAt}.`;
 }
 
+/** Prefijo del motivo de un ticket que es una consulta del local sin respuesta (no un reclamo). */
+export const CONSULTA_PREFIX = "Consulta sin respuesta: ";
+
+/** Aviso al cliente cuando el bot no tiene la respuesta: se consulta con el local (sin "reclamo" ni número: no es un reclamo). */
+export function consultaReply(mode: ComplaintMode, openAt: string): string {
+  if (mode === "abierto") return "Dejame consultarlo con el local y te confirmo 🙏 Ya les avisé: te escribe alguien del local.";
+  if (mode === "entrenamiento") return "Lo consulto con el local y te escribimos por acá apenas tengamos la respuesta.";
+  return `Lo consulto con el local y te respondemos cuando abramos, a las ${openAt}.`;
+}
+
 /** Mensaje cuando el cliente suma información o fotos a un reclamo que ya estaba abierto. */
 export function complaintUpdateReply(numero: number, mode: ComplaintMode, openAt: string, onlyPhotos: boolean): string {
   const head = onlyPhotos ? `¡Gracias por la foto! La sumé al reclamo #${numero}.` : `Gracias, lo sumé a tu reclamo #${numero}.`;
@@ -123,19 +133,21 @@ export interface Registered {
 export async function registerComplaint(
   deps: ComplaintDeps,
   conversation: BotConversation,
-  input: { text: string; images: readonly TurnImage[]; inboundWamid: string | undefined; mode: ComplaintMode; openAt: string },
+  input: { text: string; images: readonly TurnImage[]; inboundWamid: string | undefined; mode: ComplaintMode; openAt: string; kind?: "reclamo" | "consulta" },
   now: Date = new Date(),
 ): Promise<Registered | null> {
   if (!deps.repo.createComplaint) return null;
+  // Una consulta sin respuesta usa el mismo ticket (el local la ve y la contesta desde el panel), pero con otro motivo, sin pedido vinculado y con otro aviso.
+  const consulta = input.kind === "consulta";
   const before = (await deps.repo.openComplaint?.(conversation.id).catch(() => null)) ?? null;
-  const order = before?.orderId ? null : await recentOrder(deps.repo, conversation.clientId, now);
+  const order = consulta || before?.orderId ? null : await recentOrder(deps.repo, conversation.clientId, now);
   const clean = withoutPhotoMarks(input.text);
   const ticket = await deps.repo.createComplaint({
     conversationId: conversation.id,
     phone: conversation.phone,
     clientId: conversation.clientId,
-    motivo: clean || "Foto del pedido",
-    categoria: categorizarReclamo(clean),
+    motivo: consulta ? `${CONSULTA_PREFIX}${clean}` : clean || "Foto del pedido",
+    categoria: consulta ? "otro" : categorizarReclamo(clean),
     orderId: order?.id ?? null,
   });
   if (!ticket) return null;
@@ -143,7 +155,9 @@ export async function registerComplaint(
 
   await pingApp(deps, conversation.id, ticket.id, input.inboundWamid);
 
-  const text = ticket.created
+  const text = consulta
+    ? consultaReply(input.mode, input.openAt)
+    : ticket.created
     ? complaintReply({
         numero: ticket.numero,
         mode: input.mode,
