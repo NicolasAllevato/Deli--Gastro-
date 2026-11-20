@@ -35,15 +35,34 @@ interface Target {
   conversation: Conversation;
 }
 
+interface Contact {
+  name: string;
+  phone: string | null;
+  unsubscribed: boolean;
+}
+
+/**
+ * Datos de contacto del cliente. Solo el envío promocional lee la baja (y falla cerrado: si no se puede leer, se lanza y no se manda);
+ * los avisos de un pedido no la miran.
+ */
+async function loadContact(db: Db, clientId: string, promotional: boolean): Promise<Contact | null> {
+  if (promotional) {
+    const { data, error } = await db.from("clients").select("name, phone, unsubscribed_at").eq("id", clientId).maybeSingle();
+    if (error) throw new Error(`No se pudo leer la baja del cliente: ${error.message}`);
+    return data ? { name: data.name, phone: data.phone, unsubscribed: Boolean(data.unsubscribed_at) } : null;
+  }
+  const { data } = await db.from("clients").select("name, phone").eq("id", clientId).maybeSingle();
+  return data ? { name: data.name, phone: data.phone, unsubscribed: false } : null;
+}
+
 /**
  * `promotional`: el envío no responde a algo que el cliente inició (la encuesta de satisfacción), así que respeta la baja de la
  * cuenta (clients.unsubscribed_at). Los avisos de un pedido (transaccionales) no la miran: responden al pedido que él hizo.
  */
 async function loadTarget(db: Db, order: OrderRow, promotional = false): Promise<Target | null> {
   if (!order.client_id) return null;
-  const { data: client } = await db.from("clients").select("name, phone, unsubscribed_at").eq("id", order.client_id).maybeSingle();
-  if (!client?.phone) return null;
-  if (promotional && client.unsubscribed_at) return null;
+  const client = await loadContact(db, order.client_id, promotional);
+  if (!client?.phone || client.unsubscribed) return null;
   const conversation = await findConversation(db, order.client_id, client.phone);
   return conversation ? { order, name: firstName(client.name), conversation } : null;
 }

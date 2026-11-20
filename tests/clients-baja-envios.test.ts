@@ -24,6 +24,10 @@ interface Sent { to: string; template: string }
 let sqlite: ReturnType<typeof createTestDb>;
 let db: ReturnType<typeof createFakeClient>;
 let sent: Sent[];
+/** Rompe las lecturas de la baja a pedido: la base "se cae" justo en la consulta que mira unsubscribed_at. */
+let breakReads = false;
+const readsBaja = (plan: { table: string; columns: string; filters: { column: string }[] }) =>
+  plan.table === "clients" && (plan.columns.includes("unsubscribed_at") || plan.filters.some((f) => f.column === "unsubscribed_at"));
 const saved = { fetch: globalThis.fetch, token: process.env.WHATSAPP_ACCESS_TOKEN, phone: process.env.WHATSAPP_PHONE_NUMBER_ID, backend: process.env.DATA_BACKEND };
 
 beforeEach(() => {
@@ -31,6 +35,7 @@ beforeEach(() => {
   process.env.WHATSAPP_ACCESS_TOKEN = "token-de-prueba";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "111222333";
   sent = [];
+  breakReads = false;
   // Meta simulado: cada mensaje que sale queda anotado (a quién y qué plantilla).
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).includes("/messages") && init?.body) {
@@ -41,7 +46,10 @@ beforeEach(() => {
   }) as typeof fetch;
   sqlite = createTestDb();
   db = createFakeClient({
-    execute: (plan) => executeD1Plan(sqlite, actors.system, plan as unknown as Plan),
+    execute: async (plan) => {
+      if (breakReads && readsBaja(plan as unknown as Parameters<typeof readsBaja>[0])) return { data: null, error: { message: "la base no responde", code: "XX000" }, count: null };
+      return executeD1Plan(sqlite, actors.system, plan as unknown as Plan);
+    },
     getUser: async () => null,
     signIn: async () => ({ error: { message: "no" } }),
     signOut: async () => {},
@@ -97,6 +105,46 @@ describe("campañas de promociones por WhatsApp", () => {
     assert.equal((sqlite.raw.prepare(`SELECT sent FROM wa_campaigns WHERE id = 'camp-1'`).get() as { sent: number }).sent, 1);
   });
 
+  it("falla cerrado: si la base no responde al mirar las bajas, la campaña no envía NADA, queda 'failed' y se lanza la excepción", async (t) => {
+    t.mock.method(console, "error", () => undefined);
+    seedClient("a", PHONES.a);
+    seedClient("b", PHONES.b);
+    const recipients = await campaigns.resolveRecipients(db as never, { kind: "all" });
+    assert.equal(recipients.length, 2);
+    sqlite.raw.prepare(`INSERT INTO wa_campaigns (id, name, segment, message) VALUES ('camp-1', 'Prueba', '{"kind":"all"}', 'Hay promo')`).run();
+    breakReads = true;
+    await assert.rejects(campaigns.runCampaign(db as never, "camp-1", recipients, "Hay promo"), /no se pudo saber quién dio de baja/i);
+    assert.equal(sent.length, 0);
+    assert.equal((sqlite.raw.prepare(`SELECT status FROM wa_campaigns WHERE id = 'camp-1'`).get() as { status: string }).status, "failed");
+    await assert.rejects(campaigns.unsubscribedIds(db as never, ["a"]), /no se pudo saber/i);
+  });
+
+  it("falla cerrado también al armar la lista: con la base caída no hay destinatarios (se lanza, no devuelve una lista vacía ni completa)", async () => {
+    seedClient("a", PHONES.a);
+    breakReads = true;
+    await assert.rejects(campaigns.resolveRecipients(db as never, { kind: "all" }), /no se pudieron leer los destinatarios/i);
+  });
+
+  it("con más de 90 destinatarios y bajas repartidas entre ellos, ninguno de los dados de baja recibe la promoción", async () => {
+    const total = 150;
+    const phone = (i: number) => `54911${String(1000000 + i)}`;
+    for (let i = 0; i < total; i++) seedClient(`k${i}`, phone(i));
+    const recipients = await campaigns.resolveRecipients(db as never, { kind: "all" });
+    assert.equal(recipients.length, total);
+    // Bajas repartidas a lo largo de toda la lista (cruzan el tope de 90 parámetros por consulta).
+    const baja = new Set<number>();
+    for (let i = 0; i < total; i += 7) baja.add(i);
+    for (const i of baja) sqlite.raw.prepare(`UPDATE clients SET unsubscribed_at = ? WHERE id = ?`).run(AT, `k${i}`);
+    assert.ok(baja.size > 20);
+    assert.equal((await campaigns.unsubscribedIds(db as never, recipients.map((r) => r.id))).size, baja.size);
+    sqlite.raw.prepare(`INSERT INTO wa_campaigns (id, name, segment, message) VALUES ('camp-1', 'Prueba', '{"kind":"all"}', 'Hay promo')`).run();
+    await campaigns.runCampaign(db as never, "camp-1", recipients, "Hay promo");
+    const reached = new Set(sent.map((x) => x.to));
+    for (const i of baja) assert.ok(!reached.has(phone(i)), `k${i} dio de baja la cuenta y recibió la promoción`);
+    assert.equal(sent.length, total - baja.size);
+    assert.equal((sqlite.raw.prepare(`SELECT sent FROM wa_campaigns WHERE id = 'camp-1'`).get() as { sent: number }).sent, total - baja.size);
+  });
+
   it("unsubscribedIds devuelve solo a los dados de baja y tolera una lista vacía", async () => {
     seedClient("a", PHONES.a);
     seedClient("b", PHONES.b, { unsubscribed: true });
@@ -126,9 +174,22 @@ describe("encuestas de satisfacción por WhatsApp", () => {
   });
 });
 
+describe("encuestas: falla cerrado", () => {
+  it("si no se puede leer la baja del cliente, no se manda ni se reclama la encuesta (se cuenta como falla para que el cron lo vea)", async (t) => {
+    t.mock.method(console, "error", () => undefined);
+    seedClient("a", PHONES.a);
+    breakReads = true;
+    const result = await notify.sendDueSurveys(db as never, "https://app.example.test", NOW);
+    assert.deepEqual({ sent: result.sent, failed: result.failed }, { sent: 0, failed: 1 });
+    assert.equal(sent.length, 0);
+    assert.equal((sqlite.raw.prepare(`SELECT survey_sent_at FROM orders WHERE id = 'o-a'`).get() as { survey_sent_at: string | null }).survey_sent_at, null);
+  });
+});
+
 describe("avisos de un pedido (transaccionales)", () => {
-  it("no dependen de la baja: responden al pedido que el propio cliente hizo", async () => {
+  it("no dependen de la baja: responden al pedido que el propio cliente hizo (ni siquiera la leen)", async () => {
     seedClient("b", PHONES.b, { unsubscribed: true });
+    breakReads = true;
     await notify.notifyOrderEvent(db as never, "o-b", "En Camino");
     assert.deepEqual(sent.map((s) => [s.to, s.template]), [[PHONES.b, "pedido_en_camino"]]);
   });
