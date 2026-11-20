@@ -21,8 +21,8 @@ export function buildDeletedEmail(role = "admin"): DeletedEmail {
   if (role === "cliente") {
     return {
       subject: `Tu cuenta de ${BRAND.appName} fue dada de baja`,
-      text: `Tu cuenta de ${BRAND.appName} fue dada de baja y no vas a recibir más promociones. Ya no podés ingresar con ella.\n\nConservamos el historial de tus pedidos por motivos contables y legales.\n\n${help}`,
-      html: `<p>Tu cuenta de ${BRAND.appName} fue dada de baja y no vas a recibir más promociones. Ya no podés ingresar con ella.</p><p>Conservamos el historial de tus pedidos por motivos contables y legales.</p><p>${helpHtml}</p>`,
+      text: `Tu cuenta de ${BRAND.appName} fue dada de baja y no vas a recibir más promociones. Ya no podés ingresar con ella.\n\nSi querés frenar cualquier mensaje promocional en tu número de WhatsApp, respondé BAJA.\n\nConservamos el historial de tus pedidos por motivos contables y legales.\n\n${help}`,
+      html: `<p>Tu cuenta de ${BRAND.appName} fue dada de baja y no vas a recibir más promociones. Ya no podés ingresar con ella.</p><p>Si querés frenar cualquier mensaje promocional en tu número de WhatsApp, respondé BAJA.</p><p>Conservamos el historial de tus pedidos por motivos contables y legales.</p><p>${helpHtml}</p>`,
     };
   }
   return {

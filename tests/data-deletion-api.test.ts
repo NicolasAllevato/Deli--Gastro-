@@ -277,6 +277,7 @@ describe("cookies de sesión y aviso por email", () => {
     assert.match(cliente.subject, /fue dada de baja/);
     for (const part of [cliente.text, cliente.html]) {
       assert.match(part, /no vas a recibir más promociones/);
+      assert.match(part, /respondé BAJA/);
       assert.match(part, /historial de tus pedidos por motivos contables y legales/);
       assert.match(part, /contacto@la-gambeta\.com/);
     }
