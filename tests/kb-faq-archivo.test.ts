@@ -426,3 +426,69 @@ describe("modelo descargable", () => {
     assert.equal(r.items[0]!.palabras_clave, "[ejemplo], otra forma de preguntarlo, sinónimo");
   });
 });
+
+// ---------- borrador del local (entrega 2, punto 7) ----------
+
+describe("borrador de preguntas frecuentes del local", () => {
+  const text = readFileSync(new URL("../docs/conocimiento/faq-local-borrador.txt", import.meta.url), "utf8");
+  const result = parseFaqFile("faq-local-borrador.txt", text);
+
+  it("el parser lo lee sin errores ni avisos, con comentarios que ignora", () => {
+    assert.deepEqual(result.errores, []);
+    assert.deepEqual(result.avisos, []);
+    assert.equal(result.items.length, 8);
+    assert.match(text, /^# PENDIENTE: confirmar el número de WhatsApp del local/m);
+    assert.ok(result.items.every((i) => !/PENDIENTE/.test(i.tema + i.contenido + i.palabras_clave)), "los pendientes no se cargan");
+  });
+
+  it("solo trae datos reales: horario, 5 km, $200 por km, 30 min, 20 min, mapa, Gambe y la web", () => {
+    const all = result.items.map((i) => i.contenido).join("\n");
+    for (const dato of ["11:00 a 23:00", "hasta 5 km", "$200 por km", "unos 30 minutos", "dentro de los 20 minutos", "soy Gambe", "https://opsyndely.la-gambeta.com"]) {
+      assert.ok(all.includes(dato), dato);
+    }
+    assert.ok(all.includes("https://www.google.com/maps/place/La+Gambeta+Pizzer%C3%ADa/@-34.585394,-58.423404,17z"));
+  });
+
+  it("no publica el teléfono de placeholder ni ningún otro número de teléfono", () => {
+    assert.doesNotMatch(result.items.map((i) => i.contenido).join("\n"), /541100000000|\+54|\b\d{4}[- ]?\d{4}\b/);
+  });
+
+  it("los medios de pago son solo los que acepta la app (efectivo, tarjeta y Mercado Pago)", () => {
+    const pagos = result.items.find((i) => i.tema.includes("medios de pago"))!;
+    assert.match(pagos.contenido, /efectivo/);
+    assert.match(pagos.contenido, /Mercado Pago/);
+    assert.match(pagos.contenido, /tarjeta/);
+    assert.doesNotMatch(pagos.contenido, /transferencia|bitcoin|cheque|cripto/i);
+  });
+
+  it("cada pregunta tiene palabras clave y entra en los topes de la base", () => {
+    for (const i of result.items) {
+      assert.ok(i.palabras_clave.length > 0, i.tema);
+      assert.ok(i.tema.length <= FAQ_TEMA_MAX && i.contenido.length <= FAQ_CONTENIDO_MAX && i.palabras_clave.length <= FAQ_CLAVES_MAX, i.tema);
+    }
+  });
+
+  it("lo que dice el borrador no choca con los controles del bot (horario 11:00-23:00, radio 5 km, $200 por km)", async () => {
+    const { hoursMismatch, zoneMismatch } = await import("../workers/whatsapp-bot/src/bot/draft-checks.ts");
+    for (const i of result.items) {
+      assert.equal(hoursMismatch(i.contenido, { open: "11:00", close: "23:00" }), false, i.tema);
+      assert.equal(zoneMismatch(i.contenido, { zones: [], radiusKm: 5 }), false, i.tema);
+    }
+  });
+
+  it("cargado en la base, el agente encuentra cada respuesta con las preguntas típicas de los clientes", async () => {
+    await saveFaqImport(db, actors.admin, result.items, { reemplazar: false }, nextId);
+    const repo = d1BotRepo(db);
+    const first = async (q: string) => (await repo.searchKnowledge!(q))[0]?.topic;
+    assert.equal(await first("¿a qué hora abren?"), "¿Cuál es el horario de atención?");
+    assert.equal(await first("hasta cuando están atendiendo"), "¿Cuál es el horario de atención?");
+    assert.equal(await first("hacen envíos a domicilio? hasta dónde llegan"), "¿Hacen delivery? ¿Hasta dónde llegan?");
+    assert.equal(await first("cuánto sale el envío"), "¿Cuánto cuesta el envío?");
+    assert.equal(await first("cuánto tardan en llegar"), "¿Cuánto tarda el pedido?");
+    assert.equal(await first("dónde queda el local"), "¿Dónde queda el local?");
+    assert.equal(await first("puedo cancelar mi pedido?"), "¿Puedo cancelar un pedido?");
+    assert.equal(await first("quiero hacer un pedido"), "¿Cómo hago un pedido?");
+    assert.equal(await first("aceptan tarjeta o mercado pago?"), "¿Qué medios de pago aceptan?");
+    assert.deepEqual(await repo.searchKnowledge!("tienen sushi"), []);
+  });
+});

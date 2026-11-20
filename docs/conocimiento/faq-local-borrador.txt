@@ -1,0 +1,46 @@
+# Preguntas frecuentes de La Gambeta (BORRADOR para revisar antes de cargar).
+#
+# Cómo cargarlo: Admin > Conocimiento del agente > "Cargar archivo de preguntas frecuentes".
+# Formato: P: pregunta / R: respuesta / Claves: otras formas de decirlo. Los bloques van separados por una línea en blanco
+# y las líneas que empiezan con "# " son comentarios (el parser las ignora).
+#
+# Datos tomados de la configuración de producción y del código de la app. No hay nada inventado:
+# lo que falta confirmar está marcado como PENDIENTE y NO se cargó.
+#
+# PENDIENTE: confirmar el número de WhatsApp del local. En la configuración figura el placeholder +541100000000, así que no se publica ninguno.
+# PENDIENTE: confirmar si el horario de 11:00 a 23:00 es igual todos los días y qué pasa en feriados.
+# PENDIENTE: confirmar la dirección escrita del local (hoy solo está el link de Google Maps).
+# PENDIENTE: confirmar con el local si aceptan transferencia (get_business_info la lista, pero la app no la ofrece: solo efectivo, tarjeta y Mercado Pago).
+# PENDIENTE: confirmar si el pago con Mercado Pago está habilitado hoy (en la web solo aparece con los pagos online encendidos).
+
+P: ¿Cuál es el horario de atención?
+R: Atendemos de 11:00 a 23:00.
+Claves: horario, hora, horas, abren, abrimos, abre, cierran, cerramos, cierre, apertura, hasta que hora, desde que hora, atienden, atendemos, atendiendo, atencion
+
+P: ¿Hacen delivery? ¿Hasta dónde llegan?
+R: Sí, hacemos delivery hasta 5 km del local.
+Claves: delivery, envio, envios, enviar, domicilio, reparto, repartir, zona, zonas, cobertura, llegan, distancia, km, kilometros, barrio
+
+P: ¿Cuánto cuesta el envío?
+R: El envío cuesta $200 por km de distancia desde el local. El costo exacto de tu pedido lo ves en el resumen antes de confirmar.
+Claves: costo, costo de envio, cuanto sale el envio, cuanto cuesta el envio, precio del envio, tarifa, delivery, por km, envio
+
+P: ¿Cuánto tarda el pedido?
+R: La demora estimada es de unos 30 minutos.
+Claves: demora, demoran, tarda, tardan, tiempo, cuanto tarda, cuanto demora, minutos, entrega, llega, tiempo de entrega
+
+P: ¿Dónde queda el local?
+R: Estamos en La Gambeta Pizzería. Acá tenés la ubicación en Google Maps: https://www.google.com/maps/place/La+Gambeta+Pizzer%C3%ADa/@-34.585394,-58.423404,17z
+Claves: ubicacion, direccion, donde estan, donde queda, mapa, maps, como llegar, local, retirar, retiro, pasar a buscar
+
+P: ¿Puedo cancelar un pedido?
+R: Sí, podés cancelar tu pedido dentro de los 20 minutos de haberlo hecho.
+Claves: cancelar, cancelacion, cancelo, anular, anulacion, arrepenti, me equivoque, dar de baja
+
+P: ¿Cómo hago un pedido?
+R: Podés pedir por acá, por WhatsApp: soy Gambe, el asistente de La Gambeta, y te ayudo a armar el pedido. También podés pedir en la web: https://opsyndely.la-gambeta.com
+Claves: pedir, pedido, hacer un pedido, encargar, ordenar, quiero pedir, web, pagina, sitio, online, app
+
+P: ¿Qué medios de pago aceptan?
+R: Por WhatsApp podés pagar en efectivo cuando recibís el pedido o con Mercado Pago (te mandamos el link de pago). En la web también podés elegir tarjeta.
+Claves: pago, pagar, pagos, medios de pago, formas de pago, efectivo, tarjeta, debito, credito, mercado pago, mercadopago
