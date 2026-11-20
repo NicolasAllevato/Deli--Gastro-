@@ -90,7 +90,7 @@ amablemente qué necesita en vez de adivinar.
 | Intención | Respondedor | Herramientas |
 |---|---|---|
 | `consulta_local`, `consulta_menu`, `saludo` | Informativo (respuesta corta) | `get_business_info`, `get_menu` (solo lectura) |
-| `pedido_*` | Tomador de pedidos (máquina de estados, ver abajo) | `get_menu`, `quote_order`, `confirm_order`, `cancel_order` |
+| `pedido_*` | Tomador de pedidos (máquina de estados, ver abajo) | `get_menu`, `quote_order`, `confirm_order`, `cancel_order`; `get_business_info` en `pedido_nuevo`/`pedido_datos`/`pedido_confirmar` (preguntas del local en medio del pedido) |
 | `pedido_estado` | Seguimiento | `order_status` |
 | `humano` | Traspaso | `handoff_to_human` (avisa en `/admin/conversaciones`) |
 

@@ -154,9 +154,10 @@ const TOOLS_BY_INTENT: Readonly<Record<string, readonly string[]>> = {
   consulta_local: ["get_business_info", "get_promos_hoy"],
   consulta_menu: ["get_menu", "get_categoria", "get_business_info", "get_promos_hoy", "quote_order"],
   saludo: ["get_business_info", "get_promos_hoy"],
-  pedido_nuevo: ["get_menu", "get_categoria", "get_promos_hoy", "quote_order"],
-  pedido_datos: ["get_menu", "get_categoria", "quote_order"],
-  pedido_confirmar: ["get_menu", "get_categoria", "quote_order", "confirm_order"],
+  // En pedidos también va get_business_info: si en medio del pedido preguntan por el local (horario, zonas, pagos, políticas) se responde sin cortar el pedido.
+  pedido_nuevo: ["get_menu", "get_categoria", "get_promos_hoy", "get_business_info", "quote_order"],
+  pedido_datos: ["get_menu", "get_categoria", "get_business_info", "quote_order"],
+  pedido_confirmar: ["get_menu", "get_categoria", "get_business_info", "quote_order", "confirm_order"],
   pedido_estado: ["order_status", "handoff_to_human"],
   pedido_cancelar: ["order_status", "cancel_order"],
   humano: ["handoff_to_human"],

@@ -132,4 +132,16 @@ describe("guardrails: delimitación y herramientas por intención", () => {
     assert.deepEqual(toolsForIntent("otro"), ["get_menu", "get_categoria", "get_promos_hoy", "get_business_info"]);
     assert.deepEqual(toolsForIntent("intencion_inventada"), []);
   });
+
+  it("los pedidos pueden consultar el local en medio del pedido (get_business_info)", () => {
+    for (const intent of ["pedido_nuevo", "pedido_datos", "pedido_confirmar"]) {
+      const tools = toolsForIntent(intent);
+      assert.ok(tools.includes("get_business_info"), intent);
+      assert.ok(tools.includes("quote_order"), `${intent} conserva quote_order`);
+    }
+    // Solo confirmar confirma; cancelar sigue sin consultas del local (su flujo es fijo).
+    assert.ok(!toolsForIntent("pedido_nuevo").includes("confirm_order"));
+    assert.ok(!toolsForIntent("pedido_datos").includes("confirm_order"));
+    assert.ok(!toolsForIntent("pedido_cancelar").includes("get_business_info"));
+  });
 });
