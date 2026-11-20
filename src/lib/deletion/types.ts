@@ -14,6 +14,25 @@ export interface DeletionCountRowView {
   count: number;
 }
 
+/** Una cuenta o ficha que coincidió con el teléfono o email ingresado (sin teléfono, email ni nombre completo). */
+export interface DeletionMatchView {
+  id: string;
+  kind: "user" | "client";
+  /** Por qué dato coincidió. */
+  matchedBy: "email" | "phone";
+  /** direct = tiene ese dato; link = cuelga por id de algo que sí lo tiene. */
+  via: "direct" | "link";
+  /** Nombre abreviado ("Marta G."). */
+  label: string;
+  createdAt: string | null;
+  role?: string;
+  staffRole?: string | null;
+  /** Cuentas: por qué no se puede eliminar, o null. */
+  blockedReason?: string | null;
+  source?: string | null;
+  linkedUserId?: string | null;
+}
+
 export interface DeletionPreviewView {
   found: boolean;
   total: number;
@@ -22,6 +41,9 @@ export interface DeletionPreviewView {
   accounts: Array<{ role: string; staffRole: string | null }>;
   warnings: string[];
   blocked: { status: 403 | 409; reason: string } | null;
+  matches: { users: DeletionMatchView[]; clients: DeletionMatchView[] };
+  /** Más de una cuenta o ficha: hay que elegir cuáles eliminar (confirmedUserIds / confirmedClientIds). */
+  requiresConfirmation: boolean;
 }
 
 export interface DeletionRequestRowView {

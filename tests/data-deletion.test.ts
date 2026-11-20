@@ -9,12 +9,12 @@ import { createHash } from "node:crypto";
 import "./helpers/alias.ts";
 import type { Actor } from "../src/lib/data/actor.ts";
 import {
-  DATA_INVENTORY, DELETION_STEPS, MAX_MATCHED_CLIENTS, MESSAGES, SELF_MESSAGES, deleteOwnAccount, deleteSubjectData,
+  DATA_INVENTORY, DELETION_STEPS, MAX_MATCHED_CLIENTS, CONFIRMATION_MESSAGES, MESSAGES, SELF_MESSAGES, deleteOwnAccount, deleteSubjectData,
   listDeletionRequests, ownAccountEligibility, phoneTail, previewDeletion, subjectHash,
   type DeletionOutcome, type DeletionResult,
 } from "../src/lib/data/data-deletion.ts";
 import {
-  BASE, MARKERS, MARTA, MARTA_MARKERS, PASSWORD, PEDRO, SEEDED, SUPER_EMAIL, hashPassword, leftovers, rowCounts, seedStaff, seedWorld, setup, type World,
+  BASE, MARKERS, MARTA, MARTA_CONFIRM, MARTA_MARKERS, OTRO, PASSWORD, PEDRO, SEEDED, SUPER_EMAIL, hashPassword, leftovers, otroSnapshot, rowCounts, seedLookalike, seedStaff, seedWorld, setup, type World,
 } from "./helpers/deletion-world.ts";
 
 const asAdmin = (userId: string): Actor => ({ kind: "admin", userId });
@@ -103,7 +103,7 @@ describe("inventario", () => {
     assert.deepEqual(untested, [], "columnas del inventario sin sembrar en la prueba");
     for (const [table, col] of personal) assert.ok(query(table, col, seeded[`${table}.${col}`]) >= 1, `${table}.${col}: no se sembró`);
 
-    expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }));
+    expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }));
     expectOk(await deleteSubjectData(world.db, DUENO, { email: PEDRO.email, channel: "email" }, { ...world.opts, files: world.files }));
     for (const [table, col] of personal) assert.equal(query(table, col, seeded[`${table}.${col}`]), 0, `${table}.${col} conserva el dato`);
     assert.deepEqual(leftovers(world), [], "ninguna columna de ninguna tabla conserva un dato de Marta o Pedro");
@@ -124,7 +124,9 @@ describe("previsualización", () => {
     assert.equal(preview.total, 24);
     assert.equal(preview.files, 1);
     assert.deepEqual(preview.accounts, [{ role: "cliente", staffRole: null }]);
-    const json = JSON.stringify(preview);
+    assert.equal(preview.requiresConfirmation, true, "una cuenta y dos fichas con ese teléfono");
+    // Los ids (uuid en producción; acá legibles) son lo que el dueño confirma; lo demás no trae datos de la persona.
+    const json = JSON.stringify(preview, (key, value) => (key === "id" || key === "linkedUserId" ? undefined : value));
     for (const marker of MARKERS) assert.ok(!json.toLowerCase().includes(marker.toLowerCase()), `la previsualización incluye "${marker}"`);
   });
 
@@ -136,11 +138,32 @@ describe("previsualización", () => {
     assert.equal(count(world, "data_deletion_requests"), 0);
   });
 
-  it("por email llega a lo mismo: cuenta, fichas (también la de WhatsApp por teléfono), conversación y reclamo", async () => {
+  it("por email solo trae lo que tiene ESE email (más lo atado por id): no sigue el teléfono de la cuenta hacia otras fichas ni conversaciones", async () => {
     const world = await worldWithData();
     const byEmail = expectOk(await previewDeletion(world.db, DUENO, { email: "  Marta.PII@Example.test " }, world.opts));
-    const byPhone = expectOk(await previewDeletion(world.db, DUENO, MARTA_PHONE, world.opts));
-    assert.deepEqual(keyed(byEmail.rows), keyed(byPhone.rows));
+    assert.equal(byEmail.requiresConfirmation, false, "una cuenta y una ficha");
+    assert.deepEqual(keyed(byEmail.rows), {
+      fudo_writes: 1, order_items: 1, orders: 1, reviews: 1, points_ledger: 1, payment_intents: 1, clients: 1,
+      verification_email: 1, fudo_writes_actor: 1, integration_settings: 1, legal_acceptances: 2, session: 1, account: 1, verification_user: 1, user: 1,
+    });
+    assert.deepEqual(byEmail.matches.users.map((u) => [u.id, u.matchedBy, u.via]), [[MARTA.userId, "email", "direct"]]);
+    assert.deepEqual(byEmail.matches.clients.map((c) => [c.id, c.matchedBy, c.via]), [[MARTA.clientId, "email", "direct"]]);
+    assert.equal(byEmail.files, 0, "el reclamo cuelga de la ficha de WhatsApp, que no tiene ese email");
+  });
+
+  it("por teléfono dice por qué coincidió cada una y qué cuelga por vínculo (link) en vez de por el dato (direct)", async () => {
+    const world = await worldWithData();
+    world.db.raw.prepare(`INSERT INTO "user" (id, name, email, emailVerified, role, createdAt, updatedAt) VALUES ('u-link', 'Vinculada Sinfono', 'link@example.test', 1, 'cliente', 'x', 'x')`).run();
+    world.db.raw.prepare(`INSERT INTO clients (id, user_id, name, phone, phone_digits) VALUES ('c-link', 'u-link', 'Vinculada Sinfono', ?, ?)`).run(MARTA.phone, MARTA.tail);
+    const preview = expectOk(await previewDeletion(world.db, DUENO, MARTA_PHONE, world.opts));
+    const users = Object.fromEntries(preview.matches.users.map((u) => [u.id, u]));
+    const clients = Object.fromEntries(preview.matches.clients.map((c) => [c.id, c]));
+    assert.deepEqual([users["u-marta"].matchedBy, users["u-marta"].via], ["phone", "direct"]);
+    assert.deepEqual([users["u-link"].matchedBy, users["u-link"].via], ["phone", "link"], "su ficha tiene el teléfono; la cuenta no");
+    assert.deepEqual([clients["c-marta"].matchedBy, clients["c-marta"].via], ["phone", "direct"]);
+    assert.equal(clients["c-link"].linkedUserId, "u-link");
+    assert.equal(users["u-marta"].label, "Marta P. G.", "nombre abreviado: sin apellido completo");
+    assert.ok(preview.matches.users.every((u) => u.matchedBy === "phone") && preview.matches.clients.every((c) => c.matchedBy === "phone"));
   });
 
   it("un teléfono o email sin nada devuelve found=false", async () => {
@@ -170,14 +193,14 @@ describe("previsualización", () => {
     for (let i = 0; i < MAX_MATCHED_CLIENTS; i++) ins.run(`c-extra-${i}`, MARTA.phone, MARTA.tail);
     const preview = expectOk(await previewDeletion(world.db, DUENO, MARTA_PHONE, world.opts));
     assert.equal(preview.blocked?.status, 409);
-    expectFail(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }), 409);
+    expectFail(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }), 409);
     assert.equal(count(world, "clients", "id = ?", MARTA.clientId), 1, "no se borró nada");
   });
 });
 
 describe("ejecución", () => {
   async function run(world: World) {
-    return expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }));
+    return expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }));
   }
 
   it("borra la cuenta, sesiones, credenciales, tokens, mensajes, conversaciones, puntos, reseñas y pagos de Marta", async () => {
@@ -300,14 +323,15 @@ describe("ejecución", () => {
     const row = one(world, `SELECT subject_hash, channel FROM data_deletion_requests`);
     assert.equal(row?.subject_hash, subjectHash("email", MARTA.email));
     assert.equal(row?.channel, "admin");
-    assert.deepEqual(leftovers(world, MARTA_MARKERS), [], "ningún dato de Marta sobrevive");
+    const json = JSON.stringify(world.db.raw.prepare(`SELECT * FROM data_deletion_requests`).all()).toLowerCase();
+    assert.ok(!json.includes(MARTA.email));
   });
 
   it("es idempotente: repetir no falla, no encuentra nada y no cambia las demás filas", async () => {
     const world = await worldWithData();
     await run(world);
     const before = rowCounts(world, [...BOTH_PEOPLE_TABLES, "data_deletion_requests"]);
-    const again = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }));
+    const again = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }));
     assert.equal(again.found, false);
     assert.equal(again.total, 0);
     assert.deepEqual(again.counts, {});
@@ -332,7 +356,7 @@ describe("ejecución", () => {
     t.mock.method(console, "error", () => undefined);
     const world = await worldWithData();
     world.files.failWith = new Error("R2 caído");
-    const result = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }));
+    const result = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }));
     assert.equal(result.status, "partial");
     assert.deepEqual(result.files, { total: 1, failed: 1 });
     assert.equal(count(world, "user", "id = 'u-marta'"), 0);
@@ -343,14 +367,14 @@ describe("ejecución", () => {
 
   it("sin bucket configurado también queda 'partial'", async () => {
     const world = await worldWithData();
-    const result = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: null }));
+    const result = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: null }));
     assert.equal(result.status, "partial");
   });
 
   it("nunca borra una clave de R2 que no sea de fotos de reclamos", async () => {
     const world = await worldWithData();
     world.db.raw.prepare(`UPDATE reclamos SET foto_keys = ? WHERE id = 'r-marta'`).run(JSON.stringify([MARTA.photo, "uploads/logo.png", "../otra"]));
-    const result = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }));
+    const result = expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }));
     assert.deepEqual(world.files.deleted, [MARTA.photo]);
     assert.equal(result.status, "partial");
     assert.equal(result.files.failed, 2);
@@ -401,7 +425,7 @@ describe("permisos: solo el dueño principal", () => {
       const world = await worldWithData();
       const before = rowCounts(world, BOTH_PEOPLE_TABLES);
       await assert.rejects(previewDeletion(world.db, actor, MARTA_PHONE, world.opts), { name: "ForbiddenError", message: FORBIDDEN });
-      await assert.rejects(deleteSubjectData(world.db, actor, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }), { name: "ForbiddenError" });
+      await assert.rejects(deleteSubjectData(world.db, actor, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }), { name: "ForbiddenError" });
       await assert.rejects(listDeletionRequests(world.db, actor, world.opts), { name: "ForbiddenError" });
       assert.deepEqual(rowCounts(world, BOTH_PEOPLE_TABLES), before);
       assert.equal(count(world, "data_deletion_requests"), 0);
@@ -422,7 +446,7 @@ describe("permisos: solo el dueño principal", () => {
 
   it("el dueño principal lista los pedidos recientes: sin hash, sin quién lo hizo, sin datos personales", async () => {
     const world = await worldWithData();
-    expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, channel: "email" }, { ...world.opts, files: world.files }));
+    expectOk(await deleteSubjectData(world.db, DUENO, { ...MARTA_PHONE, ...MARTA_CONFIRM, channel: "email" }, { ...world.opts, files: world.files }));
     const list = await listDeletionRequests(world.db, DUENO, world.opts);
     assert.equal(list.length, 1);
     assert.deepEqual(Object.keys(list[0]).sort(), ["channel", "completedAt", "counts", "error", "id", "requestedAt", "status", "total"]);
@@ -461,13 +485,17 @@ describe("protecciones", () => {
     assert.equal(count(world, "user", "id = 'dueno'"), 1);
   });
 
-  it("dos dueños que coinciden con el mismo teléfono no se eliminan juntos (409)", async () => {
+  it("dos dueños que coinciden con el mismo teléfono: piden confirmación y no se eliminan juntos (409); uno solo sí", async () => {
     const world = await worldWithData();
     world.db.raw.prepare(`UPDATE "user" SET phone = '+54 9 11 8888-0505' WHERE id IN ('socio', 'gerente1')`).run();
     world.db.raw.prepare(`UPDATE "user" SET staff_role = 'admin' WHERE id = 'gerente1'`).run();
-    const error = expectFail(await deleteSubjectData(world.db, DUENO, { phone: "1188880505", channel: "admin" }, { ...world.opts, files: world.files }), 409);
+    const input = { phone: "1188880505", channel: "admin" as const };
+    assert.equal(expectFail(await deleteSubjectData(world.db, DUENO, input, { ...world.opts, files: world.files }), 409), CONFIRMATION_MESSAGES.needed(2, 0));
+    const error = expectFail(await deleteSubjectData(world.db, DUENO, { ...input, confirmedUserIds: ["socio", "gerente1"] }, { ...world.opts, files: world.files }), 409);
     assert.equal(error, MESSAGES.manyOwners);
     assert.equal(count(world, "user", "id IN ('socio', 'gerente1')"), 2);
+    expectOk(await deleteSubjectData(world.db, DUENO, { ...input, confirmedUserIds: ["socio"] }, { ...world.opts, files: world.files }));
+    assert.equal(count(world, "user", "id IN ('socio', 'gerente1')"), 1);
   });
 
   it("gerentes y cajeros se eliminan sin restricción", async () => {

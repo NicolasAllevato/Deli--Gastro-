@@ -1,12 +1,15 @@
 /**
  * Eliminación de datos personales sobre D1 (Better Auth): previsualiza, ejecuta y registra. docs/eliminacion-datos.md.
  *
- * Quién es "el sujeto": un usuario (id), un teléfono (últimos 10 dígitos) o un email. De ahí se resuelven sus filas:
- *   - ámbito "contact" (herramienta del dueño principal, que verifica la identidad por fuera): usuario + clientes + conversaciones
- *     y reclamos que coincidan por id, teléfono o email, y lo que cuelga de ellos.
- *   - ámbito "account" (autoservicio): SOLO lo que está atado a la cuenta (usuario, sus fichas de cliente, las conversaciones y
- *     reclamos vinculados a esas fichas). El teléfono y el email que cargó el usuario no están verificados: si se usaran para
- *     buscar, alguien podría cargar el teléfono de otra persona y borrarle sus conversaciones y pedidos.
+ * Quién es "el sujeto": se busca SOLO con lo que se ingresó (el email normalizado o los últimos dígitos del teléfono), en un único salto:
+ * las cuentas y fichas que tienen exactamente ese dato. No se toman los otros teléfonos o emails de lo encontrado para seguir buscando
+ * (quien cargó el mismo teléfono o email que otra persona no arrastra sus datos). Se siguen solo vínculos por id: las fichas de una
+ * cuenta, la cuenta de una ficha, y las conversaciones y reclamos de esas fichas (más los del teléfono exacto, que Meta verifica).
+ *   - ámbito "contact" (herramienta del dueño principal, que verifica la identidad por fuera): si coincide más de una cuenta o más de
+ *     una ficha, la ejecución se rechaza salvo que el pedido traiga los ids confirmados, que tienen que ser un subconjunto de lo
+ *     previsualizado (cada coincidencia dice por qué dato coincidió: matchedBy).
+ *   - ámbito "account" (autoservicio): el sujeto es siempre la sesión propia: su usuario y sus fichas (`clients.user_id`), nada más.
+ *     El teléfono y el email que cargó el usuario no están verificados: no se usan para buscar a otros.
  *
  * Qué pasa con cada tabla: DATA_INVENTORY (data-deletion-inventory.ts) y DELETION_STEPS (abajo). Se borra la cuenta, las sesiones,
  * los mensajes, los puntos y las reseñas; se ANONIMIZAN los pedidos (id, fecha, montos, medio de pago y estado quedan), los
@@ -49,7 +52,6 @@ export interface DeletionOptions {
 }
 
 export interface DeletionSubject {
-  userId?: string;
   /** Con o sin prefijos y signos; cuentan los últimos 10 dígitos. */
   phone?: string;
   email?: string;
@@ -168,6 +170,12 @@ const IN_PROGRESS_STATUSES = "('Recibidos', 'En Preparación', 'En Camino')";
 const IN_PROGRESS_SQL = `SELECT COUNT(*) AS n FROM orders WHERE client_id = ? AND status IN ${IN_PROGRESS_STATUSES}`;
 
 // --- Resolución del sujeto ----------------------------------------------------------------------
+//
+// Se busca SOLO con lo que se ingresó: el email normalizado o los últimos dígitos del teléfono, en un único salto (la cuenta o la
+// ficha que tiene exactamente ese dato). No se toman los otros teléfonos o emails de lo que se encontró para seguir buscando: así
+// alguien que cargó el mismo teléfono o email que otra persona no arrastra sus datos. Lo único que se sigue son vínculos por id
+// (las fichas de una cuenta, la cuenta de una ficha, las conversaciones y reclamos de una ficha).
+// Si hay más de una cuenta o más de una ficha, el pedido tiene que traer los ids confirmados (subconjunto de lo previsualizado).
 
 interface UserRow {
   id: string;
@@ -177,8 +185,43 @@ interface UserRow {
   staff_role: string | null;
   banned: number | boolean | null;
   phone: string | null;
+  createdAt: string | null;
 }
 
+interface ClientRow {
+  id: string;
+  name: string | null;
+  user_id: string | null;
+  source: string | null;
+  created_at: string | null;
+}
+
+/** Por qué identificador coincidió una cuenta o una ficha. */
+export type MatchedBy = "email" | "phone";
+/** direct = la fila tiene ese email o teléfono; link = cuelga por id de una que sí lo tiene (la cuenta de una ficha o las fichas de una cuenta). */
+export type MatchVia = "direct" | "link";
+
+interface Matched<T> {
+  row: T;
+  matchedBy: MatchedBy | "account";
+  via: MatchVia;
+}
+
+interface Matches {
+  users: Map<string, Matched<UserRow>>;
+  clients: Map<string, Matched<ClientRow>>;
+  /** Los dos datos con los que se buscó (null si no se ingresó). */
+  tail: string | null;
+  email: string | null;
+}
+
+/** Ids que el dueño confirmó, tal como los devolvió la previsualización. */
+export interface DeletionConfirmation {
+  userIds?: readonly string[];
+  clientIds?: readonly string[];
+}
+
+/** Lo que se va a eliminar, ya resuelto. */
 interface Resolved {
   users: UserRow[];
   clientIds: string[];
@@ -190,12 +233,12 @@ interface Resolved {
   inProgressOrders: number;
 }
 
-const COLS = `id, email, name, role, staff_role, banned, phone`;
+const COLS = `id, email, name, role, staff_role, banned, phone, createdAt`;
 const USERS_BY_ID = `SELECT ${COLS} FROM "user" WHERE id = ?`;
 const USERS_BY_EMAIL = `SELECT ${COLS} FROM "user" WHERE email = ?`;
 const NORMALIZED_PHONE = `replace(replace(replace(replace(replace(replace(phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '')`;
 const USERS_BY_PHONE = `SELECT ${COLS} FROM "user" WHERE phone IS NOT NULL AND substr(${NORMALIZED_PHONE}, -10) = ?`;
-const CLIENT_COLS = `id, phone, email, user_id`;
+const CLIENT_COLS = `id, name, user_id, source, created_at`;
 const CLIENTS_BY_USER = `SELECT ${CLIENT_COLS} FROM clients WHERE user_id = ? AND is_anonymous = 0`;
 const CLIENTS_BY_PHONE = `SELECT ${CLIENT_COLS} FROM clients WHERE is_anonymous = 0 AND (phone_digits = ? OR substr(${NORMALIZED_PHONE}, -10) = ?)`;
 const CLIENTS_BY_EMAIL = `SELECT ${CLIENT_COLS} FROM clients WHERE is_anonymous = 0 AND lower(email) = ?`;
@@ -204,6 +247,9 @@ const CONVERSATIONS_BY_CLIENT = `SELECT id FROM wa_conversations WHERE client_id
 const RECLAMOS_BY_TAIL = `SELECT id, foto_keys FROM reclamos WHERE substr(client_phone, -10) = ?`;
 const RECLAMOS_BY_CLIENT = `SELECT id, foto_keys FROM reclamos WHERE client_id = ?`;
 const RECLAMOS_BY_CONVERSATION = `SELECT id, foto_keys FROM reclamos WHERE conversation_id = ?`;
+
+/** Tope de fichas por pedido: un dato demasiado genérico (el teléfono del local, por ejemplo) no puede arrastrar a decenas de clientes. */
+export const MAX_MATCHED_CLIENTS = 10;
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 
@@ -220,113 +266,120 @@ function parseKeys(raw: string | null): string[] {
   }
 }
 
-interface ClientRow {
-  id: string;
-  phone: string | null;
-  email: string | null;
-  user_id: string | null;
+function newMatches(email: string | null, tail: string | null): Matches {
+  return { users: new Map(), clients: new Map(), tail, email };
 }
 
-/** Lo que se sabe de la persona: cuentas, fichas, y los teléfonos y emails con los que se la reconoce. */
-interface Identity {
-  users: Map<string, UserRow>;
-  clients: Map<string, ClientRow>;
-  tails: Set<string>;
-  emails: Set<string>;
-}
-
-/** Rondas de seguimiento por teléfono/email: usuario → ficha → otro teléfono → otra ficha... Acotado a propósito. */
-const MAX_ROUNDS = 4;
-/** Tope de fichas por pedido: un teléfono compartido (el del local, por ejemplo) no puede arrastrar a decenas de clientes. */
-export const MAX_MATCHED_CLIENTS = 10;
-
-const addUsers = (id: Identity, rows: readonly UserRow[]) => rows.forEach((u) => id.users.set(u.id, u));
-const addClients = (id: Identity, rows: readonly ClientRow[]) => rows.forEach((c) => id.clients.set(c.id, c));
+const addUsers = (m: Matches, rows: readonly UserRow[], matchedBy: Matched<UserRow>["matchedBy"], via: MatchVia) =>
+  rows.forEach((r) => m.users.has(r.id) || m.users.set(r.id, { row: r, matchedBy, via }));
+const addClients = (m: Matches, rows: readonly ClientRow[], matchedBy: Matched<ClientRow>["matchedBy"], via: MatchVia) =>
+  rows.forEach((r) => m.clients.has(r.id) || m.clients.set(r.id, { row: r, matchedBy, via }));
 
 /**
- * Quién es el sujeto. Ámbito "account": su usuario y sus fichas (user_id), nada más. Ámbito "contact": además se sigue el rastro por
- * teléfono y email (tablas user y clients) hasta MAX_ROUNDS rondas; los clientes anónimos por canal (PedidosYa, etc.) nunca entran.
+ * Herramienta del panel: cuentas y fichas que tienen EXACTAMENTE ese email o ese teléfono (un salto), más los vínculos por id.
+ * Los clientes anónimos por canal (PedidosYa, etc.) nunca entran.
  */
-async function resolveIdentity(db: SqlDatabase, subject: DeletionSubject, scope: DeletionScope): Promise<Identity> {
-  const id: Identity = { users: new Map(), clients: new Map(), tails: new Set(), emails: new Set() };
-  const userId = subject.userId?.trim();
-  if (userId) addUsers(id, await rowsOf<UserRow>(db, USERS_BY_ID, userId));
-
-  if (scope === "account") {
-    for (const u of [...id.users.values()]) {
-      addClients(id, await rowsOf<ClientRow>(db, CLIENTS_BY_USER, u.id));
-      const e = normalizeEmail(u.email);
-      if (e) id.emails.add(e);
-    }
-    return id;
-  }
-
+async function matchContact(db: SqlDatabase, subject: DeletionSubject): Promise<Matches> {
   const email = normalizeEmail(subject.email);
   const tail = phoneTail(subject.phone);
-  if (email) id.emails.add(email);
-  if (tail) id.tails.add(tail);
-  const seenEmails = new Set<string>();
-  const seenTails = new Set<string>();
-  const seenUsers = new Set<string>();
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const before = id.users.size + id.clients.size + id.tails.size + id.emails.size;
-    for (const e of [...id.emails].filter((x) => !seenEmails.has(x))) {
-      seenEmails.add(e);
-      addUsers(id, await rowsOf<UserRow>(db, USERS_BY_EMAIL, e));
-      addClients(id, await rowsOf<ClientRow>(db, CLIENTS_BY_EMAIL, e));
-    }
-    for (const t of [...id.tails].filter((x) => !seenTails.has(x))) {
-      seenTails.add(t);
-      addUsers(id, await rowsOf<UserRow>(db, USERS_BY_PHONE, t));
-      addClients(id, await rowsOf<ClientRow>(db, CLIENTS_BY_PHONE, t, t));
-    }
-    for (const u of [...id.users.values()].filter((x) => !seenUsers.has(x.id))) {
-      seenUsers.add(u.id);
-      addClients(id, await rowsOf<ClientRow>(db, CLIENTS_BY_USER, u.id));
-      const t = phoneTail(u.phone);
-      if (t) id.tails.add(t);
-      const e = normalizeEmail(u.email);
-      if (e) id.emails.add(e);
-    }
-    for (const c of [...id.clients.values()]) {
-      const t = phoneTail(c.phone);
-      if (t) id.tails.add(t);
-      const e = normalizeEmail(c.email);
-      if (e) id.emails.add(e);
-      if (c.user_id && !id.users.has(c.user_id)) addUsers(id, await rowsOf<UserRow>(db, USERS_BY_ID, c.user_id));
-    }
-    if (id.users.size + id.clients.size + id.tails.size + id.emails.size === before) break;
+  const m = newMatches(email, tail);
+  if (email) {
+    addUsers(m, await rowsOf<UserRow>(db, USERS_BY_EMAIL, email), "email", "direct");
+    addClients(m, await rowsOf<ClientRow>(db, CLIENTS_BY_EMAIL, email), "email", "direct");
   }
-  return id;
+  if (tail) {
+    addUsers(m, await rowsOf<UserRow>(db, USERS_BY_PHONE, tail), "phone", "direct");
+    addClients(m, await rowsOf<ClientRow>(db, CLIENTS_BY_PHONE, tail, tail), "phone", "direct");
+  }
+  // Vínculos por id (no por teléfono ni email): la cuenta de una ficha y las fichas de una cuenta.
+  for (const c of [...m.clients.values()]) {
+    if (c.row.user_id && !m.users.has(c.row.user_id)) addUsers(m, await rowsOf<UserRow>(db, USERS_BY_ID, c.row.user_id), c.matchedBy, "link");
+  }
+  for (const u of [...m.users.values()]) addClients(m, await rowsOf<ClientRow>(db, CLIENTS_BY_USER, u.row.id), u.matchedBy, "link");
+  return m;
 }
 
-async function resolveSubject(db: SqlDatabase, subject: DeletionSubject, scope: DeletionScope): Promise<Resolved> {
-  const identity = await resolveIdentity(db, subject, scope);
-  const clientIds = [...identity.clients.keys()];
+/** Autoservicio: el sujeto es SIEMPRE la sesión propia (su id de usuario y sus fichas por `user_id`), nunca nadie más. */
+async function matchAccount(db: SqlDatabase, userId: string): Promise<Matches> {
+  const user = await rowsOf<UserRow>(db, USERS_BY_ID, userId);
+  const m = newMatches(normalizeEmail(user[0]?.email), null);
+  addUsers(m, user, "account", "direct");
+  for (const u of user) addClients(m, await rowsOf<ClientRow>(db, CLIENTS_BY_USER, u.id), "account", "link");
+  return m;
+}
 
+const requiresConfirmation = (m: Matches): boolean => m.users.size > 1 || m.clients.size > 1;
+
+export const CONFIRMATION_MESSAGES = {
+  needed: (users: number, clients: number) =>
+    `Coinciden ${users} cuenta(s) y ${clients} ficha(s) de cliente: elegí cuáles eliminar para confirmar.`,
+  mismatch: "Lo que se eligió no coincide con la previsualización (puede que algo haya cambiado): volvé a previsualizar.",
+} as const;
+
+interface Selection {
+  users: UserRow[];
+  clientIds: string[];
+}
+
+/**
+ * Qué se elimina de lo que coincidió. Con una sola cuenta y una sola ficha, todo. Con más, hace falta la lista de ids confirmados y
+ * tiene que ser un subconjunto de lo previsualizado; las fichas de una cuenta confirmada van con ella (borrar la cuenta las borraría
+ * igual por la clave foránea, sin anonimizar sus pedidos).
+ */
+function selectMatches(m: Matches, confirmation: DeletionConfirmation | undefined): { ok: true; selection: Selection } | DeletionFailure {
+  const userIds = unique(confirmation?.userIds ?? []);
+  const clientIds = unique(confirmation?.clientIds ?? []);
+  const confirmed = userIds.length + clientIds.length > 0;
+  // Sin ninguna cuenta ni ficha no hay nada que confirmar (un reintento de algo ya eliminado no falla): solo lo que cuelga del teléfono exacto.
+  if (m.users.size === 0 && m.clients.size === 0) return { ok: true, selection: { users: [], clientIds: [] } };
+  if (!confirmed) {
+    if (requiresConfirmation(m)) return fail(409, CONFIRMATION_MESSAGES.needed(m.users.size, m.clients.size));
+    return { ok: true, selection: { users: [...m.users.values()].map((u) => u.row), clientIds: [...m.clients.keys()] } };
+  }
+  if (userIds.some((id) => !m.users.has(id)) || clientIds.some((id) => !m.clients.has(id))) return fail(409, CONFIRMATION_MESSAGES.mismatch);
+  const users = userIds.map((id) => m.users.get(id)!.row);
+  const owned = [...m.clients.values()].filter((c) => c.row.user_id !== null && userIds.includes(c.row.user_id)).map((c) => c.row.id);
+  return { ok: true, selection: { users, clientIds: unique([...clientIds, ...owned]) } };
+}
+
+/** Todo lo que cuelga de lo elegido: conversaciones y reclamos, los emails de los tokens y las fotos. */
+async function resolveDependents(db: SqlDatabase, m: Matches, selection: Selection, scope: DeletionScope): Promise<Resolved> {
   const conversationIds: string[] = [];
-  for (const t of identity.tails) conversationIds.push(...(await rowsOf<{ id: string }>(db, CONVERSATIONS_BY_TAIL, t)).map((r) => r.id));
-  for (const id of clientIds) conversationIds.push(...(await rowsOf<{ id: string }>(db, CONVERSATIONS_BY_CLIENT, id)).map((r) => r.id));
+  // Una conversación cuyo teléfono es exactamente el ingresado es de quien tiene ese número de WhatsApp (lo verifica Meta).
+  if (scope === "contact" && m.tail) conversationIds.push(...(await rowsOf<{ id: string }>(db, CONVERSATIONS_BY_TAIL, m.tail)).map((r) => r.id));
+  for (const id of selection.clientIds) conversationIds.push(...(await rowsOf<{ id: string }>(db, CONVERSATIONS_BY_CLIENT, id)).map((r) => r.id));
   const conversations = unique(conversationIds);
 
   const reclamos = new Map<string, string[]>();
   const collect = (rows: { id: string; foto_keys: string | null }[]) => rows.forEach((r) => reclamos.set(r.id, parseKeys(r.foto_keys)));
-  for (const t of identity.tails) collect(await rowsOf(db, RECLAMOS_BY_TAIL, t));
-  for (const id of clientIds) collect(await rowsOf(db, RECLAMOS_BY_CLIENT, id));
+  if (scope === "contact" && m.tail) collect(await rowsOf(db, RECLAMOS_BY_TAIL, m.tail));
+  for (const id of selection.clientIds) collect(await rowsOf(db, RECLAMOS_BY_CLIENT, id));
   for (const id of conversations) collect(await rowsOf(db, RECLAMOS_BY_CONVERSATION, id));
 
-  let inProgressOrders = 0;
-  for (const id of clientIds) inProgressOrders += Number((await db.prepare(IN_PROGRESS_SQL).bind(id).first<{ n: number }>())?.n ?? 0);
-
+  const inProgressOrders = await countInProgress(db, selection.clientIds);
+  const typedEmail = scope === "contact" && m.email ? [m.email] : [];
   return {
-    users: [...identity.users.values()],
-    clientIds,
+    users: selection.users,
+    clientIds: selection.clientIds,
     conversationIds: conversations,
     reclamoIds: [...reclamos.keys()],
-    emails: [...identity.emails],
+    emails: unique([...typedEmail, ...selection.users.map((u) => normalizeEmail(u.email)).filter((e): e is string => e !== null)]),
     photoKeys: unique([...reclamos.values()].flat()),
     inProgressOrders,
   };
+}
+
+async function countInProgress(db: SqlDatabase, clientIds: readonly string[]): Promise<number> {
+  let total = 0;
+  for (const id of clientIds) total += Number((await db.prepare(IN_PROGRESS_SQL).bind(id).first<{ n: number }>())?.n ?? 0);
+  return total;
+}
+
+/** Nombre abreviado para distinguir coincidencias ("Marta G."): ni apellido completo, ni teléfono, ni email. */
+function maskName(name: string | null): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "Sin nombre";
+  return [parts[0], ...parts.slice(1).map((p) => `${p[0].toUpperCase()}.`)].join(" ");
 }
 
 const idsFor = (kind: StepKind, r: Resolved): string[] => {
@@ -356,6 +409,25 @@ export interface DeletionBlock {
   reason: string;
 }
 
+/** Una cuenta o ficha que coincidió. Sin teléfono, email ni nombre completo: el nombre va abreviado para poder distinguirlas. */
+export interface DeletionMatchView {
+  id: string;
+  kind: "user" | "client";
+  /** Por qué dato coincidió: el email o el teléfono que se ingresó. */
+  matchedBy: MatchedBy;
+  via: MatchVia;
+  label: string;
+  createdAt: string | null;
+  /** Cuentas: rol de la cuenta. */
+  role?: string;
+  staffRole?: string | null;
+  /** Cuentas: por qué no se puede eliminar (dueño principal, último dueño activo), o null. */
+  blockedReason?: string | null;
+  /** Fichas: origen (app o fudo) y cuenta vinculada. */
+  source?: string | null;
+  linkedUserId?: string | null;
+}
+
 export interface DeletionPreview {
   /** Hay algo para eliminar (cuenta, cliente, conversación o reclamo). */
   found: boolean;
@@ -368,6 +440,10 @@ export interface DeletionPreview {
   accounts: Array<{ role: string; staffRole: string | null }>;
   warnings: string[];
   blocked: DeletionBlock | null;
+  /** Cuentas y fichas que coincidieron, con los ids que hay que confirmar si son varias. */
+  matches: { users: DeletionMatchView[]; clients: DeletionMatchView[] };
+  /** Más de una cuenta o más de una ficha: la ejecución pide los ids confirmados (subconjunto de `matches`). */
+  requiresConfirmation: boolean;
 }
 
 async function countStep(db: SqlDatabase, step: DeletionStep, id: string): Promise<number> {
@@ -404,10 +480,7 @@ export const MESSAGES = {
 } as const;
 
 /** ¿Algo impide eliminar a estos usuarios? Dueño principal y último dueño activo. */
-async function protectionFor(
-  db: SqlDatabase, users: readonly UserRow[], opts: DeletionOptions, clientCount = 0,
-): Promise<DeletionBlock | null> {
-  if (clientCount > MAX_MATCHED_CLIENTS) return { status: 409, reason: MESSAGES.tooMany(clientCount) };
+async function protectionFor(db: SqlDatabase, users: readonly UserRow[], opts: DeletionOptions): Promise<DeletionBlock | null> {
   if (users.some((u) => isSuperOwnerEmail(u.email, opts.superOwnerEmail))) return { status: 403, reason: MESSAGES.superOwner };
   const owners = users.filter(isActiveOwner);
   if (owners.length > 1) return { status: 409, reason: MESSAGES.manyOwners };
@@ -418,17 +491,26 @@ async function protectionFor(
   return null;
 }
 
-function previewFrom(resolved: Resolved, rows: DeletionCountRow[], blocked: DeletionBlock | null): DeletionPreview {
-  const found = resolved.users.length + resolved.clientIds.length + resolved.conversationIds.length + resolved.reclamoIds.length > 0;
-  return {
-    found,
-    total: rows.reduce((sum, r) => sum + r.count, 0),
-    rows,
-    files: resolved.photoKeys.length,
-    accounts: resolved.users.map((u) => ({ role: u.role, staffRole: u.role === "admin" ? normalizeStaffRole(u.staff_role) : null })),
-    warnings: resolved.inProgressOrders > 0 ? [MESSAGES.inProgress] : [],
-    blocked,
-  };
+/** Un dato tan genérico que arrastra demasiadas fichas no se procesa (ver MAX_MATCHED_CLIENTS). */
+function capBlock(m: Matches): DeletionBlock | null {
+  return m.clients.size > MAX_MATCHED_CLIENTS ? { status: 409, reason: MESSAGES.tooMany(m.clients.size) } : null;
+}
+
+async function matchViews(db: SqlDatabase, m: Matches, opts: DeletionOptions): Promise<DeletionPreview["matches"]> {
+  const by = (x: Matched<unknown>): MatchedBy => (x.matchedBy === "phone" ? "phone" : "email");
+  const users: DeletionMatchView[] = [];
+  for (const u of m.users.values()) {
+    users.push({
+      id: u.row.id, kind: "user", matchedBy: by(u), via: u.via, label: maskName(u.row.name), createdAt: u.row.createdAt ? String(u.row.createdAt) : null,
+      role: u.row.role, staffRole: u.row.role === "admin" ? normalizeStaffRole(u.row.staff_role) : null,
+      blockedReason: (await protectionFor(db, [u.row], opts))?.reason ?? null,
+    });
+  }
+  const clients = [...m.clients.values()].map((c): DeletionMatchView => ({
+    id: c.row.id, kind: "client", matchedBy: by(c), via: c.via, label: maskName(c.row.name), createdAt: c.row.created_at,
+    source: c.row.source, linkedUserId: c.row.user_id,
+  }));
+  return { users, clients };
 }
 
 const ONLY_SUPER_OWNER = "Solo el dueño principal puede eliminar datos personales.";
@@ -448,18 +530,39 @@ export type DeletionOutcome<T> = { ok: true; value: T } | DeletionFailure;
 const fail = (status: DeletionFailure["status"], error: string): DeletionFailure => ({ ok: false, status, error });
 
 function hasIdentifier(subject: DeletionSubject): boolean {
-  return Boolean(subject.userId?.trim() || normalizeEmail(subject.email) || phoneTail(subject.phone));
+  return Boolean(normalizeEmail(subject.email) || phoneTail(subject.phone));
 }
 
-/** Cuántos registros hay por tabla para ese teléfono, email o usuario. Solo el dueño principal. */
+/**
+ * Cuántos registros hay por tabla para ese teléfono o email, y qué cuentas y fichas coincidieron (por qué dato y con qué ids).
+ * Los conteos son de TODAS las coincidencias; al ejecutar se aplican solo a las confirmadas. Solo el dueño principal.
+ */
 export async function previewDeletion(
   db: SqlDatabase, actor: Actor, subject: DeletionSubject, opts: DeletionOptions,
 ): Promise<DeletionOutcome<DeletionPreview>> {
   await requireSuperOwner(db, actor, opts);
   if (!hasIdentifier(subject)) return fail(400, "Indicá un teléfono (con al menos 8 dígitos) o un email válido.");
-  const resolved = await resolveSubject(db, subject, "contact");
+  const m = await matchContact(db, subject);
+  const everything: Selection = { users: [...m.users.values()].map((u) => u.row), clientIds: [...m.clients.keys()] };
+  const resolved = await resolveDependents(db, m, everything, "contact");
   const rows = await countAll(db, resolved);
-  return { ok: true, value: previewFrom(resolved, rows, await protectionFor(db, resolved.users, opts, resolved.clientIds.length)) };
+  const needs = requiresConfirmation(m);
+  // Con varias coincidencias la protección se evalúa por cuenta (blockedReason) y, al ejecutar, sobre lo confirmado.
+  const blocked = capBlock(m) ?? (needs ? null : await protectionFor(db, resolved.users, opts));
+  return {
+    ok: true,
+    value: {
+      found: resolved.users.length + resolved.clientIds.length + resolved.conversationIds.length + resolved.reclamoIds.length > 0,
+      total: rows.reduce((sum, r) => sum + r.count, 0),
+      rows,
+      files: resolved.photoKeys.length,
+      accounts: resolved.users.map((u) => ({ role: u.role, staffRole: u.role === "admin" ? normalizeStaffRole(u.staff_role) : null })),
+      warnings: resolved.inProgressOrders > 0 ? [MESSAGES.inProgress] : [],
+      blocked,
+      matches: await matchViews(db, m, opts),
+      requiresConfirmation: needs,
+    },
+  };
 }
 
 // --- Ejecución --------------------------------------------------------------------------------------
@@ -496,11 +599,16 @@ async function removeFiles(files: FileStore | null | undefined, keys: readonly s
   return failed;
 }
 
-function primaryHash(subject: DeletionSubject, resolved: Resolved): string {
-  const tail = phoneTail(subject.phone);
-  if (tail) return subjectHash("phone", tail);
-  const email = normalizeEmail(subject.email) ?? normalizeEmail(resolved.users[0]?.email);
-  return email ? subjectHash("email", email) : subjectHash("user", subject.userId?.trim() || "desconocido");
+/** Con qué dato se pidió: el teléfono si lo hay, si no el email; en autoservicio, el email de la cuenta. */
+function primaryHash(target: Target, selection: Selection): string {
+  if (target.scope === "contact") {
+    const tail = phoneTail(target.phone);
+    if (tail) return subjectHash("phone", tail);
+    const email = normalizeEmail(target.email);
+    if (email) return subjectHash("email", email);
+  }
+  const own = normalizeEmail(selection.users[0]?.email);
+  return own ? subjectHash("email", own) : subjectHash("user", target.scope === "account" ? target.userId : "desconocido");
 }
 
 /** Guardas del lote: si la condición no se cumple, `json('x')` falla y se revierte todo (sin dueño no se queda el sistema). */
@@ -529,18 +637,25 @@ function stepStatements(db: SqlDatabase, resolved: Resolved): SqlStatement[] {
   return out;
 }
 
+type Target = ({ scope: "contact" } & DeletionSubject) | { scope: "account"; userId: string };
+
 interface RunInput {
-  subject: DeletionSubject;
-  scope: DeletionScope;
+  target: Target;
   channel: DeletionChannel;
   performedBy: string | null;
+  confirmation?: DeletionConfirmation;
 }
 
 /** Corre el borrado ya autorizado: registra, borra archivos, aplica el lote atómico y cierra el registro. */
 async function runDeletion(db: SqlDatabase, input: RunInput, opts: DeletionOptions): Promise<DeletionOutcome<DeletionResult>> {
-  const resolved = await resolveSubject(db, input.subject, input.scope);
-  const blocked = await protectionFor(db, resolved.users, opts, resolved.clientIds.length);
+  const m = input.target.scope === "account" ? await matchAccount(db, input.target.userId) : await matchContact(db, input.target);
+  const cap = capBlock(m);
+  if (cap) return fail(cap.status, cap.reason);
+  const picked = selectMatches(m, input.confirmation);
+  if (!picked.ok) return picked;
+  const blocked = await protectionFor(db, picked.selection.users, opts);
   if (blocked) return fail(blocked.status, blocked.reason);
+  const resolved = await resolveDependents(db, m, picked.selection, input.target.scope);
 
   const rows = await countAll(db, resolved);
   const counts: Record<string, number> = Object.fromEntries(rows.map((r) => [r.key, r.count]));
@@ -548,7 +663,7 @@ async function runDeletion(db: SqlDatabase, input: RunInput, opts: DeletionOptio
   const requestedAt = (opts.now?.() ?? new Date()).toISOString();
   await db
     .prepare(`INSERT INTO data_deletion_requests (id, subject_hash, channel, requested_at, performed_by, status) VALUES (?, ?, ?, ?, ?, 'pending')`)
-    .bind(requestId, primaryHash(input.subject, resolved), input.channel, requestedAt, input.performedBy)
+    .bind(requestId, primaryHash(input.target, picked.selection), input.channel, requestedAt, input.performedBy)
     .run();
 
   const failedKeys = await removeFiles(opts.files, resolved.photoKeys);
@@ -574,8 +689,8 @@ async function runDeletion(db: SqlDatabase, input: RunInput, opts: DeletionOptio
       .run()
       .catch(() => undefined);
     // Una guarda que saltó entre la verificación y el lote (carrera): se informa igual que la verificación previa.
-    const latest = await resolveSubject(db, input.subject, input.scope);
-    const again = await protectionFor(db, latest.users, opts, latest.clientIds.length);
+    const latest = (await Promise.all(picked.selection.users.map((u) => findUser(db, u.id)))).filter((u): u is UserRow => u !== null);
+    const again = await protectionFor(db, latest, opts);
     return again ? fail(again.status, again.reason) : fail(500, "No se pudo eliminar. No se cambió ningún dato; probá de nuevo.");
   }
 
@@ -589,12 +704,22 @@ async function runDeletion(db: SqlDatabase, input: RunInput, opts: DeletionOptio
 
 /** Eliminación pedida desde la herramienta del panel por teléfono o email. Solo el dueño principal. */
 export async function deleteSubjectData(
-  db: SqlDatabase, actor: Actor, input: { phone?: string; email?: string; channel: Extract<DeletionChannel, "admin" | "email"> }, opts: DeletionOptions,
+  db: SqlDatabase, actor: Actor,
+  input: {
+    phone?: string; email?: string; channel: Extract<DeletionChannel, "admin" | "email">;
+    /** Obligatorios si la previsualización encontró más de una cuenta o más de una ficha; subconjunto de lo previsualizado. */
+    confirmedUserIds?: readonly string[]; confirmedClientIds?: readonly string[];
+  },
+  opts: DeletionOptions,
 ): Promise<DeletionOutcome<DeletionResult>> {
   const performer = await requireSuperOwner(db, actor, opts);
   const subject: DeletionSubject = { phone: input.phone, email: input.email };
   if (!hasIdentifier(subject)) return fail(400, "Indicá un teléfono (con al menos 8 dígitos) o un email válido.");
-  return runDeletion(db, { subject, scope: "contact", channel: input.channel, performedBy: performer }, opts);
+  return runDeletion(
+    db,
+    { target: { scope: "contact", ...subject }, channel: input.channel, performedBy: performer, confirmation: { userIds: input.confirmedUserIds, clientIds: input.confirmedClientIds } },
+    opts,
+  );
 }
 
 /** Registro reciente de pedidos de eliminación: sin datos personales (ni el hash ni quién lo hizo). */
@@ -669,8 +794,8 @@ export async function ownAccountEligibility(db: SqlDatabase, userId: string, opt
   if (isSuperOwnerEmail(user.email, opts.superOwnerEmail)) return { canDelete: false, status: 403, reason: SELF_MESSAGES.superOwner };
   const block = await protectionFor(db, [user], { ...opts, superOwnerEmail: null });
   if (block) return { canDelete: false, status: 409, reason: SELF_MESSAGES.lastOwner };
-  const resolved = await resolveSubject(db, { userId }, "account");
-  if (resolved.inProgressOrders > 0) return { canDelete: false, status: 409, reason: SELF_MESSAGES.inProgress };
+  const own = await matchAccount(db, userId);
+  if ((await countInProgress(db, [...own.clients.keys()])) > 0) return { canDelete: false, status: 409, reason: SELF_MESSAGES.inProgress };
   return { canDelete: true };
 }
 
@@ -734,7 +859,7 @@ export async function deleteOwnAccount(
   }
 
   const outcome = await runDeletion(
-    db, { subject: { userId: input.userId }, scope: "account", channel: "autoservicio", performedBy: input.userId }, opts,
+    db, { target: { scope: "account", userId: input.userId }, channel: "autoservicio", performedBy: input.userId }, opts,
   );
   if (outcome.ok) await db.prepare(`DELETE FROM courier_pin_attempts WHERE key = ?`).bind(lockKey(input.userId)).run();
   return outcome;

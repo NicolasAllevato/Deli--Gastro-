@@ -27,6 +27,12 @@ export const MARTA = {
   photo: "reclamos/r-marta/aaaa-1111.jpg",
 } as const;
 
+/** Lo que el dueño confirma cuando la previsualización de Marta por teléfono encuentra su cuenta y sus dos fichas. */
+export const MARTA_CONFIRM = { confirmedUserIds: [MARTA.userId], confirmedClientIds: [MARTA.clientId, MARTA.waClientId] } as const;
+
+/** Otra persona con el MISMO teléfono que Marta pero otro email (cargó el dato a mano, por ejemplo): no es Marta. */
+export const OTRO = { userId: "u-otro", clientId: "c-otro", email: "otro@example.test", name: "Otro Distinto", address: "Calle Otro 999" } as const;
+
 export const PEDRO = {
   userId: "u-pedro",
   email: "repartidor-pedro1@repartidores.dely.opsyn.app",
@@ -201,6 +207,28 @@ export async function seedWorld(world: World): Promise<void> {
   run(`INSERT INTO fudo_writes (id, order_id, operation, ok, payload, actor) VALUES ('fw-b', 'o-b1', 'create_sale', 1, '{"customerName":"Beto Ríos"}', 'admin:dueno')`);
   // Aprendizaje del bot (enmascarado, sin vínculo con la persona)
   run(`INSERT INTO kb_errores (id, clave, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, origen) VALUES ('kbe-1', 'k1', 'esc', 'otro', 'hola, soy [nombre]', 'no entendí', 'm', 'c', 'conversacion')`);
+}
+
+/** Cuenta, ficha y pedido de OTRO: comparte el teléfono de Marta pero no su email. Nada de esto puede cambiar al borrar a Marta por email. */
+export function seedLookalike(world: Pick<World, "db">): void {
+  const run = (sql: string, ...params: (string | number | null)[]) => world.db.raw.prepare(sql).run(...params);
+  const now = "2026-11-10T15:00:00.000Z";
+  run(`INSERT INTO "user" (id, name, email, emailVerified, role, phone, createdAt, updatedAt) VALUES (?, ?, ?, 1, 'cliente', ?, ?, ?)`, OTRO.userId, OTRO.name, OTRO.email, MARTA.phone, now, now);
+  run(`INSERT INTO "session" (id, expiresAt, token, createdAt, updatedAt, userId) VALUES ('s-otro', '2099-01-01', 'tok-otro', ?, ?, ?)`, now, now, OTRO.userId);
+  run(`INSERT INTO clients (id, user_id, name, phone, phone_digits, address, email) VALUES (?, ?, ?, ?, ?, ?, ?)`, OTRO.clientId, OTRO.userId, OTRO.name, MARTA.phone, MARTA.tail, OTRO.address, OTRO.email);
+  run(`INSERT INTO orders (id, client_id, status, items_desc, total_cents, payment_method, created_at, customer_name, delivery_address, notes)
+       VALUES ('o-otro', ?, 'Finalizados', '1x Fugazza', 800000, 'Efectivo', '2026-11-06T20:00:00.000Z', ?, ?, 'timbre otro')`, OTRO.clientId, OTRO.name, OTRO.address);
+  run(`INSERT INTO points_ledger (id, client_id, delta, description) VALUES ('l-otro', ?, 80, 'Compra de Otro')`, OTRO.clientId);
+}
+
+/** Estado de OTRO: cuenta, sesión, ficha, pedido y puntos. */
+export function otroSnapshot(world: Pick<World, "db">): string {
+  const q = (sql: string) => JSON.stringify(world.db.raw.prepare(sql).all());
+  return [
+    q(`SELECT id, name, email, phone FROM "user" WHERE id = 'u-otro'`), q(`SELECT id, userId FROM session WHERE id = 's-otro'`),
+    q(`SELECT id, user_id, name, phone, address, email FROM clients WHERE id = 'c-otro'`),
+    q(`SELECT id, client_id, customer_name, delivery_address, notes, total_cents FROM orders WHERE id = 'o-otro'`), q(`SELECT id, client_id, delta FROM points_ledger WHERE id = 'l-otro'`),
+  ].join("|");
 }
 
 /**

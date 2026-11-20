@@ -36,10 +36,20 @@ export const previewQuerySchema = z
   .strictObject({ phone: phoneSchema.optional(), email: emailSchema.optional() })
   .refine(exactlyOne, { message: ONE_MESSAGE });
 
+/** Ids de cuentas (uuid o alfanuméricos de Better Auth) y de fichas (uuid) que el dueño confirma. */
+const idSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "Id inválido.");
+const MAX_CONFIRMED_IDS = 10;
+
 export const executeBodySchema = z
   .strictObject({
     phone: phoneSchema.optional(),
     email: emailSchema.optional(),
+    /**
+     * Obligatorios si la previsualización encontró más de una cuenta o más de una ficha (`requiresConfirmation`): los ids que
+     * se eligen eliminar, que tienen que ser un subconjunto de lo previsualizado (la capa de datos lo verifica).
+     */
+    confirmedUserIds: z.array(idSchema, { error: "Ids de cuenta inválidos." }).max(MAX_CONFIRMED_IDS, "Demasiados ids.").optional(),
+    confirmedClientIds: z.array(idSchema, { error: "Ids de ficha inválidos." }).max(MAX_CONFIRMED_IDS, "Demasiados ids.").optional(),
     /** De dónde llegó el pedido: por email (lo habitual) o iniciado desde el panel. */
     channel: z.enum(["email", "admin"], { error: "Canal inválido." }).default("email"),
     confirm: z.literal(DELETION_CONFIRM_WORD, { error: `Escribí ${DELETION_CONFIRM_WORD} para confirmar.` }),
@@ -68,7 +78,11 @@ export interface PortFiles {
 
 export interface DeletionPort<A> {
   preview(actor: A, subject: { phone?: string; email?: string }): Promise<PortOutcome<DeletionPreviewView>>;
-  execute(actor: A, input: { phone?: string; email?: string; channel: "admin" | "email" }, files?: PortFiles | null): Promise<PortOutcome<DeletionResultView>>;
+  execute(
+    actor: A,
+    input: { phone?: string; email?: string; channel: "admin" | "email"; confirmedUserIds?: string[]; confirmedClientIds?: string[] },
+    files?: PortFiles | null,
+  ): Promise<PortOutcome<DeletionResultView>>;
   recent(actor: A): Promise<DeletionRequestRowView[]>;
   eligibility(userId: string): Promise<{ canDelete: true } | { canDelete: false; status: number; reason: string }>;
   deleteOwn(userId: string, password: string, files?: PortFiles | null): Promise<PortOutcome<DeletionResultView>>;
@@ -119,7 +133,8 @@ export async function executeApi<A>(
   const parsed = executeBodySchema.safeParse(rawBody);
   if (!parsed.success) return err(400, firstIssue(parsed.error));
   try {
-    const result = await port.execute(actor, parsed.data, files);
+    const { phone, email, channel, confirmedUserIds, confirmedClientIds } = parsed.data;
+    const result = await port.execute(actor, { phone, email, channel, confirmedUserIds, confirmedClientIds }, files);
     if (!result.ok) return err(result.status, result.error);
     return ok(200, { result: result.value, note: result.value.status === "partial" ? FILES_NOTE : null });
   } catch (e: unknown) {

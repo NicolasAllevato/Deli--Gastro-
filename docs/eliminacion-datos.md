@@ -19,6 +19,7 @@ Hecho
 - [x] Botón "Eliminar cuenta" en el perfil del cliente y en "Mi cuenta" del panel (ícono en la barra superior), con Modal accesible.
 - [x] Páginas `/eliminar-datos` (completa) y `/cuenta-eliminada`; enlace "Eliminación de datos" en el pie del sitio.
 - [x] Arreglo aparte: `/api/admin/legal` leía solo Supabase; ahora lee D1 con `DATA_BACKEND=d1`.
+- [x] Corrección de seguridad: resolución de identidad en un solo salto + confirmación de ids cuando hay más de una cuenta o ficha (`matchedBy`, `via`).
 - [x] Pruebas: `tests/data-deletion.test.ts`, `tests/data-deletion-api.test.ts`, `tests/legal-admin-list.test.ts` y casos nuevos en
       `tests/permissions.test.ts`.
 
@@ -36,7 +37,7 @@ Falta (lo decide el dueño u otra entrega)
 | Canal | Quién | Cómo |
 |---|---|---|
 | Autoservicio | Cliente o personal del local (dueño, gerente, cajero) | Perfil del cliente → "Eliminar cuenta"; panel → ícono "Mi cuenta". Pide la contraseña actual y escribir `ELIMINAR`. Borra al instante, cierra la sesión y redirige a `/cuenta-eliminada`. |
-| Email / WhatsApp | El dueño principal | Configuración → "Eliminar datos": buscar por teléfono o email, revisar el conteo por tabla, escribir `ELIMINAR`. Antes hay que verificar la identidad por fuera (que escriba desde el email de su cuenta o desde el teléfono). Canal registrado: `email` u `admin`. |
+| Email / WhatsApp | El dueño principal | Configuración → "Eliminar datos": buscar por teléfono o email, revisar qué coincidió (y elegir cuáles si son varias) y el conteo por tabla, escribir `ELIMINAR`. Antes hay que verificar la identidad por fuera (que escriba desde el email de su cuenta o desde el teléfono). Canal registrado: `email` u `admin`. |
 
 No pueden eliminar su cuenta desde la aplicación: repartidores (lo pide el local), el dueño principal (`SUPER_OWNER_EMAIL`) y el último dueño
 activo. Tampoco mientras haya un pedido en curso (recibido, en preparación o en camino). La herramienta del panel solo la usa el dueño
@@ -81,12 +82,21 @@ Los audios de WhatsApp no se guardan como archivo: se transcriben y solo queda e
 
 ## Reglas y decisiones
 
-- **Quién es el sujeto.** Por teléfono (últimos 10 dígitos, mínimo 8), email o id de usuario. En la herramienta del panel (ámbito `contact`) se
-  sigue el rastro hasta 4 rondas: cuenta, fichas de cliente, otros teléfonos y emails de esas fichas, conversaciones y reclamos del mismo
-  teléfono. Tope: si coincide con más de 10 fichas se frena (un teléfono compartido no puede arrastrar a decenas de clientes).
-- **Autoservicio solo borra lo atado a la cuenta** (ámbito `account`): el usuario, sus fichas (`clients.user_id`) y las conversaciones y reclamos
-  vinculados a esas fichas por `client_id`. No sigue el teléfono ni el email que cargó el usuario, porque no están verificados: alguien podría
-  cargar el teléfono de otra persona y borrarle sus conversaciones y pedidos. Lo que quede por teléfono se pide por email (la página lo explica).
+- **Quién es el sujeto: un solo salto desde el dato ingresado.** Se busca SOLO con el email normalizado o los últimos dígitos del teléfono (mínimo 8) que
+  se escribió: las cuentas (`user`) y fichas (`clients`) que tienen EXACTAMENTE ese dato. No se agregan los otros teléfonos o emails de lo encontrado para
+  seguir buscando: quien cargó el mismo teléfono o email que otra persona no arrastra sus datos (antes la búsqueda se expandía en cadena usuario → teléfono →
+  ficha → email → otra cuenta; está corregido y con pruebas). Lo único que se sigue son vínculos por id: las fichas de una cuenta, la cuenta de una ficha,
+  y las conversaciones y reclamos de esas fichas, más las del teléfono exacto ingresado (ese número de WhatsApp lo verifica Meta).
+- **Más de una coincidencia exige confirmar ids.** Si la previsualización encuentra más de una cuenta o más de una ficha (`requiresConfirmation`), la ejecución se
+  rechaza (409) salvo que el pedido traiga `confirmedUserIds` / `confirmedClientIds`, y esas listas tienen que ser un subconjunto de lo previsualizado (otro id, aunque
+  exista, se rechaza). Solo se borra lo confirmado; las fichas de una cuenta confirmada van con ella (por la clave foránea se borrarían igual, sin anonimizar sus
+  pedidos). Cada coincidencia indica `matchedBy` (`email` o `phone`), `via` (`direct`: tiene ese dato; `link`: cuelga por id), un nombre abreviado ("Marta G.") y, en las
+  cuentas, `blockedReason` si es el dueño principal o el último dueño activo. Los conteos de la previsualización son de todas las coincidencias. Tope: más de 10 fichas
+  se frena (un dato genérico, como el teléfono del local, no puede arrastrar a decenas de clientes). La pantalla muestra las casillas vacías a propósito.
+- **Autoservicio: el sujeto es siempre la sesión propia** (su `user_id` y sus fichas por `clients.user_id`, con las conversaciones y reclamos vinculados a esas fichas por
+  `client_id`). El teléfono y el email que cargó el usuario no están verificados: si se usaran para buscar, alguien podría cargar el dato de otra persona y borrarle sus
+  conversaciones y pedidos. El email de la cuenta solo se usa para borrar sus propios tokens y para el hash del registro. Lo que quede por teléfono se pide por email
+  (la página lo explica).
 - **Pedidos anonimizados, no borrados**: la obligación contable pide conservar el pedido. Se conserva `id`, fechas, `total_cents`, `delivery_fee_cents`,
   medio de pago, estado y canal. Dirección y ubicación pasan a NULL (no a "Eliminado") para que el reintento de geocodificación de Fudo no
   intente ubicar un texto inventado; el nombre pasa a "Eliminado".

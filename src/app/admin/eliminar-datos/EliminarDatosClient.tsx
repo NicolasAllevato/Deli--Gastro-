@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Segmented } from "@/app/admin/usuarios/_components/Segmented";
 import {
   CHANNEL_LABELS, DELETION_CONFIRM_WORD, STATUS_LABELS,
-  type DeletionAdminListing, type DeletionPreviewView, type DeletionRequestRowView, type DeletionResultView,
+  type DeletionAdminListing, type DeletionMatchView, type DeletionPreviewView, type DeletionRequestRowView, type DeletionResultView,
 } from "@/lib/deletion/types";
 import { formatDateTimeAR } from "@/lib/time-ar";
 
@@ -29,6 +29,8 @@ const STATUS_TONE: Record<DeletionRequestRowView["status"], "green" | "yellow" |
 };
 const ROLE_LABELS: Record<string, string> = { cliente: "Cliente", repartidor: "Repartidor", admin: "Personal del local" };
 
+const BY_LABEL = { phone: "teléfono", email: "email" } as const;
+const toggle = (list: readonly string[], id: string): string[] => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 const fmtDate = (iso: string | null) => (iso ? formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" }) : "—");
 const normalizeConfirm = (value: string) => value.trim().toUpperCase();
 
@@ -60,6 +62,9 @@ export function EliminarDatosClient() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  // Con varias coincidencias hay que elegir cuáles eliminar: arranca vacío a propósito (nada confirmado por defecto).
+  const [selUsers, setSelUsers] = useState<string[]>([]);
+  const [selClients, setSelClients] = useState<string[]>([]);
 
   // Carga inicial: el setState ocurre dentro de la promesa, no en el cuerpo del efecto.
   useEffect(() => {
@@ -82,6 +87,8 @@ export function EliminarDatosClient() {
     try {
       const r = await call<DeletionAdminListing>(`/api/admin/eliminar-datos?${kind}=${encodeURIComponent(query)}`);
       setPreview(r.preview ? { kind, value: query, data: r.preview } : null);
+      setSelUsers([]);
+      setSelClients([]);
       setRecent(r.recent);
     } catch (err: unknown) {
       setPreview(null);
@@ -107,7 +114,12 @@ export function EliminarDatosClient() {
       const r = await call<{ result: DeletionResultView }>("/api/admin/eliminar-datos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [preview.kind]: preview.value, channel, confirm: DELETION_CONFIRM_WORD }),
+        body: JSON.stringify({
+          [preview.kind]: preview.value,
+          channel,
+          confirm: DELETION_CONFIRM_WORD,
+          ...(preview.data.requiresConfirmation ? { confirmedUserIds: selUsers, confirmedClientIds: selClients } : {}),
+        }),
       });
       setDone(r.result);
       setPreview(null);
@@ -124,7 +136,9 @@ export function EliminarDatosClient() {
   }
 
   const data = preview?.data ?? null;
-  const canExecute = data !== null && data.found && data.blocked === null;
+  const needsPick = data?.requiresConfirmation === true;
+  const picked = selUsers.length + selClients.length;
+  const canExecute = data !== null && data.found && data.blocked === null && (!needsPick || picked > 0);
 
   return (
     <div className="page-fade flex flex-col gap-5 p-2 max-w-4xl">
@@ -209,6 +223,14 @@ export function EliminarDatosClient() {
                 {w}
               </p>
             ))}
+            <Matches
+              data={data}
+              kind={preview?.kind ?? "phone"}
+              selUsers={selUsers}
+              selClients={selClients}
+              onUser={(id) => setSelUsers((l) => toggle(l, id))}
+              onClient={(id) => setSelClients((l) => toggle(l, id))}
+            />
             <div className="overflow-x-auto rounded-xl neumorphic-inset">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Registros por tabla que se eliminan o se anonimizan</caption>
@@ -239,7 +261,9 @@ export function EliminarDatosClient() {
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-gray-500">Total: {data.total} registros.</p>
+            <p className="text-xs text-gray-500">
+              Total: {data.total} registros{needsPick ? " (de todas las coincidencias; se aplican solo a las que elijas)" : ""}.
+            </p>
             {canExecute && (
               <div>
                 <Button type="button" variant="danger" leftIcon={<Trash2 size={16} aria-hidden />} onClick={() => setOpen(true)}>
@@ -296,7 +320,7 @@ export function EliminarDatosClient() {
         onClose={closeModal}
         size="md"
         title="Eliminar datos personales"
-        description={`Vas a eliminar los datos asociados a ${preview?.value ?? ""}. Es definitivo.`}
+        description={`Vas a eliminar los datos asociados a ${preview?.value ?? ""}${needsPick ? ` (${picked} coincidencia(s) elegida(s))` : ""}. Es definitivo.`}
         closeOnBackdrop={!busy}
         footer={
           <>
@@ -328,6 +352,69 @@ export function EliminarDatosClient() {
           )}
         </form>
       </Modal>
+    </div>
+  );
+}
+
+interface MatchesProps {
+  data: DeletionPreviewView;
+  kind: Kind;
+  selUsers: readonly string[];
+  selClients: readonly string[];
+  onUser: (id: string) => void;
+  onClient: (id: string) => void;
+}
+
+function matchText(m: DeletionMatchView, linkedClients: number): string {
+  const how = m.via === "direct" ? `tiene ese ${BY_LABEL[m.matchedBy]}` : `vinculada a una coincidencia por ${BY_LABEL[m.matchedBy]}`;
+  const what = m.kind === "user" ? `${ROLE_LABELS[m.role ?? ""] ?? m.role ?? "Cuenta"}${m.staffRole ? ` (${m.staffRole === "admin" ? "dueño" : m.staffRole})` : ""}` : `Ficha${m.source ? ` (${m.source})` : ""}`;
+  return `${what} · ${how} · alta ${fmtDate(m.createdAt)}${linkedClients > 0 ? ` · incluye ${linkedClients} ficha(s)` : ""}`;
+}
+
+/** Quién coincidió, por qué dato y con qué ids. Con varias coincidencias se elige cuáles eliminar (casillas vacías al principio). */
+function Matches({ data, selUsers, selClients, onUser, onClient }: MatchesProps) {
+  const { users, clients } = data.matches;
+  if (users.length + clients.length === 0) return null;
+  const pick = data.requiresConfirmation;
+  const linked = (id: string) => clients.filter((c) => c.linkedUserId === id).length;
+  const group = (legend: string, items: readonly DeletionMatchView[], selected: readonly string[], onChange: (id: string) => void) =>
+    items.length === 0 ? null : (
+      <fieldset className="min-w-0 flex flex-col gap-1.5">
+        <legend className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-1">{legend}</legend>
+        {items.map((m) => {
+          const blocked = m.blockedReason ?? null;
+          return (
+            <label key={m.id} className="flex items-start gap-3 rounded-xl neumorphic-inset px-3 py-2 text-xs text-gray-700">
+              {pick && (
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-[var(--color-brand-orange)]"
+                  checked={selected.includes(m.id)}
+                  disabled={blocked !== null}
+                  onChange={() => onChange(m.id)}
+                  aria-label={`Eliminar ${m.label}`}
+                />
+              )}
+              <span className="min-w-0">
+                <span className="font-bold text-gray-800">{m.label}</span> · {matchText(m, m.kind === "user" ? linked(m.id) : 0)}
+                {blocked && <span className="block font-bold text-red-600">{blocked}</span>}
+              </span>
+            </label>
+          );
+        })}
+      </fieldset>
+    );
+  return (
+    <div className="flex flex-col gap-3">
+      {pick && (
+        <p role="note" className="flex items-start gap-2 text-xs text-gray-700 rounded-xl neumorphic-inset px-4 py-2.5">
+          <TriangleAlert size={15} className="shrink-0 mt-0.5 text-brand-orange" aria-hidden />
+          Coinciden varias cuentas o fichas. Elegí cuáles eliminar: puede haber otras personas que cargaron el mismo dato. Una cuenta elegida se lleva
+          sus fichas.
+        </p>
+      )}
+      {group("Cuentas encontradas", users, selUsers, onUser)}
+      {group("Fichas de cliente encontradas", clients, selClients, onClient)}
     </div>
   );
 }

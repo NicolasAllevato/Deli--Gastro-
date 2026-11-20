@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import "./helpers/alias.ts";
 import type { Actor } from "../src/lib/data/actor.ts";
 import { deleteOwnAccount, deleteSubjectData, listDeletionRequests, ownAccountEligibility, previewDeletion } from "../src/lib/data/data-deletion.ts";
-import { MARKERS, MARTA, PASSWORD, SUPER_EMAIL, hashPassword, seedWorld, setup, type World } from "./helpers/deletion-world.ts";
+import { MARKERS, MARTA, MARTA_CONFIRM, PASSWORD, SUPER_EMAIL, hashPassword, seedLookalike, seedWorld, setup, type World } from "./helpers/deletion-world.ts";
 
 const { authCookiesToExpire, deleteOwnApi, eligibilityApi, executeApi, executeBodySchema, previewApi } = await import("../src/lib/deletion/api.ts");
 import type { DeletionPort } from "../src/lib/deletion/api.ts";
@@ -49,14 +49,18 @@ describe("GET /api/admin/eliminar-datos", () => {
     const preview = body(r).preview as { found: boolean; total: number };
     assert.equal(preview.found, true);
     assert.equal(preview.total, 24);
-    const json = JSON.stringify(r.body).toLowerCase();
+    assert.equal((body(r).preview as { requiresConfirmation: boolean }).requiresConfirmation, true);
+    const json = JSON.stringify(r.body, (key, value) => (key === "id" || key === "linkedUserId" ? undefined : value)).toLowerCase();
     for (const marker of MARKERS) assert.ok(!json.includes(marker.toLowerCase()), marker);
   });
 
-  it("con ?email= llega a lo mismo", async () => {
+  it("con ?email= trae solo lo que tiene ese email: una cuenta y una ficha, sin pedir confirmación", async () => {
     const { port } = await build();
     const r = await previewApi(port, SUPER, asAdmin("dueno"), { email: MARTA.email });
-    assert.equal((body(r).preview as { total: number }).total, 24);
+    const preview = body(r).preview as { total: number; requiresConfirmation: boolean; matches: { users: { matchedBy: string }[]; clients: { matchedBy: string }[] } };
+    assert.equal(preview.total, 16);
+    assert.equal(preview.requiresConfirmation, false);
+    assert.deepEqual([preview.matches.users[0].matchedBy, preview.matches.clients[0].matchedBy], ["email", "email"]);
   });
 
   it("otro dueño, gerente o cajero: 403 sin tocar la base (la ruta los corta; la capa de datos también)", async () => {
@@ -110,7 +114,7 @@ describe("POST /api/admin/eliminar-datos", () => {
 
   it("con la confirmación elimina, devuelve conteos y deja el canal elegido en el registro", async () => {
     const { port, world } = await build();
-    const r = await executeApi(port, SUPER, asAdmin("dueno"), { email: MARTA.email, channel: "admin", confirm: "ELIMINAR" }, world.files);
+    const r = await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, ...MARTA_CONFIRM, channel: "admin", confirm: "ELIMINAR" }, world.files);
     assert.equal(r.status, 200);
     const result = body(r).result as { status: string; total: number };
     assert.equal(result.status, "completed");
@@ -125,13 +129,13 @@ describe("POST /api/admin/eliminar-datos", () => {
 
   it("el canal por defecto es 'email'", async () => {
     const { port, world } = await build();
-    await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, confirm: "ELIMINAR" }, world.files);
+    await executeApi(port, SUPER, asAdmin("dueno"), { email: MARTA.email, confirm: "ELIMINAR" }, world.files);
     assert.equal((world.db.raw.prepare(`SELECT channel FROM data_deletion_requests`).get() as { channel: string }).channel, "email");
   });
 
   it("sin bucket: el resultado es 'partial' y la respuesta lo avisa", async () => {
     const { port } = await build();
-    const r = await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, confirm: "ELIMINAR" }, null);
+    const r = await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, ...MARTA_CONFIRM, confirm: "ELIMINAR" }, null);
     assert.equal(r.status, 200);
     assert.equal((body(r).result as { status: string }).status, "partial");
     assert.match(String(body(r).note), /fotos/);
@@ -153,6 +157,34 @@ describe("POST /api/admin/eliminar-datos", () => {
     const r = await executeApi(port, SUPER, asAdmin("dueno"), { email: SUPER_EMAIL, confirm: "ELIMINAR" });
     assert.equal(r.status, 403);
     assert.equal(usersLeft(world, "dueno"), 1);
+  });
+});
+
+describe("confirmación de ids en POST /api/admin/eliminar-datos", () => {
+  it("con varias coincidencias y sin ids: 409; el cuerpo acepta las listas y las valida (máximo 10, solo ids)", async () => {
+    const { port, world } = await build();
+    seedLookalike(world);
+    const r = await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, confirm: "ELIMINAR" });
+    assert.equal(r.status, 409);
+    assert.match(String(body(r).error), /elegí cuáles/);
+    const base = { phone: PHONE, confirm: "ELIMINAR" };
+    assert.equal(executeBodySchema.safeParse({ ...base, confirmedUserIds: ["u-marta"], confirmedClientIds: ["c-marta"] }).success, true);
+    for (const bad of [{ confirmedUserIds: "u-marta" }, { confirmedUserIds: [""] }, { confirmedUserIds: ["a b"] }, { confirmedClientIds: Array.from({ length: 11 }, (_, i) => `c${i}`) }, { confirmedClientIds: [1] }]) {
+      assert.equal((await executeApi(port, SUPER, asAdmin("dueno"), { ...base, ...bad })).status, 400, JSON.stringify(bad));
+    }
+    assert.equal((world.db.raw.prepare(`SELECT count(*) AS n FROM "user" WHERE id = 'u-marta'`).get() as { n: number }).n, 1);
+  });
+
+  it("los ids confirmados llegan a la capa de datos y solo se borra lo confirmado", async () => {
+    const { port, world } = await build();
+    seedLookalike(world);
+    const r = await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, confirm: "ELIMINAR", confirmedUserIds: ["u-marta"] }, world.files);
+    assert.equal(r.status, 200);
+    assert.equal(usersLeft(world, "u-marta"), 0);
+    assert.equal(usersLeft(world, "u-otro"), 1);
+    const bad = await executeApi(port, SUPER, asAdmin("dueno"), { phone: PHONE, confirm: "ELIMINAR", confirmedUserIds: ["u-beto"] }, world.files);
+    assert.equal(bad.status, 409);
+    assert.equal(usersLeft(world, "u-beto"), 1);
   });
 });
 
