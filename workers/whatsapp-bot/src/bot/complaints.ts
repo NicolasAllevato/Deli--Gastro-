@@ -4,7 +4,7 @@
  * Local abierto: ticket + derivación a una persona. Cerrado: ticket sin derivar y aviso de cuándo lo contactan.
  * El aviso al local (mail) lo manda la app: el bot la llama por `/api/internal/bot/reclamo` firmado.
  */
-import { categorizarReclamo, faltaDetalle } from "../../../../src/lib/reclamos/categoria.ts";
+import { categorizarReclamo, CONSULTA_PREFIX, faltaDetalle } from "../../../../src/lib/reclamos/categoria.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import type { BotConversation, BotRepo, ComplaintTicket, OrderInfo } from "../repo/types.ts";
 
@@ -65,6 +65,16 @@ function closingLine(mode: ComplaintMode, numero: number, openAt: string): strin
   return `Lo registramos (reclamo #${numero}). Te contactamos cuando abramos a las ${openAt}.`;
 }
 
+/** Prefijo del motivo de un ticket que es una consulta del local sin respuesta (no un reclamo): la app y el panel lo leen con `esConsulta`. */
+export { CONSULTA_PREFIX };
+
+/** Aviso al cliente cuando el bot no tiene la respuesta: se consulta con el local (sin "reclamo" ni número: no es un reclamo). */
+export function consultaReply(mode: ComplaintMode, openAt: string): string {
+  if (mode === "abierto") return "Dejame consultarlo con el local y te confirmo 🙏 Ya les avisé: te escribe alguien del local.";
+  if (mode === "entrenamiento") return "Lo consulto con el local y te escribimos por acá apenas tengamos la respuesta.";
+  return `Lo consulto con el local y te respondemos cuando abramos, a las ${openAt}.`;
+}
+
 /** Mensaje cuando el cliente suma información o fotos a un reclamo que ya estaba abierto. */
 export function complaintUpdateReply(numero: number, mode: ComplaintMode, openAt: string, onlyPhotos: boolean): string {
   const head = onlyPhotos ? `¡Gracias por la foto! La sumé al reclamo #${numero}.` : `Gracias, lo sumé a tu reclamo #${numero}.`;
@@ -103,7 +113,9 @@ export async function attachPhotos(deps: ComplaintDeps, ticket: ComplaintTicket,
 
 /**
  * Avisa a la app que el reclamo es nuevo o cambió: la app manda el mail al local (una sola vez) y le pide al agente
- * de reclamos una sugerencia nueva. Si falla, el reclamo queda igual y la sugerencia se pide desde el panel.
+ * de reclamos una sugerencia nueva. Si el ticket es una consulta sin respuesta (motivo con CONSULTA_PREFIX), la app la
+ * detecta por el motivo guardado: manda el mail de «consulta pendiente» y no pide sugerencia ni compensación.
+ * Si falla, el ticket queda igual y la sugerencia (solo reclamos) se pide desde el panel.
  */
 export async function pingApp(deps: ComplaintDeps, conversationId: string, ticketId: string, inboundWamid: string | undefined): Promise<void> {
   if (!inboundWamid || !deps.orders?.reclamo) return;
@@ -123,19 +135,21 @@ export interface Registered {
 export async function registerComplaint(
   deps: ComplaintDeps,
   conversation: BotConversation,
-  input: { text: string; images: readonly TurnImage[]; inboundWamid: string | undefined; mode: ComplaintMode; openAt: string },
+  input: { text: string; images: readonly TurnImage[]; inboundWamid: string | undefined; mode: ComplaintMode; openAt: string; kind?: "reclamo" | "consulta" },
   now: Date = new Date(),
 ): Promise<Registered | null> {
   if (!deps.repo.createComplaint) return null;
+  // Una consulta sin respuesta usa el mismo ticket (el local la ve y la contesta desde el panel), pero con otro motivo, sin pedido vinculado y con otro aviso.
+  const consulta = input.kind === "consulta";
   const before = (await deps.repo.openComplaint?.(conversation.id).catch(() => null)) ?? null;
-  const order = before?.orderId ? null : await recentOrder(deps.repo, conversation.clientId, now);
+  const order = consulta || before?.orderId ? null : await recentOrder(deps.repo, conversation.clientId, now);
   const clean = withoutPhotoMarks(input.text);
   const ticket = await deps.repo.createComplaint({
     conversationId: conversation.id,
     phone: conversation.phone,
     clientId: conversation.clientId,
-    motivo: clean || "Foto del pedido",
-    categoria: categorizarReclamo(clean),
+    motivo: consulta ? `${CONSULTA_PREFIX}${clean}` : clean || "Foto del pedido",
+    categoria: consulta ? "otro" : categorizarReclamo(clean),
     orderId: order?.id ?? null,
   });
   if (!ticket) return null;
@@ -143,7 +157,9 @@ export async function registerComplaint(
 
   await pingApp(deps, conversation.id, ticket.id, input.inboundWamid);
 
-  const text = ticket.created
+  const text = consulta
+    ? consultaReply(input.mode, input.openAt)
+    : ticket.created
     ? complaintReply({
         numero: ticket.numero,
         mode: input.mode,

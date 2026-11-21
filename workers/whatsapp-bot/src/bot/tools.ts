@@ -1,6 +1,6 @@
 import type { BotTool } from "../ai/responder.ts";
 import { toolsForIntent } from "../guardrails.ts";
-import type { BotConversation, BotRepo } from "../repo/types.ts";
+import type { BotConversation, BotRepo, KnowledgeEntry } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
 import { promosForModel, promosForToday } from "./greeting.ts";
 import { cartaCategoryForModel, cartaMenuForModel, categoryForModel, menuForModel, MENU_RESULT_CHARS } from "./menu.ts";
@@ -8,6 +8,24 @@ import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type 
 
 const EMPTY = { type: "object", properties: {} };
 const PAYMENT_METHODS = ["Efectivo", "Transferencia", "Mercado Pago"];
+
+/** Registro de errores de las herramientas (el turno pasa su `deps.log`). Nunca con datos del cliente. */
+export type ToolLog = (message: string, detail?: unknown) => void;
+const defaultLog: ToolLog = (message, detail) => console.error(message, detail);
+
+/** Entradas de conocimiento relevantes para `tema`. Si la búsqueda falla se registra y la herramienta sigue sin ellas (no se corta la respuesta). */
+async function searchKnowledge(repo: BotRepo, tema: string, log: ToolLog): Promise<KnowledgeEntry[]> {
+  if (!repo.searchKnowledge) return [];
+  try {
+    return await repo.searchKnowledge(tema);
+  } catch (error: unknown) {
+    log("[whatsapp-bot] get_business_info: no se pudo buscar en el conocimiento", { error: error instanceof Error ? error.message : "error" });
+    return [];
+  }
+}
+
+/** El motivo del traspaso empieza con «consulta»: no es un reclamo sino una pregunta del local sin respuesta cargada. */
+export const isConsultaReason = (reason: string): boolean => /^\s*consulta\b/i.test(reason);
 
 const minutesSince = (date: Date, now: number): number => Math.max(0, Math.round((now - date.getTime()) / 60_000));
 
@@ -67,7 +85,9 @@ function describePayment(data: unknown): unknown {
 }
 
 /** Herramientas de solo lectura y traspaso; con el flag de pedidos, `get_menu` incluye el id y `order_status` va por la app. */
-function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number, order?: OrderTurn, guard?: AddressGuard): BotTool[] {
+function allTools(
+  repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number, order?: OrderTurn, guard?: AddressGuard, log: ToolLog = defaultLog,
+): BotTool[] {
   return [
     {
       name: "get_menu",
@@ -93,20 +113,43 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
     },
     {
       name: "get_business_info",
-      description: "Horario, si el local está abierto, demora estimada, zonas de envío con tarifa y pedido mínimo, formas de pago, y preguntas frecuentes, políticas y promos cargadas por el local.",
-      parameters: EMPTY,
-      run: async () => ({
-        business: settings.businessName,
-        hours: settings.hours,
-        open_now: openNow(settings, new Date(now())),
-        estimated_minutes: settings.estimatedMinutes,
-        zones: (await repo.zones()).map((z) => ({ name: z.name, delivery_fee: z.fee, delivery_fee_text: money(z.fee), min_order: z.minOrder, min_order_text: money(z.minOrder) })),
-        payment_methods: PAYMENT_METHODS,
-        // Cargado por el dueño en /admin/conocimiento (el vocabulario va al prompt, no acá).
-        knowledge: ((await repo.knowledge?.().catch(() => [])) ?? [])
-          .filter((k) => k.category !== "vocabulario")
-          .map(({ category, topic, content }) => ({ category, topic, content })),
-      }),
+      description:
+        "Información del local: horario, si está abierto ahora, demora estimada, zonas de envío con tarifa y pedido mínimo, formas de pago, y lo que el local cargó en su base de conocimiento (preguntas frecuentes, políticas, promos, ubicación, cancelaciones, etc.). " +
+        "Completá `tema` con lo que el cliente quiere saber, en sus palabras (por ejemplo: \"cancelar un pedido\", \"sin tacc\", \"dónde queda el local\"): la herramienta busca y devuelve en `knowledge` solo las entradas que tratan de ese tema, no todas. " +
+        "Si `knowledge` viene vacío y lo que pregunta no está en los demás datos, no lo sabés: no lo inventes.",
+      parameters: {
+        type: "object",
+        properties: {
+          tema: {
+            type: "string",
+            maxLength: 200,
+            description: "Lo que el cliente pregunta o quiere saber del local, en pocas palabras y con sus términos (ej.: \"horario del domingo\", \"se puede pagar con tarjeta\", \"cómo cancelo\").",
+          },
+        },
+        required: ["tema"],
+      },
+      // Hasta 8 entradas de hasta 1000 caracteres más los datos fijos: más que el tope general, para no cortar el JSON a la mitad.
+      maxResultChars: 12_000,
+      run: async (args) => {
+        const tema = typeof (args as { tema?: unknown })?.tema === "string" ? (args as { tema: string }).tema.slice(0, 200) : "";
+        const found = await searchKnowledge(repo, tema, log);
+        return {
+          business: settings.businessName,
+          hours: settings.hours,
+          open_now: openNow(settings, new Date(now())),
+          estimated_minutes: settings.estimatedMinutes,
+          zones: (await repo.zones()).map((z) => ({ name: z.name, delivery_fee: z.fee, delivery_fee_text: money(z.fee), min_order: z.minOrder, min_order_text: money(z.minOrder) })),
+          payment_methods: PAYMENT_METHODS,
+          // Cobertura por distancia (si el local la cargó): el bot no puede prometer envíos más lejos ni otra tarifa por km.
+          ...(settings.deliveryRadiusKm !== null ? { delivery_radius_km: settings.deliveryRadiusKm } : {}),
+          ...(settings.deliveryCostPerKm !== null ? { delivery_cost_per_km_text: money(settings.deliveryCostPerKm) } : {}),
+          // Cargado por el dueño en /admin/conocimiento: solo lo relacionado con `tema` (el vocabulario va al prompt, no acá).
+          knowledge: found.map(({ category, topic, content }) => ({ category, topic, content })),
+          ...(tema.trim() && found.length === 0
+            ? { knowledge_note: `No hay nada cargado sobre «${tema.replace(/\s+/g, " ").trim().slice(0, 80)}». Si tampoco está en los datos de arriba, no lo inventes: decile que lo consultás con el local y derivá con handoff_to_human con motivo "consulta".` }
+            : {}),
+        };
+      },
     },
     {
       name: "get_promos_hoy",
@@ -140,14 +183,26 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
     },
     {
       name: "handoff_to_human",
-      description: "Queja o reclamo, o el cliente pide una persona. Registra el reclamo (siempre) y, con el local abierto, deriva a una persona.",
+      description:
+        "Queja o reclamo, el cliente pide una persona, o hizo una consulta sobre el local que no pudiste responder con las herramientas. Registra el caso (siempre) y, con el local abierto, deriva a una persona. " +
+        "`reason`: qué pasó. Si es una consulta sin respuesta, empezalo con «consulta:» y la pregunta del cliente (ej.: \"consulta: si hacen pizzas sin gluten\").",
       parameters: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] },
       run: async (args) => {
         // Con reclamos disponibles, el turno registra el ticket y manda el aviso fijo (número de reclamo, pedido, foto).
         if (repo.createComplaint) {
           const reason = typeof (args as { reason?: unknown })?.reason === "string" ? (args as { reason: string }).reason : "";
-          await repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo: reason });
+          const kind = isConsultaReason(reason) ? "consulta" : "reclamo";
+          await repo.createComplaint({ conversationId: conversation.id, phone: conversation.phone, clientId: conversation.clientId, motivo: reason, kind });
           const closed = !openNow(settings, new Date(now()));
+          if (kind === "consulta") {
+            return {
+              ok: true,
+              ticket: true,
+              note: closed
+                ? `El local está cerrado: NO digas que te atiende una persona. La consulta quedó registrada; el local la responde cuando abra (a las ${settings.hours.open}).`
+                : "La consulta quedó registrada y una persona del local le va a responder a la brevedad.",
+            };
+          }
           return {
             ok: true,
             ticket: true,
@@ -167,7 +222,8 @@ function allTools(repo: BotRepo, conversation: BotConversation, settings: BotSet
 /** Solo las herramientas que la intención permite (lista blanca de guardrails.ts). Sin `order` (flag apagado) no existen las de pedidos. */
 export function toolsFor(
   intent: string, repo: BotRepo, conversation: BotConversation, settings: BotSettings, now: () => number = Date.now, order?: OrderTurn, guard?: AddressGuard,
+  log: ToolLog = defaultLog,
 ): BotTool[] {
   const allowed = new Set(toolsForIntent(intent));
-  return allTools(repo, conversation, settings, now, order, guard).filter((t) => allowed.has(t.name));
+  return allTools(repo, conversation, settings, now, order, guard, log).filter((t) => allowed.has(t.name));
 }

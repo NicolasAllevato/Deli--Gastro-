@@ -8,13 +8,15 @@ import type { SqlDatabase } from "../../../../src/lib/data/sql.ts";
 import { fromCents } from "../../../../src/lib/data/money.ts";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import { phoneTail, resolveMatches } from "./phone-tail.ts";
+import { buildFtsQuery, likePatterns, NO_QUERY_LIMIT, SEARCH_LIMIT } from "./kb-search.ts";
 import type { BotRepo, CartaSeccion, ComplaintCategory, ComplaintTicket, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
 
 type Log = (message: string, detail?: unknown) => void;
 type ConvRow = { id: string; client_phone: string; silenced: number };
 
 const MENU_LIMIT = 200;
-const KNOWLEDGE_LIMIT = 80;
+/** Tope del glosario que va al prompt. */
+const VOCABULARY_LIMIT = 30;
 const now = () => new Date().toISOString();
 
 type CartaRow = {
@@ -250,12 +252,16 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       return results.map((r) => ({ name: r.name, fee: fromCents(r.fee_cents), minOrder: fromCents(r.min_order_cents) }));
     },
 
-    async knowledge() {
+    async vocabulary() {
       const { results } = await db
-        .prepare("SELECT categoria, tema, contenido FROM kb_negocio WHERE activo = 1 ORDER BY categoria, orden, tema LIMIT ?")
-        .bind(KNOWLEDGE_LIMIT)
-        .all<{ categoria: KnowledgeEntry["category"]; tema: string; contenido: string }>();
-      return results.map((r) => ({ category: r.categoria, topic: r.tema, content: r.contenido }));
+        .prepare("SELECT categoria, tema, contenido FROM kb_negocio WHERE activo = 1 AND categoria = 'vocabulario' ORDER BY orden, tema LIMIT ?")
+        .bind(VOCABULARY_LIMIT)
+        .all<KbRow>();
+      return results.map(toKnowledge);
+    },
+
+    async searchKnowledge(query = "", limit = SEARCH_LIMIT) {
+      return searchKnowledgeD1(db, query, limit, log);
     },
 
     async lessons() {
@@ -395,6 +401,51 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       await db.prepare("UPDATE wa_messages SET body = ? WHERE wamid = ? AND body IS NULL").bind(text, wamid).run();
     },
   };
+}
+
+type KbRow = { categoria: KnowledgeEntry["category"]; tema: string; contenido: string };
+const toKnowledge = (r: KbRow): KnowledgeEntry => ({ category: r.categoria, topic: r.tema, content: r.contenido });
+
+/** Todo menos el vocabulario (ese va al prompt, no a la búsqueda) y solo lo activo. */
+const SEARCHABLE = "k.activo = 1 AND k.categoria <> 'vocabulario'";
+
+/**
+ * Entradas de kb_negocio relevantes para `query`: FTS5 (migración 0022) ordenado por bm25, con más peso en el tema
+ * y en las palabras clave que en el contenido. Sin términos útiles: unas pocas entradas generales. Si FTS falla
+ * (migración sin aplicar, consulta rechazada) se avisa en el log y se busca con LIKE sobre tema y contenido.
+ */
+async function searchKnowledgeD1(db: SqlDatabase, query: string, limit: number, log: Log): Promise<KnowledgeEntry[]> {
+  const cap = Math.max(1, Math.min(20, Math.trunc(limit) || SEARCH_LIMIT));
+  const match = buildFtsQuery(query);
+  if (!match) {
+    const { results } = await db
+      .prepare(`SELECT k.categoria, k.tema, k.contenido FROM kb_negocio k WHERE ${SEARCHABLE} ORDER BY k.orden, k.tema LIMIT ?`)
+      .bind(Math.min(cap, NO_QUERY_LIMIT))
+      .all<KbRow>();
+    return results.map(toKnowledge);
+  }
+  try {
+    // Pesos de bm25 por columna (id, tema, contenido, palabras_clave): el tema y las palabras clave pesan más.
+    const { results } = await db
+      .prepare(
+        `SELECT k.categoria, k.tema, k.contenido FROM kb_negocio_fts JOIN kb_negocio k ON k.id = kb_negocio_fts.id
+         WHERE kb_negocio_fts MATCH ? AND ${SEARCHABLE}
+         ORDER BY bm25(kb_negocio_fts, 0.0, 10.0, 1.0, 8.0), k.orden, k.tema LIMIT ?`,
+      )
+      .bind(match, cap)
+      .all<KbRow>();
+    return results.map(toKnowledge);
+  } catch (err: unknown) {
+    log("[whatsapp-bot] la búsqueda FTS del conocimiento falló, se usa LIKE", { error: err instanceof Error ? err.message : "error" });
+  }
+  const patterns = likePatterns(query);
+  // En el SQL el carácter de escape es una sola barra invertida (escapeLike); en el código va duplicada.
+  const where = patterns.map(() => "(k.tema LIKE ? ESCAPE '\\' OR k.contenido LIKE ? ESCAPE '\\')").join(" OR ");
+  const { results } = await db
+    .prepare(`SELECT k.categoria, k.tema, k.contenido FROM kb_negocio k WHERE ${SEARCHABLE} AND (${where}) ORDER BY k.orden, k.tema LIMIT ?`)
+    .bind(...patterns.flatMap((p) => [p, p]), cap)
+    .all<KbRow>();
+  return results.map(toKnowledge);
 }
 
 /** Reclamo abierto (abierto o en curso) de la conversación; null si no hay. */

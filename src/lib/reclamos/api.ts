@@ -14,6 +14,8 @@ import {
   type Reclamo,
   type ReclamosResumen,
 } from "@/lib/data";
+import { ES_CONSULTA_ERROR } from "./agente.ts";
+import { esConsulta } from "./categoria.ts";
 import { mensajeResolucion } from "./mensajes.ts";
 import type { EnvioResultado } from "./server.ts";
 
@@ -124,15 +126,18 @@ export async function accionReclamo(actor: Actor, id: string, body: unknown, dep
       case "sugerir": {
         const exists = await deps.get(actor, id);
         if (!exists) return { status: 404, body: { error: "No se encontró el reclamo." } };
+        if (esConsulta(exists)) return { status: 409, body: { error: ES_CONSULTA_ERROR } };
         const r = await deps.sugerir(id);
         return r.ok ? { status: 200, body: { ok: true, sugerencia: r.sugerencia } } : { status: 502, body: { error: r.error } };
       }
       case "resolver": {
-        const compensacion = input.compensacion ?? null;
         const actual = await deps.get(actor, id);
         if (!actual) return { status: 404, body: { error: "No se encontró el reclamo." } };
+        // Una consulta se responde, no se compensa: sin puntos ni descuento, y el aviso armado no habla de reclamo.
+        const consulta = esConsulta(actual);
+        const compensacion = consulta ? null : (input.compensacion ?? null);
         // El mensaje SIEMPRE sale: el editado por el local o uno armado con la resolución y la compensación.
-        const mensaje = input.mensaje ?? mensajeResolucion(actual.numero, input.resolucion, compensacion);
+        const mensaje = input.mensaje ?? mensajeResolucion(actual.numero, input.resolucion, compensacion, consulta);
         const { puntosAcreditados } = await deps.resolver(actor, id, { resolucion: input.resolucion, compensacion, mensaje });
         return { status: 200, body: { ok: true, puntosAcreditados, ...(await notificar(actor, id, mensaje, deps)) } };
       }

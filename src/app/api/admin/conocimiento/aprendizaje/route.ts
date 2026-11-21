@@ -35,7 +35,7 @@ export async function PATCH(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
   try {
     const ok = await kbAprendizajeApp.decide(actor, parsed.data);
-    return ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "No se encontró o ya estaba decidido." }, { status: 409 });
+    return ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "Esa acción ya no corresponde: el elemento cambió de estado o no existe. Actualizá la lista." }, { status: 409 });
   } catch (err) {
     return serverError("decide", err);
   }

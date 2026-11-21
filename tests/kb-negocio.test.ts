@@ -50,8 +50,10 @@ describe("kb_negocio: bot", () => {
     await createKb(db, actors.admin, "k2", vocab);
     await createKb(db, actors.admin, "k3", { ...faq, tema: "Oculta", activo: false });
     const repo = d1BotRepo(db);
-    const rows = await repo.knowledge!();
-    assert.deepEqual(rows.map((r) => r.topic).sort(), ["la napo", "¿Tienen sin TACC?"]);
+    // El vocabulario va al prompt; el resto lo busca get_business_info (solo lo activo).
+    assert.deepEqual((await repo.vocabulary!()).map((r) => r.topic), ["la napo"]);
+    assert.deepEqual((await repo.searchKnowledge!("tacc")).map((r) => r.topic), ["¿Tienen sin TACC?"]);
+    assert.deepEqual(await repo.searchKnowledge!("oculta"), []);
   });
 
   it("el vocabulario va al prompt en una línea y el resto no", () => {

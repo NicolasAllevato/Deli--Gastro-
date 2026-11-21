@@ -17,7 +17,16 @@ export interface BotSettings {
   ordersEnabled: boolean;
   /** Entrenamiento del agente (`bot_modo_entrenamiento`): los reclamos NO se derivan a una persona, ni con el local abierto. */
   trainingMode: boolean;
+  /** Radio de envío en km (`radio_delivery_km`); null si no está cargado. */
+  deliveryRadiusKm: number | null;
+  /** Costo del envío por km (`costo_por_km`); null si no está cargado. */
+  deliveryCostPerKm: number | null;
 }
+
+const positive = (value: unknown): number | null => {
+  const n = typeof value === "string" ? Number(value.trim()) : value;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+};
 
 const text = (value: unknown, fallback: string, max: number): string =>
   typeof value === "string" && value.trim() ? value.trim().slice(0, max) : fallback;
@@ -39,6 +48,8 @@ export function settingsFromConfig(config: Record<string, unknown>): BotSettings
     // Igual que el servidor (handlers.ts): `true` o "true".
     ordersEnabled: config.bot_orders_enabled === true || config.bot_orders_enabled === "true",
     trainingMode: config.bot_modo_entrenamiento === true || config.bot_modo_entrenamiento === "true",
+    deliveryRadiusKm: positive(config.radio_delivery_km),
+    deliveryCostPerKm: positive(config.costo_por_km),
   };
 }
 

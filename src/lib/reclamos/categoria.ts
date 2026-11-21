@@ -41,6 +41,25 @@ export function esQueja(texto: string): boolean {
   return categorizarReclamo(texto) !== "otro" || QUEJA.test(sinTildes(texto));
 }
 
+/** Prefijo del motivo de un ticket que es una consulta del local sin respuesta (no un reclamo). Lo escribe el bot. */
+export const CONSULTA_PREFIX = "Consulta sin respuesta: ";
+
+/**
+ * ¿El ticket es una consulta sin respuesta y no un reclamo? El bot las guarda en el mismo ticket con la categoría `otro`
+ * y el motivo con el prefijo; si después el cliente se queja en esa conversación y la queja se reconoce, la categoría
+ * deja de ser `otro` y el ticket vuelve a tratarse como reclamo.
+ */
+export function esConsulta(ticket: { motivo: string; categoria: string }): boolean {
+  return ticket.categoria === "otro" && ticket.motivo.trimStart().startsWith(CONSULTA_PREFIX.trimEnd());
+}
+
+/** El texto de la consulta sin el prefijo (para mostrarlo). Si no es una consulta, devuelve el motivo tal cual. */
+export function textoConsulta(motivo: string): string {
+  const t = motivo.trimStart();
+  const prefix = CONSULTA_PREFIX.trimEnd();
+  return t.startsWith(prefix) ? t.slice(prefix.length).trim() : motivo;
+}
+
 /** Un reclamo sin detalle concreto ("quiero hacer un reclamo"): el bot pregunta qué pasó. */
 export function faltaDetalle(texto: string): boolean {
   return categorizarReclamo(texto) === "otro" && sinTildes(texto).replace(/\[[^\]]*\]/g, "").trim().length < 40;

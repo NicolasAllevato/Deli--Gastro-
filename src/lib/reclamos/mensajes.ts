@@ -14,8 +14,12 @@ export interface Compensacion {
   valor: number;
 }
 
-/** "Tu reclamo #N quedó resuelto: … " con la compensación, si hubo. */
-export function mensajeResolucion(numero: number, resolucion: string, compensacion: Compensacion | null | undefined): string {
+/**
+ * "Tu reclamo #N quedó resuelto: … " con la compensación, si hubo. Una consulta (`consulta = true`) lleva la respuesta
+ * sin hablar de reclamo, número ni compensación.
+ */
+export function mensajeResolucion(numero: number, resolucion: string, compensacion: Compensacion | null | undefined, consulta = false): string {
+  if (consulta) return `Sobre tu consulta: ${resolucion.trim()}\nGracias por escribirnos 🙏`;
   const base = `Tu reclamo #${numero} quedó resuelto: ${resolucion.trim()}`;
   if (!compensacion) return `${base}\nGracias por avisarnos 🙏`;
   const extra =

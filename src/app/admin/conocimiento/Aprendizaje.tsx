@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { ErroresTab } from "./ErroresTab";
+import { ESTADO_BADGE, ORIGEN_LABEL, type Accion, type ErrorAprendido } from "./aprendizaje-shared";
 
 interface Sugerencia {
   id: string;
@@ -14,42 +16,9 @@ interface Sugerencia {
   origen?: "simulacion" | "conversacion";
 }
 
-interface ErrorAprendido {
-  id: string;
-  escenario: string;
-  tipo: string;
-  mensaje_cliente: string;
-  respuesta_mala: string;
-  motivo: string;
-  correccion: string;
-  veces: number;
-  estado: "pendiente" | "aprobada" | "rechazada" | "desactivada";
-  ultima_prueba: "ok" | "falla" | null;
-  origen?: "simulacion" | "conversacion";
-}
-
-const ORIGEN_LABEL = (o: string | undefined) => (o === "conversacion" ? "conversación real" : "simulación");
-
-type Accion = "aprobar" | "rechazar" | "desactivar";
 type Tab = "sugerencias" | "errores";
 
 const URL = "/api/admin/conocimiento/aprendizaje";
-
-const TIPO_LABEL: Record<string, string> = {
-  precio_inventado: "Inventó un precio",
-  no_derivo: "No derivó a una persona",
-  no_entendio: "No entendió",
-  tono_frio: "Tono frío",
-  no_resolvio: "No resolvió",
-  otro: "Otro",
-};
-
-const ESTADO_BADGE: Record<string, string> = {
-  pendiente: "badge-yellow",
-  aprobada: "badge-green",
-  rechazada: "badge-red",
-  desactivada: "badge-blue",
-};
 
 async function call<T>(method: string, body?: unknown): Promise<T> {
   const res = await fetch(URL, {
@@ -146,27 +115,7 @@ export function Aprendizaje({ onApproved }: { onApproved: () => void }) {
       )}
 
       {tab === "errores" && data && (
-        <ul className="space-y-2">
-          {data.errores.length === 0 && <li className="text-sm text-gray-500">Sin errores registrados.</li>}
-          {data.errores.map((e) => (
-            <li key={e.id} className="neumorphic-inset rounded-xl p-3 space-y-1">
-              <p className="text-xs text-gray-500">
-                <span className={ESTADO_BADGE[e.estado]}>{e.estado}</span> · {ORIGEN_LABEL(e.origen)} · {TIPO_LABEL[e.tipo] ?? e.tipo} · {e.escenario} · {e.veces}{" "}
-                {e.veces === 1 ? "vez" : "veces"}
-                {e.ultima_prueba && ` · última prueba: ${e.ultima_prueba === "ok" ? "ya no falla" : "sigue fallando"}`}
-              </p>
-              <p className="text-xs text-gray-700"><b>Cliente:</b> {e.mensaje_cliente}</p>
-              {e.respuesta_mala && <p className="text-xs text-gray-700"><b>Respondió:</b> {e.respuesta_mala}</p>}
-              <p className="text-xs text-gray-600"><b>Motivo:</b> {e.motivo}</p>
-              <p className="text-sm font-bold text-gray-800">Corrección: {e.correccion}</p>
-              <div className="flex gap-2 pt-1">
-                {e.estado !== "aprobada" && <Button size="sm" disabled={busy} onClick={() => void decide("error", e.id, "aprobar")}>Aprobar</Button>}
-                {e.estado === "pendiente" && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void decide("error", e.id, "rechazar")}>Rechazar</Button>}
-                {e.estado === "aprobada" && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void decide("error", e.id, "desactivar")}>Desactivar</Button>}
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ErroresTab errores={data.errores} busy={busy} onDecide={(id, accion) => void decide("error", id, accion)} />
       )}
     </section>
   );

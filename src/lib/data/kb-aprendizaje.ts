@@ -138,7 +138,11 @@ export async function listSugerencias(db: SqlDatabase, actor: Actor): Promise<Kb
 export async function listErrores(db: SqlDatabase, actor: Actor): Promise<KbError[]> {
   requireStaff(actor);
   const { results } = await db
-    .prepare(`SELECT id, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces, estado, ultima_prueba, origen, updated_at FROM kb_errores ORDER BY estado = 'pendiente' DESC, veces DESC, updated_at DESC LIMIT 300`)
+    // Pendientes primero, después las aprobadas (las que usa el bot) y al final el historial: si hubiera más de 300, el corte cae en el historial.
+    .prepare(
+      `SELECT id, escenario, tipo, mensaje_cliente, respuesta_mala, motivo, correccion, veces, estado, ultima_prueba, origen, updated_at FROM kb_errores
+       ORDER BY CASE estado WHEN 'pendiente' THEN 0 WHEN 'aprobada' THEN 1 ELSE 2 END, veces DESC, updated_at DESC LIMIT 300`,
+    )
     .all<KbError>();
   return results;
 }
@@ -158,7 +162,7 @@ export const decisionSchema = z
   .object({
     tipo: z.enum(["sugerencia", "error"]),
     id: z.string().min(1).max(64),
-    accion: z.enum(["aprobar", "rechazar", "desactivar"]),
+    accion: z.enum(["aprobar", "rechazar", "desactivar", "reabrir"]),
   })
   .strict();
 export type Decision = z.infer<typeof decisionSchema>;
@@ -175,17 +179,36 @@ export async function approveSugerencia(db: SqlDatabase, actor: Actor, id: strin
   return true;
 }
 
-const ERROR_STATE: Record<Decision["accion"], KbError["estado"]> = { aprobar: "aprobada", rechazar: "rechazada", desactivar: "desactivada" };
+/**
+ * Transiciones válidas de un error aprendido: la acción solo corre si la fila está en alguno de los estados de origen
+ * (un doble clic, o una pantalla vieja, no pisa una decisión ya tomada).
+ *  - aprobar: desde pendiente, o desde desactivada (volver a activar la lección);
+ *  - rechazar: solo desde pendiente;
+ *  - desactivar: solo desde aprobada;
+ *  - reabrir: una rechazada o desactivada vuelve a pendiente para decidirla de nuevo.
+ */
+export const ERROR_TRANSITIONS: Record<Decision["accion"], { to: KbError["estado"]; from: readonly KbError["estado"][] }> = {
+  aprobar: { to: "aprobada", from: ["pendiente", "desactivada"] },
+  rechazar: { to: "rechazada", from: ["pendiente"] },
+  desactivar: { to: "desactivada", from: ["aprobada"] },
+  reabrir: { to: "pendiente", from: ["rechazada", "desactivada"] },
+};
 
-/** Aplica la decisión. Devuelve false si la fila no existe o la acción no corresponde. */
+/** Aplica la decisión. Devuelve false si la fila no existe o la acción no corresponde a su estado actual (la ruta responde 409). */
 export async function decide(db: SqlDatabase, actor: Actor, d: Decision, newId: () => string): Promise<boolean> {
   requireStaff(actor);
   if (d.tipo === "sugerencia") {
     if (d.accion === "aprobar") return approveSugerencia(db, actor, d.id, newId());
-    if (d.accion === "desactivar") return false;
+    // Desactivar y reabrir solo existen para los errores aprendidos.
+    if (d.accion !== "rechazar") return false;
     const r = await db.prepare("UPDATE kb_sugerencias SET estado = 'rechazada', updated_at = ? WHERE id = ? AND estado = 'pendiente'").bind(nowIso(), d.id).run();
     return r.meta.changes === 1;
   }
-  const r = await db.prepare("UPDATE kb_errores SET estado = ?, updated_at = ? WHERE id = ?").bind(ERROR_STATE[d.accion], nowIso(), d.id).run();
+  const { to, from } = ERROR_TRANSITIONS[d.accion];
+  // Como mucho dos estados de origen: el segundo se repite si hay uno solo (el SQL no se arma con valores, todo va por bind).
+  const r = await db
+    .prepare("UPDATE kb_errores SET estado = ?, updated_at = ? WHERE id = ? AND estado IN (?, ?)")
+    .bind(to, nowIso(), d.id, from[0]!, from[1] ?? from[0]!)
+    .run();
   return r.meta.changes === 1;
 }

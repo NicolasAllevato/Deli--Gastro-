@@ -10,6 +10,8 @@ export interface ReclamoParaAviso {
   categoria: Categoria;
   client_name: string | null;
   created_at: string;
+  /** Consulta sin respuesta del bot (no un reclamo): se avisa como consulta. */
+  consulta?: boolean;
 }
 
 export const SEEN_KEY = "reclamos-avisados";
@@ -25,6 +27,7 @@ export function reclamosPorAvisar(recientes: readonly ReclamoParaAviso[], vistos
 }
 
 export function textoAviso(r: ReclamoParaAviso): string {
+  if (r.consulta) return `Ingresó una consulta sin respuesta #${r.numero} — ${r.client_name ?? "Cliente sin nombre"}`;
   return `Ingresó un reclamo #${r.numero} — ${CATEGORIA_LABEL[r.categoria] ?? r.categoria} — ${r.client_name ?? "Cliente sin nombre"}`;
 }
 

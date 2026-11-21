@@ -111,7 +111,7 @@ export function ReclamoNuevoModal({ resumen }: { resumen: ReclamosResumen | null
     <Modal
       open
       onClose={cerrar}
-      title="Nuevo reclamo"
+      title={actual.consulta ? "Nueva consulta" : "Nuevo reclamo"}
       description={textoAviso(actual)}
       size="sm"
       footer={
@@ -123,7 +123,7 @@ export function ReclamoNuevoModal({ resumen }: { resumen: ReclamosResumen | null
               router.push(`/admin/reclamos?id=${encodeURIComponent(actual.id)}`);
             }}
           >
-            Ver reclamo
+            {actual.consulta ? "Ver consulta" : "Ver reclamo"}
           </Button>
         </div>
       }
@@ -131,7 +131,7 @@ export function ReclamoNuevoModal({ resumen }: { resumen: ReclamosResumen | null
       <p className="text-sm text-gray-800">{textoAviso(actual)}</p>
       {sinSonido && (
         <div className="mt-3 text-xs text-gray-600 space-y-2">
-          <p>El navegador bloqueó el sonido del aviso. Activalo para escuchar los próximos reclamos.</p>
+          <p>El navegador bloqueó el sonido del aviso. Activalo para escuchar los próximos avisos.</p>
           <Button size="sm" variant="secondary" onClick={() => void sonar(audio).then((ok) => setSinSonido(!ok))}>
             Activar sonido
           </Button>

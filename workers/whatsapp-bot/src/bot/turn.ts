@@ -14,11 +14,12 @@ import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
 import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
+import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
 import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
-import { attachPhotos, complaintUpdateReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
+import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
 import { esQueja } from "../../../../src/lib/reclamos/categoria.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
@@ -98,6 +99,43 @@ async function complaintFlow(
   return "answered";
 }
 
+/**
+ * El modelo no tiene la respuesta a una consulta del local (handoff_to_human con motivo «consulta»): queda registrada como ticket
+ * (el local la ve en el panel y la contesta), con el local abierto pasa a una persona y cerrado el bot sigue atendiendo.
+ * El cliente recibe un aviso fijo (sin «reclamo» ni «perdón por el mal momento»: no es una queja).
+ */
+async function consultaFlow(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, text: string, extras: TurnExtras): Promise<TurnOutcome> {
+  const mode = complaintMode(settings);
+  const done = await registerComplaint(deps, conversation, { text, images: extras.images, inboundWamid: extras.wamid, mode, openAt: settings.hours.open, kind: "consulta" });
+  if (done) {
+    if (mode === "abierto") await deps.repo.setTakeover(conversation.id);
+    await reply(deps, conversation, done.text, mode !== "abierto");
+    return "ticket";
+  }
+  // El ticket no se pudo registrar: abierto, igual se pasa a una persona; cerrado, solo se avisa (sin decir que quedó registrado).
+  deps.log("[whatsapp-bot] no se pudo registrar la consulta sin respuesta", { conversation: conversation.id });
+  if (settings.trainingMode || !openNow(settings)) {
+    await reply(deps, conversation, consultaReply(complaintMode(settings), settings.hours.open));
+    return "answered";
+  }
+  await deps.repo.setTakeover(conversation.id);
+  await reply(deps, conversation, REPLIES.handoff, false);
+  return "answered";
+}
+
+/** Motivo de la consulta sin lo que repite el texto del cliente: el ticket guarda su mensaje y el motivo del modelo sin el «consulta:» del principio. */
+export function consultaText(turnText: string, motivo: string): string {
+  const detail = motivo.replace(/^\s*consulta\s*[:\-–]?\s*/i, "").trim();
+  return detail && detail !== turnText.trim() ? `${turnText}\n${detail}`.trim() : turnText.trim();
+}
+
+/** El modelo derivó con handoff_to_human: reclamo (como siempre) o consulta sin respuesta. */
+function ticketFlow(deps: TurnDeps, conversation: BotConversation, settings: BotSettings, turnText: string, ticket: { motivo: string; kind: "reclamo" | "consulta" }, extras: TurnExtras): Promise<TurnOutcome> {
+  return ticket.kind === "consulta"
+    ? consultaFlow(deps, conversation, settings, consultaText(turnText, ticket.motivo), extras)
+    : complaintFlow(deps, conversation, settings, `${turnText}\n${ticket.motivo}`.trim(), extras);
+}
+
 /** Una persona escribió desde la app mientras se preparaba la respuesta: el turno se aborta sin enviar nada. */
 class PausedMidTurn extends Error {}
 
@@ -130,13 +168,15 @@ export function historyMessages(items: { direction: "in" | "out"; body: string }
 }
 
 /** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
-type DraftIssue = "empty" | "template" | "state" | "price" | "promise" | "blocked";
+export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "blocked";
 
 const RETRY_HINT: Record<DraftIssue, string> = {
   empty: "Tu respuesta anterior quedó vacía. Respondé ahora al cliente en 1 a 3 líneas.",
   template: "No escribas resúmenes de pedido ni pidas que respondan SÍ: para cotizar llamá quote_order y el sistema manda el resumen.",
   state: "No digas que el pedido está confirmado, pagado o en camino: eso lo informa solo el sistema.",
   price: "No escribas montos calculados por vos: usá price_text/total_text tal cual o llamá quote_order.",
+  hours: "El horario que dijiste no coincide con el del local: decí solo el que devuelve get_business_info (hours). Si no lo tenés, decí que lo consultás con el local.",
+  zone: "No prometas envíos a zonas ni distancias que no figuren en get_business_info (zones, delivery_radius_km). Si no está, decí que lo consultás con el local.",
   promise: "No prometas hacerlo después ni digas «un momento»: hacelo ahora con las herramientas o decí qué dato falta.",
   blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
 };
@@ -148,28 +188,58 @@ const ORDER_STATE_SOFT_REPLY =
 /** Cuando no se puede contestar bien una consulta por su pedido: empatía y una persona lo revisa. */
 const STATUS_HANDOFF_REPLY = "Perdón por la espera 🙏 Te paso con una persona del local para que revise tu pedido ya mismo.";
 
-const SAFE_FALLBACK: Record<DraftIssue, string> = {
+/** Cuando el modelo insiste en afirmar un dato del local que no coincide con la configuración: no se afirma nada y se consulta. */
+const CONSULT_LOCAL_REPLY = "Dejame consultarlo con el local y te confirmo.";
+
+export const SAFE_FALLBACK: Record<DraftIssue, string> = {
   empty: REPLIES.failure,
   template: ORDER_REPLIES.startOver,
   state: ORDER_STATE_SOFT_REPLY,
   price: PRICE_SAFE_REPLY,
+  hours: CONSULT_LOCAL_REPLY,
+  zone: CONSULT_LOCAL_REPLY,
   promise: "Cualquier cosa que necesites, escribime y te ayudo 😊",
   blocked: REPLIES.failure,
 };
 
-async function draftIssue(draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, order?: OrderTurn): Promise<DraftIssue | null> {
+/**
+ * Revisa el borrador del modelo antes de enviarlo. Devuelve por qué se descarta (null = se puede enviar):
+ * vacío, plantilla de pedido, estado del pedido, monto inventado, horario o zona de envío que no coinciden con los datos del local,
+ * promesa de «un momento» o datos que no se pueden mandar.
+ */
+export async function draftIssue(
+  draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, settings: BotSettings, order?: OrderTurn,
+): Promise<DraftIssue | null> {
   if (!draft.trim()) return "empty";
   if (order && imitatesTemplate(draft)) return "template";
   if (intent !== "pedido_estado" && claimsOrderState(draft)) return "state";
   if (draft.includes("$")) {
     const [menu, zones] = await Promise.all([deps.repo.menu(), deps.repo.zones()]);
-    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder])];
+    // El costo por km del local (config) también es un monto real que el bot puede decir.
+    const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder]), ...(settings.deliveryCostPerKm ? [settings.deliveryCostPerKm] : [])];
     if (unknownPrices(draft, allowed).length > 0) return "price";
+  }
+  if (hoursMismatch(draft, settings.hours)) return "hours";
+  // Solo se leen las zonas si el texto habla de envíos o distancias. Sin zonas ni radio cargados no hay con qué comparar: no marca nada.
+  if (/\b(?:enviamos|entregamos|repartimos|mandamos|llegamos|delivery|env[ií]os?|km)\b/i.test(draft)) {
+    const zones = await deps.repo.zones();
+    if (zoneMismatch(draft, { zones, radiusKm: settings.deliveryRadiusKm })) return "zone";
   }
   if (promisesLater(draft)) return "promise";
   const appHost = new URL(deps.appUrl).host;
   const check = withPrivacy(draft, inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] }));
   return check.verdict === "block" ? "blocked" : null;
+}
+
+/** Lee algo que el turno puede hacer sin: ante un error lo deja en el log (solo el mensaje, sin datos del cliente) y devuelve `fallback`. */
+async function readOptional<T>(deps: TurnDeps, what: string, read: (() => Promise<T>) | undefined, fallback: T): Promise<T> {
+  if (!read) return fallback;
+  try {
+    return await read();
+  } catch (error: unknown) {
+    deps.log(`[whatsapp-bot] no se pudo leer ${what}; el turno sigue sin eso`, { error: error instanceof Error ? error.message : "error" });
+    return fallback;
+  }
 }
 
 async function answer(
@@ -179,10 +249,11 @@ async function answer(
   // Los entrantes del final son este mismo turno (ya guardados por la entrada): van como userText, no como historial.
   const history = await deps.repo.history(conversation.id, HISTORY_TURNS + 5);
   while (history.at(-1)?.direction === "in") history.pop();
-  const knowledge = (await deps.repo.knowledge?.().catch(() => [])) ?? [];
-  const lessons = (await deps.repo.lessons?.().catch(() => [])) ?? [];
+  // Lecturas opcionales: si fallan se sigue sin ese bloque, pero queda en el log (antes se tragaba el error en silencio).
+  const vocabulary = await readOptional(deps, "el vocabulario", deps.repo.vocabulary?.bind(deps.repo), []);
+  const lessons = await readOptional(deps, "las lecciones", deps.repo.lessons?.bind(deps.repo), []);
   // Perfil del cliente habitual: siempre el de ESTE teléfono (etapa 2). Si falla, se sigue sin perfil.
-  const profile = (await deps.repo.customerProfile?.(conversation.phone).catch(() => null)) ?? null;
+  const profile = await readOptional(deps, "el perfil del cliente", deps.repo.customerProfile ? () => deps.repo.customerProfile!(conversation.phone) : undefined, null);
   const clientTexts = history.filter((h) => h.direction === "in").map((h) => h.body);
   const lastBot = history.filter((h) => h.direction === "out").at(-1)?.body ?? null;
   const guard = (address: string) => profileAddressUnconfirmed(address, profile?.lastAddress, clientTexts, lastBot, turnText);
@@ -190,7 +261,7 @@ async function answer(
   // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
   let handedOffNow = false;
   // El modelo llamó handoff_to_human: el reclamo lo registra complaintFlow (con pedido, fotos y aviso), no la herramienta.
-  let ticketNow: string | null = null;
+  let ticketNow: { motivo: string; kind: "reclamo" | "consulta" } | null = null;
   const createComplaint = deps.repo.createComplaint;
   const toolRepo = {
     ...deps.repo,
@@ -201,14 +272,14 @@ async function answer(
     ...(createComplaint
       ? {
           createComplaint: async (input: Parameters<typeof createComplaint>[0]) => {
-            ticketNow = input.motivo;
+            ticketNow = { motivo: input.motivo, kind: input.kind ?? "reclamo" };
             return null;
           },
         }
       : {}),
   };
-  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, knowledge, lessons, profile);
-  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard);
+  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile);
+  const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard, deps.log);
   const ask = (extra?: string) =>
     respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history, settings.ordersEnabled), userText: wrapUntrusted(turnText), tools });
 
@@ -217,7 +288,7 @@ async function answer(
   // Un reintento con la corrección: el cliente no recibe el mensaje genérico si el modelo lo puede arreglar.
   for (let attempt = 0; attempt < 2; attempt++) {
     // El modelo derivó: reclamo registrado (si es queja o el local está cerrado) y aviso fijo con el número.
-    if (ticketNow !== null) return complaintFlow(deps, conversation, settings, `${turnText}\n${ticketNow}`.trim(), extras);
+    if (ticketNow !== null) return ticketFlow(deps, conversation, settings, turnText, ticketNow, extras);
     // Pedidos: lo que ve el cliente (resumen, link de pago, errores) es una plantilla fija, no el texto del modelo.
     if (order?.state.fixedReply) {
       await reply(deps, conversation, order.state.fixedReply, !order.state.handedOff && !handedOffNow);
@@ -230,7 +301,7 @@ async function answer(
       await reply(deps, conversation, order.state.fixedReply ?? CANCEL_PROMPT, !order.state.handedOff);
       return "answered";
     }
-    issue = await draftIssue(draft, intent, conversation, deps, order);
+    issue = await draftIssue(draft, intent, conversation, deps, settings, order);
     // Sin problemas, o derivó en este turno (sale su mensaje si es válido, si no el aviso de traspaso).
     if (!issue || handedOffNow) break;
     deps.log("[whatsapp-bot] borrador descartado", { conversation: conversation.id, intent, issue, attempt });
@@ -245,7 +316,7 @@ async function answer(
     return "answered";
   }
   // Consulta por su pedido que el modelo no pudo contestar sin prometer: una persona lo revisa ya (no un saludo vacío).
-  if (ticketNow !== null) return complaintFlow(deps, conversation, settings, `${turnText}\n${ticketNow}`.trim(), extras);
+  if (ticketNow !== null) return ticketFlow(deps, conversation, settings, turnText, ticketNow, extras);
   if (issue && intent === "pedido_estado") {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], handoff: true });
     const done = await complaintFlow(deps, conversation, settings, turnText, extras, STATUS_HANDOFF_REPLY);
