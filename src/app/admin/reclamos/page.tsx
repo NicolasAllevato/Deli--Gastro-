@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { MessageSquareWarning } from "lucide-react";
 import { formatDateTimeAR } from "@/lib/time-ar";
-import { CATEGORIA_LABEL, CATEGORIAS, type Categoria } from "@/lib/reclamos/categoria";
+import { CATEGORIA_LABEL, CATEGORIAS, esConsulta, textoConsulta, type Categoria } from "@/lib/reclamos/categoria";
 import { ReclamoDetalle } from "./ReclamoDetalle";
 import { ESTADO_BADGE, ESTADO_LABEL, call, type Estado, type ReclamoItem } from "./shared";
 
@@ -133,11 +133,11 @@ export default function ReclamosPage() {
               <p className="text-xs text-gray-500 flex flex-wrap gap-2 items-center">
                 <span className="font-bold text-gray-800">#{r.numero}</span>
                 <span className={ESTADO_BADGE[r.estado]}>{ESTADO_LABEL[r.estado]}</span>
-                <span>{CATEGORIA_LABEL[r.categoria]}</span>
+                {esConsulta(r) ? <span className="badge-blue">Consulta</span> : <span>{CATEGORIA_LABEL[r.categoria]}</span>}
                 <span>· {fecha(r.created_at)}</span>
                 {r.foto_keys.length > 0 && <span>· {r.foto_keys.length} foto(s)</span>}
               </p>
-              <p className="text-sm text-gray-800 line-clamp-2">{r.motivo}</p>
+              <p className="text-sm text-gray-800 line-clamp-2">{esConsulta(r) ? textoConsulta(r.motivo) : r.motivo}</p>
               <p className="text-xs text-gray-500">{r.client_name ?? "Sin nombre"} · {r.client_phone}</p>
             </button>
           ))}

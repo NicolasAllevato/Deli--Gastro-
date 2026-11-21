@@ -4,7 +4,7 @@
  * Local abierto: ticket + derivación a una persona. Cerrado: ticket sin derivar y aviso de cuándo lo contactan.
  * El aviso al local (mail) lo manda la app: el bot la llama por `/api/internal/bot/reclamo` firmado.
  */
-import { categorizarReclamo, faltaDetalle } from "../../../../src/lib/reclamos/categoria.ts";
+import { categorizarReclamo, CONSULTA_PREFIX, faltaDetalle } from "../../../../src/lib/reclamos/categoria.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import type { BotConversation, BotRepo, ComplaintTicket, OrderInfo } from "../repo/types.ts";
 
@@ -65,8 +65,8 @@ function closingLine(mode: ComplaintMode, numero: number, openAt: string): strin
   return `Lo registramos (reclamo #${numero}). Te contactamos cuando abramos a las ${openAt}.`;
 }
 
-/** Prefijo del motivo de un ticket que es una consulta del local sin respuesta (no un reclamo). */
-export const CONSULTA_PREFIX = "Consulta sin respuesta: ";
+/** Prefijo del motivo de un ticket que es una consulta del local sin respuesta (no un reclamo): la app y el panel lo leen con `esConsulta`. */
+export { CONSULTA_PREFIX };
 
 /** Aviso al cliente cuando el bot no tiene la respuesta: se consulta con el local (sin "reclamo" ni número: no es un reclamo). */
 export function consultaReply(mode: ComplaintMode, openAt: string): string {
@@ -113,7 +113,9 @@ export async function attachPhotos(deps: ComplaintDeps, ticket: ComplaintTicket,
 
 /**
  * Avisa a la app que el reclamo es nuevo o cambió: la app manda el mail al local (una sola vez) y le pide al agente
- * de reclamos una sugerencia nueva. Si falla, el reclamo queda igual y la sugerencia se pide desde el panel.
+ * de reclamos una sugerencia nueva. Si el ticket es una consulta sin respuesta (motivo con CONSULTA_PREFIX), la app la
+ * detecta por el motivo guardado: manda el mail de «consulta pendiente» y no pide sugerencia ni compensación.
+ * Si falla, el ticket queda igual y la sugerencia (solo reclamos) se pide desde el panel.
  */
 export async function pingApp(deps: ComplaintDeps, conversationId: string, ticketId: string, inboundWamid: string | undefined): Promise<void> {
   if (!inboundWamid || !deps.orders?.reclamo) return;

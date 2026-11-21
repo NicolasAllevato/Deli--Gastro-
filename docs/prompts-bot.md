@@ -116,6 +116,8 @@ Indicaciones del dueño (aplicalas sin contradecir las reglas):
 
 Consultas sin respuesta (`handoff_to_human` con `reason` que empieza con «consulta:»): el turno las registra como ticket (`reclamos`, categoría `otro`, motivo «Consulta sin respuesta: …», sin pedido vinculado) y manda un aviso fijo sin la palabra «reclamo» (`consultaReply`): abierto, pasa a una persona; cerrado o en entrenamiento, el bot sigue atendiendo y el local la ve en el panel.
 
+La app reconoce la consulta por ese motivo guardado (`esConsulta` en `src/lib/reclamos/categoria.ts`: prefijo + categoría `otro`, sin migración ni campo nuevo): manda el mail «Consulta pendiente de respuesta» (sin la palabra reclamo), NO pide sugerencia de compensación a OpenAI, y el panel de Reclamos la muestra como «Consulta» (se responde y se marca como respondida, sin compensación).
+
 Nota: el flujo de reclamos (`bot/complaints.ts`) reemplaza la respuesta del modelo cuando se registra un reclamo: el cliente recibe siempre el aviso fijo con el número de reclamo. Con `bot_modo_entrenamiento` encendido el aviso es «El local lo revisa y te escribimos por acá» y no se deriva a una persona.
 
 ### 2.2 Guías por intención (`FOCUS` y `ORDER_FOCUS`)

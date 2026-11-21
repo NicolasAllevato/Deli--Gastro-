@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { formatDateTimeAR } from "@/lib/time-ar";
-import { CATEGORIA_LABEL } from "@/lib/reclamos/categoria";
+import { CATEGORIA_LABEL, esConsulta, textoConsulta } from "@/lib/reclamos/categoria";
 import { ESTADO_BADGE, ESTADO_LABEL, SUGERENCIA_LABEL, call, type ReclamoDetalleData, type Sugerencia } from "./shared";
 
 const fecha = (iso: string) => formatDateTimeAR(iso, { dateStyle: "short", timeStyle: "short" });
@@ -67,10 +67,11 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
     }
   }
 
-  function resolver() {
+  function resolver(consulta: boolean) {
     const valor = Number(compValor);
-    const compensacion = compTipo && Number.isInteger(valor) && valor > 0 ? { tipo: compTipo, valor } : null;
-    if (compTipo && !compensacion) {
+    // Una consulta se responde, no se compensa.
+    const compensacion = !consulta && compTipo && Number.isInteger(valor) && valor > 0 ? { tipo: compTipo, valor } : null;
+    if (!consulta && compTipo && !compensacion) {
       setError("Indicá un valor entero mayor a 0 para la compensación.");
       return;
     }
@@ -100,12 +101,19 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
   if (error && !r) return <p role="alert" className="text-sm font-bold text-red-600 p-4">{error}</p>;
   if (!r) return <p className="text-sm text-gray-500 p-4">Cargando...</p>;
 
+  // Consulta sin respuesta del bot: se contesta al cliente, sin sugerencia del agente ni compensación.
+  const consulta = esConsulta(r);
+
   return (
     <article className="neumorphic rounded-2xl p-5 space-y-4">
       <header className="space-y-1">
         <h3 className="text-base font-bold text-gray-800 flex flex-wrap items-center gap-2">
-          Reclamo #{r.numero} <span className={ESTADO_BADGE[r.estado]}>{ESTADO_LABEL[r.estado]}</span>
-          <span className="text-xs font-normal text-gray-500">{CATEGORIA_LABEL[r.categoria]}</span>
+          {consulta ? "Consulta" : "Reclamo"} #{r.numero} <span className={ESTADO_BADGE[r.estado]}>{ESTADO_LABEL[r.estado]}</span>
+          {consulta ? (
+            <span className="badge-blue">Consulta sin respuesta</span>
+          ) : (
+            <span className="text-xs font-normal text-gray-500">{CATEGORIA_LABEL[r.categoria]}</span>
+          )}
         </h3>
         <p className="text-xs text-gray-500">
           {r.client_name ?? "Sin nombre"} · {r.client_phone} · {fecha(r.created_at)}
@@ -116,7 +124,8 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
         </Link>
       </header>
 
-      <p className="text-sm text-gray-800 whitespace-pre-wrap">{r.motivo}</p>
+      {consulta && <p className="text-xs text-gray-500">El bot no pudo responder esta consulta: contestale al cliente desde acá.</p>}
+      <p className="text-sm text-gray-800 whitespace-pre-wrap">{consulta ? textoConsulta(r.motivo) : r.motivo}</p>
 
       {r.pedido && (
         <div className="neumorphic-inset rounded-xl p-3 text-xs text-gray-600">
@@ -145,35 +154,37 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
 
       {r.resolucion && (
         <p className="text-sm text-gray-700">
-          <strong>Resolución:</strong> {r.resolucion}
+          <strong>{consulta ? "Respuesta:" : "Resolución:"}</strong> {r.resolucion}
           {r.compensacion_tipo === "puntos" && ` · ${r.compensacion_valor} puntos`}
           {r.compensacion_tipo === "descuento" && ` · ${r.compensacion_valor}% de descuento (aplicar a mano en el próximo pedido)`}
         </p>
       )}
 
-      <section aria-label="Sugerencia del agente" className="neumorphic-inset rounded-xl p-3 space-y-2">
-        <h4 className="text-xs font-bold text-gray-600">Sugerencia del agente</h4>
-        {r.sugerencia ? (
-          <>
-            <p className="text-sm text-gray-800">{r.sugerencia.diagnostico}</p>
-            <p className="text-xs text-gray-600">
-              <strong>{SUGERENCIA_LABEL[r.sugerencia.resolucion.tipo]}</strong>
-              {r.sugerencia.resolucion.valor ? ` ${r.sugerencia.resolucion.valor}${r.sugerencia.resolucion.tipo === "descuento" ? "%" : " puntos"}` : ""} · {r.sugerencia.resolucion.motivo}
-            </p>
-            <p className="text-xs text-gray-600 whitespace-pre-wrap">Mensaje: {r.sugerencia.mensaje}</p>
-          </>
-        ) : (
-          <p className="text-xs text-gray-500">{r.sugerencia_error ? `No se pudo generar: ${r.sugerencia_error}` : "Todavía sin sugerencia."}</p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {r.sugerencia && r.estado !== "resuelto" && (
-            <Button size="sm" disabled={busy} onClick={() => usarSugerencia(r.sugerencia as Sugerencia)}>Usar sugerencia</Button>
+      {!consulta && (
+        <section aria-label="Sugerencia del agente" className="neumorphic-inset rounded-xl p-3 space-y-2">
+          <h4 className="text-xs font-bold text-gray-600">Sugerencia del agente</h4>
+          {r.sugerencia ? (
+            <>
+              <p className="text-sm text-gray-800">{r.sugerencia.diagnostico}</p>
+              <p className="text-xs text-gray-600">
+                <strong>{SUGERENCIA_LABEL[r.sugerencia.resolucion.tipo]}</strong>
+                {r.sugerencia.resolucion.valor ? ` ${r.sugerencia.resolucion.valor}${r.sugerencia.resolucion.tipo === "descuento" ? "%" : " puntos"}` : ""} · {r.sugerencia.resolucion.motivo}
+              </p>
+              <p className="text-xs text-gray-600 whitespace-pre-wrap">Mensaje: {r.sugerencia.mensaje}</p>
+            </>
+          ) : (
+            <p className="text-xs text-gray-500">{r.sugerencia_error ? `No se pudo generar: ${r.sugerencia_error}` : "Todavía sin sugerencia."}</p>
           )}
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act({ accion: "sugerir" })}>
-            {r.sugerencia ? "Sugerir de nuevo" : "Sugerir resolución"}
-          </Button>
-        </div>
-      </section>
+          <div className="flex flex-wrap gap-2">
+            {r.sugerencia && r.estado !== "resuelto" && (
+              <Button size="sm" disabled={busy} onClick={() => usarSugerencia(r.sugerencia as Sugerencia)}>Usar sugerencia</Button>
+            )}
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act({ accion: "sugerir" })}>
+              {r.sugerencia ? "Sugerir de nuevo" : "Sugerir resolución"}
+            </Button>
+          </div>
+        </section>
+      )}
 
       {r.estado === "resuelto" && r.notificacion_estado === "fallo" && (
         <div role="alert" className="neumorphic-inset rounded-xl p-3 space-y-2 text-xs text-red-600">
@@ -203,30 +214,32 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
       </form>
 
       {r.estado !== "resuelto" && (
-        <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); resolver(); }}>
-          <label className="text-xs font-bold text-gray-600 block" htmlFor="reclamo-resolucion">Resolución</label>
+        <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); resolver(consulta); }}>
+          <label className="text-xs font-bold text-gray-600 block" htmlFor="reclamo-resolucion">{consulta ? "Respuesta a la consulta" : "Resolución"}</label>
           <textarea id="reclamo-resolucion" className={inputClass} rows={2} maxLength={1000} value={resolucion} onChange={(e) => setResolucion(e.target.value)} />
-          <div className="flex flex-wrap gap-2 items-end">
-            <label className="text-xs text-gray-500 flex flex-col gap-1">
-              Compensación
-              <select className={inputClass} value={compTipo} onChange={(e) => setCompTipo(e.target.value as Compensacion)}>
-                <option value="">Sin compensación</option>
-                <option value="puntos">Puntos</option>
-                <option value="descuento">Descuento próximo pedido (%)</option>
-              </select>
-            </label>
-            {compTipo && (
+          {!consulta && (
+            <div className="flex flex-wrap gap-2 items-end">
               <label className="text-xs text-gray-500 flex flex-col gap-1">
-                {compTipo === "puntos" ? "Puntos" : "Porcentaje"}
-                <input type="number" min={1} max={compTipo === "puntos" ? 10000 : 100} className={inputClass} value={compValor} onChange={(e) => setCompValor(e.target.value)} />
+                Compensación
+                <select className={inputClass} value={compTipo} onChange={(e) => setCompTipo(e.target.value as Compensacion)}>
+                  <option value="">Sin compensación</option>
+                  <option value="puntos">Puntos</option>
+                  <option value="descuento">Descuento próximo pedido (%)</option>
+                </select>
               </label>
-            )}
-          </div>
+              {compTipo && (
+                <label className="text-xs text-gray-500 flex flex-col gap-1">
+                  {compTipo === "puntos" ? "Puntos" : "Porcentaje"}
+                  <input type="number" min={1} max={compTipo === "puntos" ? 10000 : 100} className={inputClass} value={compValor} onChange={(e) => setCompValor(e.target.value)} />
+                </label>
+              )}
+            </div>
+          )}
           <label className="text-xs font-bold text-gray-600 block" htmlFor="reclamo-mensaje-cliente">
-            Mensaje al cliente (vacío = se arma con la resolución y la compensación)
+            {consulta ? "Mensaje al cliente (vacío = se arma con la respuesta)" : "Mensaje al cliente (vacío = se arma con la resolución y la compensación)"}
           </label>
           <textarea id="reclamo-mensaje-cliente" className={inputClass} rows={3} maxLength={1000} value={mensajeCliente} onChange={(e) => setMensajeCliente(e.target.value)} />
-          <Button size="sm" type="submit" disabled={busy || !resolucion.trim()}>Resolver y avisar al cliente</Button>
+          <Button size="sm" type="submit" disabled={busy || !resolucion.trim()}>{consulta ? "Marcar como respondida y avisar al cliente" : "Resolver y avisar al cliente"}</Button>
         </form>
       )}
 

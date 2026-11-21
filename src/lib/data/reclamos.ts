@@ -4,6 +4,7 @@
  * registra los mensajes al cliente y los resuelve con una compensación (puntos o descuento).
  */
 import { z } from "zod";
+import { esConsulta } from "../reclamos/categoria.ts";
 import { requireStaff, type Actor } from "./actor.ts";
 import { addPointsStatement } from "./points.ts";
 import { nowIso, type SqlDatabase, type SqlStatement } from "./sql.ts";
@@ -187,6 +188,8 @@ export interface ReclamoReciente {
   categoria: ReclamoCategoria;
   client_name: string | null;
   created_at: string;
+  /** Es una consulta sin respuesta del bot (no un reclamo): el aviso del panel lo dice así. */
+  consulta: boolean;
 }
 
 /**
@@ -203,13 +206,15 @@ export async function resumenReclamos(db: SqlDatabase, actor: Actor, slaDesde: s
     )
     .bind(slaDesde)
     .first<{ abiertos: number; en_curso: number; vencidos: number }>();
-  const { results: recientes } = await db
+  const { results } = await db
     .prepare(
-      `SELECT r.id, r.numero, r.categoria, coalesce(c.name, w.contact_name) AS client_name, r.created_at
+      `SELECT r.id, r.numero, r.categoria, r.motivo, coalesce(c.name, w.contact_name) AS client_name, r.created_at
        FROM reclamos r LEFT JOIN clients c ON c.id = r.client_id LEFT JOIN wa_conversations w ON w.id = r.conversation_id
        WHERE r.estado = 'abierto' ORDER BY r.created_at DESC LIMIT 5`,
     )
-    .all<ReclamoReciente>();
+    .all<Omit<ReclamoReciente, "consulta"> & { motivo: string }>();
+  // El motivo (texto del cliente) no viaja al navegador en este aviso: solo si es una consulta.
+  const recientes = results.map(({ motivo, ...r }): ReclamoReciente => ({ ...r, consulta: esConsulta({ motivo, categoria: r.categoria }) }));
   return { abiertos: Number(row?.abiertos ?? 0), enCurso: Number(row?.en_curso ?? 0), vencidos: Number(row?.vencidos ?? 0), recientes };
 }
 

@@ -5,7 +5,10 @@
  * de compensación de global_config. Nunca decide solo: el local revisa, edita y resuelve.
  */
 import { z } from "zod";
-import { CATEGORIA_LABEL, type Categoria } from "./categoria.ts";
+import { CATEGORIA_LABEL, esConsulta, type Categoria } from "./categoria.ts";
+
+/** Respuesta del agente (y de la API) cuando el ticket es una consulta sin respuesta y no un reclamo. */
+export const ES_CONSULTA_ERROR = "Es una consulta, no un reclamo: no lleva sugerencia de compensación.";
 
 export const AGENTE_MODEL = "gpt-4o-mini";
 export const AGENTE_TIMEOUT_MS = 20_000;
@@ -229,6 +232,8 @@ export async function ejecutarAgente(id: string, deps: EjecutarDeps): Promise<Ej
   try {
     const datos = await deps.datos(id);
     if (!datos) return { ok: false, error: "No se encontró el reclamo." };
+    // Una consulta sin respuesta no es un reclamo: ni OpenAI ni sugerencia de compensación (y no se guarda ningún error).
+    if (esConsulta(datos.reclamo)) return { ok: false, error: ES_CONSULTA_ERROR };
     const sugerencia = await sugerirResolucion(contextoDesde(datos), { apiKey: (await deps.apiKey()) ?? "", fetchImpl: deps.fetchImpl });
     await deps.guardar(id, { sugerencia });
     return { ok: true, sugerencia };

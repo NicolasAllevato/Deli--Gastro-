@@ -9,7 +9,7 @@ import { resolveEmailSender } from "@/lib/daily-summary/email";
 import { clientFor, loadWhatsAppSettings } from "@/lib/whatsapp/config";
 import { WhatsAppApiError } from "@/lib/whatsapp/client";
 import { loadOpenAIKey } from "@/lib/agent/settings";
-import { avisarReclamoNuevo, type AvisoResultado } from "./notify.ts";
+import { avisarYSugerir, type AvisoResultado } from "./notify.ts";
 import { ejecutarAgente, type EjecucionResultado } from "./agente.ts";
 import { dentroDeVentana } from "./mensajes.ts";
 
@@ -36,19 +36,14 @@ async function enSegundoPlano(task: Promise<unknown>): Promise<void> {
 }
 
 /**
- * Reclamo nuevo o actualizado (lo llama el endpoint interno del bot): mail al local (una sola vez por reclamo) y
- * sugerencia nueva del agente en segundo plano, así la respuesta al bot no espera a OpenAI.
+ * Ticket nuevo o actualizado (lo llama el endpoint interno del bot): mail al local (una sola vez por ticket) y, si es un
+ * reclamo, sugerencia nueva del agente en segundo plano, así la respuesta al bot no espera a OpenAI. Una consulta sin
+ * respuesta lleva su propio mail y no llama a OpenAI (ver `avisarYSugerir`).
  */
-export async function avisarReclamo(id: string, conversationId: string): Promise<AvisoResultado> {
+export function avisarReclamo(id: string, conversationId: string): Promise<AvisoResultado> {
   const actor = systemActor("aviso de reclamo nuevo (bot)");
-  const resultado = await avisoMail(actor, id, conversationId);
-  if (resultado !== "no-existe") await enSegundoPlano(sugerirReclamo(id));
-  return resultado;
-}
-
-function avisoMail(actor: Actor, id: string, conversationId: string): Promise<AvisoResultado> {
-  return avisarReclamoNuevo(id, {
-    // El reclamo tiene que ser de la conversación firmada: el bot no puede pedir avisos de otros reclamos.
+  return avisarYSugerir(id, {
+    // El ticket tiene que ser de la conversación firmada: el bot no puede pedir avisos de otros tickets.
     contexto: async (rid) => {
       const ctx = await reclamosApp.contextoAviso(actor, rid);
       return ctx && ctx.reclamo.conversation_id === conversationId ? ctx : null;
@@ -56,6 +51,7 @@ function avisoMail(actor: Actor, id: string, conversationId: string): Promise<Av
     sender: async (from) => resolveEmailSender(from, { binding: await getEmailBinding() }),
     marcar: (rid, detalle) => reclamosApp.marcarNotificado(actor, rid, detalle),
     appUrl: APP_URL(),
+    sugerir: (rid) => enSegundoPlano(sugerirReclamo(rid)),
   });
 }
 
