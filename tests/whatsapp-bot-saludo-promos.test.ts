@@ -149,6 +149,18 @@ describe("turno: saludo primero", () => {
     assert.doesNotMatch(w.sent[0], /\/cliente|persona/);
   });
 
+  it("un primer mensaje con pedido concreto (cantidades en palabras) no se pierde detrás del saludo", async () => {
+    const w = world({ intent: "pedido_nuevo", lastOut: null });
+    assert.notEqual(await w.send("dame una napo y dos empanadas de carne y una coca de litro y medio"), "greeted");
+    assert.ok(w.sent.length >= 1);
+    assert.doesNotMatch(w.sent.join("\n"), /¡Hola, Tata! 👋 Soy Gambe/);
+  });
+
+  it("«hola quiero pedir» sin cantidades ni productos sigue recibiendo solo el saludo", async () => {
+    const w = world({ intent: "pedido_nuevo", lastOut: null });
+    assert.equal(await w.send("hola quiero pedir"), "greeted");
+  });
+
   it("con charla reciente no saluda de nuevo", async () => {
     const w = world({ intent: "pedido_nuevo", lastOut: new Date() });
     assert.equal(await w.send("quiero pedir"), "order_redirect");

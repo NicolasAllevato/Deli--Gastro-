@@ -215,6 +215,25 @@ describe("get_business_info: filtra por tema", () => {
     assert.match(out.knowledge_note ?? "", /handoff_to_human con motivo "consulta"/);
   });
 
+  it("si el tema nombra algo que está en el menú (sin tacc), devuelve esos productos y no manda a derivar", async () => {
+    const menu = [
+      { id: "p1", name: "Pizza de harina de arroz (sin TACC)", description: null, price: 15000, category: "Pizzas" },
+      { id: "p2", name: "Muzzarella grande", description: null, price: 12500, category: "Pizzas" },
+    ];
+    const repo: BotRepo = { ...d1BotRepo(db), menu: async () => menu };
+    const out = (await tool(repo).run({ tema: "ola tenes algo sin tacc" })) as Info & { menu_matches?: { name: string; price_text: string }[] };
+    assert.deepEqual(out.menu_matches?.map((m) => m.name), ["Pizza de harina de arroz (sin TACC)"]);
+    assert.match(out.menu_matches?.[0]?.price_text ?? "", /15\.000/);
+    assert.equal(out.knowledge_note, undefined);
+  });
+
+  it("un tema que no está ni en el conocimiento ni en el menú sigue avisando que no hay nada cargado", async () => {
+    const repo: BotRepo = { ...d1BotRepo(db), menu: async () => [{ id: "p2", name: "Muzzarella grande", description: null, price: 12500, category: "Pizzas" }] };
+    const out = (await tool(repo).run({ tema: "tienen sushi" })) as Info & { menu_matches?: unknown[] };
+    assert.deepEqual(out.menu_matches ?? [], []);
+    assert.match(out.knowledge_note ?? "", /sushi/);
+  });
+
   it("sin `tema` devuelve unas pocas entradas generales y no falla", async () => {
     for (let i = 0; i < 7; i++) await add("faq", `Tema ${i}`, "x");
     const out = (await tool(d1BotRepo(db)).run({})) as Info;

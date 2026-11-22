@@ -24,6 +24,25 @@ async function searchKnowledge(repo: BotRepo, tema: string, log: ToolLog): Promi
   }
 }
 
+const TEMA_STOPWORDS = new Set(["tienen", "tenes", "tenés", "tiene", "hacen", "algo", "para", "como", "cómo", "hola", "ola", "quiero", "saber", "pueden", "puedo", "alguna", "alguno", "algun", "algún"]);
+const normalizar = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * Productos del menú cuyo nombre o descripción nombran lo que el cliente pregunta («sin tacc» → «Pizza de harina de arroz (sin TACC)»).
+ * Palabras de 4 letras o más, sin las de relleno: así «tienen sushi» no trae nada y no se inventa una coincidencia.
+ */
+export function menuMatchesForTema(menu: readonly { name: string; description: string | null; price: number; category: string }[], tema: string): { name: string; category: string; price_text: string }[] {
+  const tokens = normalizar(tema).split(/[^a-z0-9ñ]+/).filter((t) => t.length >= 4 && !TEMA_STOPWORDS.has(t));
+  if (tokens.length === 0) return [];
+  return menu
+    .filter((p) => {
+      const hay = normalizar(`${p.name} ${p.description ?? ""}`);
+      return tokens.some((t) => hay.includes(t));
+    })
+    .slice(0, 8)
+    .map((p) => ({ name: p.name, category: p.category, price_text: money(p.price) }));
+}
+
 /** El motivo del traspaso empieza con «consulta»: no es un reclamo sino una pregunta del local sin respuesta cargada. */
 export const isConsultaReason = (reason: string): boolean => /^\s*consulta\b/i.test(reason);
 
@@ -133,6 +152,7 @@ function allTools(
       run: async (args) => {
         const tema = typeof (args as { tema?: unknown })?.tema === "string" ? (args as { tema: string }).tema.slice(0, 200) : "";
         const found = await searchKnowledge(repo, tema, log);
+        const menuMatches = tema.trim() ? menuMatchesForTema(await repo.menu().catch(() => []), tema) : [];
         return {
           business: settings.businessName,
           hours: settings.hours,
@@ -145,7 +165,9 @@ function allTools(
           ...(settings.deliveryCostPerKm !== null ? { delivery_cost_per_km_text: money(settings.deliveryCostPerKm) } : {}),
           // Cargado por el dueño en /admin/conocimiento: solo lo relacionado con `tema` (el vocabulario va al prompt, no acá).
           knowledge: found.map(({ category, topic, content }) => ({ category, topic, content })),
-          ...(tema.trim() && found.length === 0
+          // Productos del menú que nombran el tema (ej. «sin tacc»): precio vivo; el modelo los ofrece en vez de derivar.
+          ...(menuMatches.length > 0 ? { menu_matches: menuMatches } : {}),
+          ...(tema.trim() && found.length === 0 && menuMatches.length === 0
             ? { knowledge_note: `No hay nada cargado sobre «${tema.replace(/\s+/g, " ").trim().slice(0, 80)}». Si tampoco está en los datos de arriba, no lo inventes: decile que lo consultás con el local y derivá con handoff_to_human con motivo "consulta".` }
             : {}),
         };
