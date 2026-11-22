@@ -53,6 +53,8 @@ export type TurnOutcome =
 
 /** Intenciones que en el primer turno reciben SOLO el saludo (con las promos): el pedido arranca en el turno siguiente. */
 const GREETING_ONLY: readonly Intent[] = ["saludo", "pedido_nuevo", "otro"];
+/** Cantidades escritas con letras: señal de que el primer mensaje ya trae el pedido y no solo "quiero pedir". */
+const QUANTITY_WORDS = /\b(?:una?|unos|unas|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media|medio|docena)\b/i;
 
 const HISTORY_TURNS = 8;
 const ORDER_INTENTS: readonly Intent[] = ["pedido_nuevo", "pedido_datos", "pedido_confirmar", "pedido_cancelar"];
@@ -489,7 +491,8 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   if (intent === "humano") return complaintFlow(deps, conversation, settings, text, extras);
   // Charla nueva (el bot no respondió en 2 h, o el cliente solo saluda y no se lo saludó hace poco): saludo por nombre con las promos de hoy.
   // Ráfaga apilada con un pedido concreto ("hola" + "una muzza" + "a Rivadavia 5000"): gana el pedido, sin saludo aparte.
-  const orderWithSubstance = (intent === "pedido_nuevo" || intent === "pedido_datos") && confidence >= MIN_CONFIDENCE && (/\d/.test(text) || text.trim().includes("\n"));
+  // Con sustancia: un dígito, varias líneas o una cantidad en palabras ("una napo y dos empanadas"): no se pierde detrás del saludo.
+  const orderWithSubstance = (intent === "pedido_nuevo" || intent === "pedido_datos") && confidence >= MIN_CONFIDENCE && (/\d/.test(text) || text.trim().includes("\n") || QUANTITY_WORDS.test(text));
   if (!orderWithSubstance && (await shouldGreet(deps, conversation.id, text, outNewestFirst))) {
     const promos = promosForToday(await deps.repo.menu().catch(() => []), new Date());
     await reply(deps, conversation, renderGreeting(settings, conversation.displayName, promos));
