@@ -61,7 +61,9 @@ export default function EliminarDatosPage() {
           body: (
             <p>
               Si conectaste tu cuenta de WhatsApp Business con Facebook, podés quitar el acceso desde Facebook en Configuración →
-              Seguridad e inicio de sesión → Apps y sitios web → {BRAND.appName} → Eliminar. También podés pedirlo por email a {mail}.
+              Seguridad e inicio de sesión → Apps y sitios web → {BRAND.appName} → Eliminar. Quitar el acceso desde Facebook no borra
+              lo que ya guardamos (el nombre y el email de la cuenta de Facebook que hizo la conexión, el usuario del panel y la fecha, y el
+              token de WhatsApp del comercio): para que lo eliminemos, pedilo por email a {mail} y lo borramos dentro de los 30 días.
             </p>
           ),
         },
