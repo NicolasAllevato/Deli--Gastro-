@@ -563,7 +563,7 @@ export function parseQuoteArgs(args: unknown): QuoteArgs | null {
   for (const item of args.items as unknown[]) {
     if (!ownKeys(item, ["product_id", "qty"])) return null;
     const { product_id: id, qty } = item;
-    if (typeof id !== "string" || !UUID.test(id) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > 20) return null;
+    if (typeof id !== "string" || !UUID.test(id) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > 100) return null;
     items.push({ product_id: id, qty });
   }
   return { items, address };
@@ -576,7 +576,7 @@ export function hasStreetNumber(address: string): boolean {
 
 export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   const parsed = parseQuoteArgs(args);
-  if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty y address. No envíes precios ni totales." };
+  if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty (entero entre 1 y 100 por línea; para más, sumá otra línea o usá docenas), address y como mucho 30 líneas. No envíes precios ni totales. Corregí y volvé a llamar; no inventes un motivo para el cliente." };
   // Sin altura no hay repartidor que llegue: se pide el número antes de cotizar (el resumen sale con calle y altura).
   if (!hasStreetNumber(parsed.address)) {
     t.state.fixedReply = ORDER_REPLIES.askStreetNumber;

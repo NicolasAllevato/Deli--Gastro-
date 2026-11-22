@@ -6,7 +6,7 @@ import { z } from "zod";
  * modelo diga después. `confirm_order` solo crea lo que está acá.
  */
 const draftSchema = z.object({
-  items: z.array(z.object({ productId: z.string().min(1), qty: z.number().int().min(1).max(20) })).min(1).max(30),
+  items: z.array(z.object({ productId: z.string().min(1), qty: z.number().int().min(1).max(100) })).min(1).max(30),
   address: z.string().min(1).max(200),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),

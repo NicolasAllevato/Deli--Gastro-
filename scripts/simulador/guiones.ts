@@ -92,6 +92,22 @@ export const GUIONES: readonly Guion[] = [
     }],
   },
   {
+    numero: 13, titulo: "Empanadas: cualquier cantidad (31 = 2 docenas + 7 sueltas)",
+    pasos: [{
+      dice: `quiero 31 empanadas de carne para delivery a ${DIRECCION}`,
+      esperaAlguna: [/2 x empanadas/i],
+      noDebe: [/no (se )?puedo|no se puede|m[uú]ltiplo|24 empanadas/i],
+    }],
+  },
+  {
+    numero: 21, titulo: "Docena sin gustos: el bot pregunta los gustos antes de cotizar",
+    pasos: [{
+      dice: `quiero una docena de empanadas para delivery a ${DIRECCION}`,
+      esperaAlguna: [/gust/i],
+      noDebe: [/Total/i],
+    }],
+  },
+  {
     numero: 14, titulo: "Cancelar sin pedido",
     pasos: [{
       dice: "quiero cancelar mi pedido",
