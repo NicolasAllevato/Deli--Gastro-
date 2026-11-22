@@ -318,7 +318,8 @@ export function shortAddress(resolved: string, typed?: string): string {
     street = `${abbr(parts[numIdx + 1])} ${parts[numIdx]}`;
     barrio = parts[numIdx + 2];
   } else {
-    const idx = parts.findIndex((p) => /\D+\s\d{1,6}\b/.test(p));
+    // Sin altura en el geocoder, «Comuna 14» o «Provincia 3» también tienen forma de "texto + número": no son calle.
+    const idx = parts.findIndex((p) => /\D+\s\d{1,6}\b/.test(p) && !CITY_LIKE.test(p));
     if (idx >= 0) {
       street = abbr(parts[idx]);
       barrio = parts[idx + 1];
