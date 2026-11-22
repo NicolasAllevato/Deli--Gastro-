@@ -62,14 +62,16 @@ export const UNCONFIRMED_ADDRESS = {
   error: "Esa es la dirección guardada del cliente y todavía no la confirmó. Preguntale si lo mandamos a la misma dirección y esperá su respuesta.",
 };
 
-function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
+export function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
   return [
     {
       name: "quote_order",
-      description: "Cotiza el pedido con productos (product_id de get_menu y cantidad) y la dirección de entrega. El resumen con el total se le envía solo al cliente.",
+      description:
+        "Cotiza el pedido con productos (product_id de get_menu y cantidad) y la dirección de entrega. El resumen con el total se le envía solo al cliente. " +
+        "Las empanadas se venden sueltas Y por docena y se pueden pedir en cualquier cantidad: para N empanadas mandá el producto de la docena («12 empanadas») × floor(N/12) y el producto del gusto × (N mod 12) en la MISMA cotización (ej. 31 = 2 docenas + 7 sueltas). Nunca rechaces ni cambies la cantidad porque no sea múltiplo de 12; si la herramienta falla, corregí los argumentos y volvé a llamarla sin inventar un motivo.",
       parameters: OBJECT_NO_EXTRA(
         {
-          items: { type: "array", minItems: 1, maxItems: 30, items: OBJECT_NO_EXTRA({ product_id: { type: "string" }, qty: { type: "integer", minimum: 1, maximum: 20 } }, ["product_id", "qty"]) },
+          items: { type: "array", minItems: 1, maxItems: 30, items: OBJECT_NO_EXTRA({ product_id: { type: "string" }, qty: { type: "integer", minimum: 1, maximum: 100 } }, ["product_id", "qty"]) },
           address: { type: "string", minLength: 5, maxLength: 200 },
         },
         ["items", "address"],

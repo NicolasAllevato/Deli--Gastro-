@@ -4,7 +4,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createOrdersClient, signRequest, type OrdersClient, type OrderResponse, type OrderFailure } from "../workers/whatsapp-bot/src/orders/client.ts";
 import { signBotRequest, verifyBotRequest } from "../src/lib/bot-internal/signature.ts";
-import { isAffirmation, renderQuoteSummary, parseQuoteArgs, errorReply, imitatesTemplate, QUOTE_MARKER, CANCEL_MARKER, RETRY_CONFIRM, RETRY_CANCEL, CASH_MARKER, renderCashConfirmation, PAYMENT_QUESTION, FINAL_PROMPT, renderFinalSummary, paymentChoice, chosenPayment } from "../workers/whatsapp-bot/src/orders/flow.ts";
+import { orderTools } from "../workers/whatsapp-bot/src/bot/tools.ts";
+import { runQuote, isAffirmation, renderQuoteSummary, parseQuoteArgs, errorReply, imitatesTemplate, QUOTE_MARKER, CANCEL_MARKER, RETRY_CONFIRM, RETRY_CANCEL, CASH_MARKER, renderCashConfirmation, PAYMENT_QUESTION, FINAL_PROMPT, renderFinalSummary, paymentChoice, chosenPayment } from "../workers/whatsapp-bot/src/orders/flow.ts";
 import { processTurn, type TurnDeps } from "../workers/whatsapp-bot/src/bot/turn.ts";
 import { orderReply } from "../workers/whatsapp-bot/src/bot/prompts.ts";
 import "./helpers/alias.ts";
@@ -149,7 +150,23 @@ describe("fase 5: plantillas y esquemas", () => {
     assert.equal(parseQuoteArgs({ ...base, rewardId: "x" }), null);
     assert.equal(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 2, price: 1 }] }), null);
     assert.equal(parseQuoteArgs({ ...base, items: [{ product_id: "no-uuid", qty: 1 }] }), null);
-    assert.equal(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 21 }] }), null);
+    // Las empanadas se piden en cualquier cantidad (docenas + sueltas): el tope real lo ponen bot_max_units y bot_max_total.
+    assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 21 }] }));
+    assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 31 }] }));
+    assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 100 }] }));
+    assert.equal(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 101 }] }), null);
+  });
+
+  it("quote_order: la descripción explica docenas + sueltas y el error de argumentos dice qué corregir", async () => {
+    const t = { state: {} } as unknown as Parameters<typeof runQuote>[0];
+    const tool = orderTools(t).find((x) => x.name === "quote_order")!;
+    assert.match(tool.description, /docena/i);
+    assert.match(tool.description, /cualquier cantidad/i);
+    assert.match(tool.description, /nunca rechaces/i);
+    const out = (await runQuote(t, { items: [{ product_id: PID, qty: 500 }], address: "Belgrano 123" })) as { ok: boolean; error: string };
+    assert.equal(out.ok, false);
+    assert.match(out.error, /qty.*1 y 100/);
+    assert.match(out.error, /no inventes/i);
   });
 
   it("solo se confía en links https de Mercado Pago", () => {
