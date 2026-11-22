@@ -105,6 +105,7 @@ export function parseRealVerdict(raw: string): RealVerdict | null {
   const fallas = parsed.data.fallas.flatMap((f) => {
     const r = failureSchema.safeParse(f);
     if (!r.success || r.data.causa !== "bot") return [];
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- se descarta `causa` a propósito
     const { causa: _causa, ...rest } = r.data;
     return [{ ...rest, escenario: REAL_SCENARIO } as ErrorInput];
   });

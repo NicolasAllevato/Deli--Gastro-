@@ -110,7 +110,6 @@ def main() -> None:
     pdf, fonts_dir = Path(sys.argv[1]), Path(sys.argv[2])
     doc = fitz.open(str(pdf))
     lines = [
-        "/* eslint-disable */",
         "// Generado por scripts/carta-pdf-assets.py: imágenes de la carta original del local y fuentes Lora (OFL).",
         "// No editar a mano.",
         "export interface CartaImageAsset { w: number; h: number; jpeg: string; alpha: string }",
