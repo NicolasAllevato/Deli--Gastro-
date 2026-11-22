@@ -1,7 +1,8 @@
 # Cloudflare — R2 (imágenes) + Workers
 
-Cuenta: **Proyectos OPSYN** (Account ID en `.env.local` → `CLOUDFLARE_ACCOUNT_ID`). Subdominio de Workers: `frankie-400.workers.dev`.
-El token `CLOUDFLARE_API_TOKEN` ve 3 cuentas: siempre exportar `CLOUDFLARE_ACCOUNT_ID` antes de `wrangler`.
+Cuenta única: **Opsyn-La gambeta Dely** (`e7351dd776e005da826ba6f2a5aae4c1`). Subdominio de Workers: `opsyn-la-gambeta-dely.workers.dev`. Zona: `la-gambeta.com`.
+Desplegar con `wrangler login` (OAuth) en esa cuenta, sin `CLOUDFLARE_API_TOKEN` en el entorno, y comprobar con `wrangler whoami` antes de cada deploy.
+Las URLs `*.frankie-400.workers.dev` de abajo son históricas (cuenta vieja, ya no se usan).
 
 ## Estado (2026-10-12)
 

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap</title>
+<style>
+:root{
+  --bg:#f7f6f2;--card:#fff;--line:rgba(0,0,0,.12);--tx:#1f1e1c;--tx2:#5f5e5a;--tx3:#888780;
+  --ok:#3b6d11;--okbg:#eaf3de;--okln:#97c459;
+  --doing:#185fa5;
+  --u-bg:#fcebeb;--u-ln:#f09595;--u-tx:#a32d2d;
+  --s-bg:#faeeda;--s-ln:#ef9f27;--s-tx:#854f0b;
+  --n-bg:#eaf3de;--n-ln:#97c459;--n-tx:#3b6d11;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#1c1b19;--card:#262522;--line:rgba(255,255,255,.14);--tx:#f0efe9;--tx2:#b4b2a9;--tx3:#888780;
+  --ok:#97c459;--okbg:#173404;--okln:#3b6d11;--doing:#85b7eb;
+  --u-bg:#501313;--u-ln:#a32d2d;--u-tx:#f7c1c1;
+  --s-bg:#412402;--s-ln:#ba7517;--s-tx:#fac775;
+  --n-bg:#173404;--n-ln:#3b6d11;--n-tx:#c0dd97;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:960px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;font-weight:600;margin:0}
+h2{font-size:13px;font-weight:600;color:var(--tx2);margin:28px 0 10px;text-transform:uppercase;letter-spacing:.04em}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.sub{color:var(--tx2);font-size:13px;margin-top:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{font-size:12px;padding:2px 9px;border-radius:10px;border:1px solid var(--line);color:var(--tx2);background:var(--card)}
+.live{font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.dot.off{background:var(--u-tx)}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);transition:width .3s}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi span{display:block;font-size:12px;color:var(--tx2)}
+.kpi b{font-size:26px;font-weight:600}
+.kpi.alert{background:var(--u-bg);border-color:var(--u-ln)}
+.kpi.alert b,.kpi.alert span{color:var(--u-tx)}
+.qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.q{border:1px solid;border-radius:10px;padding:12px}
+.q.urgent{background:var(--u-bg);border-color:var(--u-ln);color:var(--u-tx)}
+.q.soon{background:var(--s-bg);border-color:var(--s-ln);color:var(--s-tx)}
+.q.normal{background:var(--n-bg);border-color:var(--n-ln);color:var(--n-tx)}
+.q.done{background:var(--card);border-color:var(--line);color:var(--tx2)}
+.q .t{font-weight:600;color:var(--tx)}
+.q .row{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.tag{font-size:11px;font-weight:600;padding:1px 8px;border-radius:10px;background:var(--card);white-space:nowrap;border:0;cursor:pointer;color:inherit}
+.sg{background:var(--card);color:var(--tx2);border-radius:6px;padding:6px 9px;margin:9px 0;font-size:13px}
+.sg.none{font-style:italic;color:var(--tx3)}
+.opts{display:flex;gap:6px;flex-wrap:wrap}
+button,select,input{font:inherit;color:var(--tx)}
+.btn{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 11px;cursor:pointer}
+.btn:hover{border-color:var(--tx3)}
+.btn.sug{border-style:dashed}
+input[type=text]{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 9px;width:100%}
+.q input[type=text]{margin-top:8px}
+.ans{color:var(--tx)}
+.link{background:none;border:0;color:var(--doing);cursor:pointer;padding:0;font-size:12px}
+.ag{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.agent{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.agent .m{font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--tx2)}
+.state{font-size:11px;font-weight:600;padding:2px 9px;border-radius:10px;border:1px solid var(--line);background:var(--bg);cursor:pointer;color:var(--tx3)}
+.state.activo,.state.en-curso{color:var(--ok);border-color:var(--okln);background:var(--okbg)}
+.ms{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.ms .hd{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px}
+.ms .hd b{font-weight:600}
+.st{font-size:12px;color:var(--tx2)}
+.task{display:flex;gap:9px;align-items:center;padding:7px 0;border-top:1px solid var(--line);cursor:pointer;user-select:none}
+.task:first-of-type{margin-top:8px}
+.ic{width:18px;height:18px;border-radius:50%;border:2px solid var(--tx3);flex:none;position:relative}
+.task.s1 .ic{border-color:var(--doing)}
+.task.s1 .ic::after{content:"";position:absolute;inset:3px;border-radius:50%;background:linear-gradient(90deg,var(--doing) 50%,transparent 50%)}
+.task.s2 .ic{border-color:var(--ok);background:var(--ok)}
+.task.s2 .ic::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--card);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.task.s2 span{text-decoration:line-through;color:var(--tx2)}
+.add{margin-top:8px}
+.notes{list-style:none;margin:0;padding:0}
+.notes li{padding:6px 0;border-top:1px solid var(--line);color:var(--tx2);font-size:13px}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
+summary{cursor:pointer;font-weight:600}
+.f{display:grid;gap:8px;margin-top:10px}
+.f label{font-size:12px;color:var(--tx2);display:block;margin-bottom:2px}
+select{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 9px}
+.empty{text-align:center;padding:60px 16px;color:var(--tx2)}
+.empty .btn{margin-top:14px;padding:8px 18px;background:var(--tx);color:var(--bg)}
+.usage{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.usage .in{max-width:960px;margin:0 auto;padding:8px 16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 14px}
+.lim .l{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2)}
+.lim .l b{color:var(--tx)}
+.lim .bar{height:6px;margin-top:3px}
+.bar i.warn{background:var(--s-ln)}
+.bar i.crit{background:var(--u-tx)}
+.lim small{font-size:11px;color:var(--tx3);display:block;margin-top:2px}
+.lim input[type=text]{padding:2px 6px;font-size:12px;margin-top:3px}
+.usage .msg{grid-column:1/-1;font-size:11px;color:var(--tx3)}
+.rvs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.rv{border:1px solid;border-radius:10px;padding:10px 12px}
+.rv.ok{background:var(--n-bg);border-color:var(--n-ln);color:var(--n-tx)}
+.rv.bad{background:var(--u-bg);border-color:var(--u-ln);color:var(--u-tx)}
+.rv .hd{display:flex;justify-content:space-between;gap:8px;font-weight:600;color:var(--tx)}
+.rv .m{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:13px}
+.rv .m b{color:var(--tx)}
+.rv small{display:block;margin-top:4px;color:var(--tx2);font-size:12px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--u-bg);color:var(--u-tx);border:1px solid var(--u-ln);padding:8px 14px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<div class="usage"><div class="in" id="usage"></div></div>
+<main id="app"><div class="empty">Cargando…</div></main>
+<div id="toast"></div>
+<script>
+var S = null, mtime = 0, online = true;
+var LV = { urgent: 'Urgente', soon: 'Pronto', normal: 'Normal' };
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function toast(m) { var t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(function () { t.style.display = 'none'; }, 3500); }
+
+function api(path, body) {
+  return fetch(path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
+    .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+}
+function load(force) {
+  return api('/api/state?since=' + (force ? 0 : mtime)).then(function (j) {
+    online = true;
+    if (j.unchanged) return;
+    S = j; mtime = j.mtime; render();
+  }).catch(function () { online = false; var d = document.querySelector('.dot'); if (d) d.className = 'dot off'; });
+}
+function op(o) {
+  return api('/api/op', o).then(function (j) { S = j; mtime = j.mtime; render(); }).catch(function (e) { toast(e.message); });
+}
+function typing() {
+  var a = document.activeElement;
+  return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.value;
+}
+
+function bar(p) { return '<div class="bar"><i style="width:' + p + '%"></i></div>'; }
+
+function render() {
+  var app = document.getElementById('app');
+  if (!S.exists) {
+    app.innerHTML = '<div class="empty"><h1>' + esc(S.info.proyecto) + '</h1><p>Este proyecto todavía no tiene ROADMAP.md.</p>' +
+      '<button class="btn" data-act="init">Crear roadmap</button><p class="sub">También podés pedirle a Claude: /roadmap init</p></div>';
+    return;
+  }
+  var s = S.stats, i = S.info, h = '';
+  h += '<div class="top"><div><h1>' + esc(S.meta.proyecto || i.proyecto) + '</h1>';
+  if (i.descripcion) h += '<div class="sub">' + esc(i.descripcion) + '</div>';
+  h += '<div class="chips">';
+  i.stack.forEach(function (x) { h += '<span class="chip">' + esc(x) + '</span>'; });
+  if (i.rama) h += '<span class="chip">rama ' + esc(i.rama) + '</span>';
+  h += '<span class="chip">' + esc(i.archivo) + (S.meta.actualizado ? ' · ' + esc(S.meta.actualizado) : '') + '</span></div></div>';
+  h += '<div class="live"><span class="dot' + (online ? '' : ' off') + '"></span>' + (online ? 'sincronizado' : 'sin conexión') + '</div></div>';
+
+  h += '<div style="margin-top:16px;display:flex;justify-content:space-between"><span>Avance total</span><b>' + s.pct + '%</b></div>' + bar(s.pct);
+  h += '<div class="kpis">' +
+    '<div class="kpi"><span>Completas</span><b style="color:var(--ok)">' + s.done + '</b></div>' +
+    '<div class="kpi"><span>En curso</span><b style="color:var(--doing)">' + s.doing + '</b></div>' +
+    '<div class="kpi"><span>Por completar</span><b>' + s.todo + '</b></div>' +
+    '<div class="kpi"><span>Preguntas abiertas</span><b>' + s.open + '</b></div>' +
+    '<div class="kpi' + (s.urgent ? ' alert' : '') + '"><span>Decisiones urgentes</span><b>' + s.urgent + '</b></div></div>';
+
+  h += '<h2>Preguntas y decisiones</h2><div class="qs">';
+  S.questions.forEach(function (q) {
+    h += '<div class="q ' + (q.answered ? 'done' : q.urgency) + '"><div class="row"><span class="t">' + esc(q.title) + '</span>';
+    h += '<button class="tag" data-act="urg" data-q="' + q.i + '" data-l="' + q.urgency + '" title="Cambiar urgencia">' + (q.answered ? 'Respondida' : LV[q.urgency]) + '</button></div>';
+    h += q.suggestion ? '<div class="sg">Sugerencia: ' + esc(q.suggestion) + '</div>' :
+      '<div class="sg none">Sin sugerencia todavía. Pedile a Claude: /roadmap sugerencias</div>';
+    if (q.answered) {
+      h += '<div class="ans">R: <b>' + esc(q.answer) + '</b> <button class="link" data-act="clear" data-q="' + q.i + '">cambiar</button></div>';
+    } else {
+      h += '<div class="opts">';
+      q.options.forEach(function (o) { h += '<button class="btn" data-act="ans" data-q="' + q.i + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; });
+      if (q.suggestion) h += '<button class="btn sug" data-act="ans" data-q="' + q.i + '" data-v="' + esc(q.suggestion) + '">Usar sugerencia</button>';
+      h += '</div><input type="text" placeholder="Otra respuesta y Enter" data-act="free" data-q="' + q.i + '">';
+    }
+    h += '</div>';
+  });
+  h += '</div><details><summary>Nueva pregunta</summary><div class="f">' +
+    '<div><label>Pregunta</label><input type="text" id="nq-t"></div>' +
+    '<div><label>Opciones (separadas por |)</label><input type="text" id="nq-o"></div>' +
+    '<div><label>Sugerencia</label><input type="text" id="nq-s"></div>' +
+    '<div><label>Urgencia</label><select id="nq-l"><option value="normal">Normal</option><option value="soon">Pronto</option><option value="urgent">Urgente</option></select></div>' +
+    '<div><button class="btn" data-act="addq">Agregar pregunta</button></div></div></details>';
+
+  if (S.agents.length) {
+    h += '<h2>Agentes</h2><div class="ag">';
+    S.agents.forEach(function (a) {
+      var cls = a.state.replace(/\s+/g, '-');
+      h += '<div class="agent"><div><b>' + esc(a.name) + '</b><div class="m">' + esc(a.model) + '</div>' + (a.detail ? '<div class="sub">' + esc(a.detail) + '</div>' : '') +
+        '</div><button class="state ' + esc(cls) + '" data-act="agent" data-i="' + a.i + '" data-s="' + esc(a.state) + '" title="Cambiar estado">' + esc(a.state || 'sin estado') + '</button></div>';
+    });
+    h += '</div>';
+  }
+
+  if (S.reviews && S.reviews.length) {
+    h += '<h2>Pruebas de carga</h2><div class="rvs">';
+    S.reviews.slice(-4).reverse().forEach(function (r) {
+      var bad = /fall|fail|no cumpl|✗/i.test(r.result);
+      h += '<div class="rv ' + (bad ? 'bad' : 'ok') + '"><div class="hd"><span>' + esc(r.type) + ' · ' + esc(r.env) + '</span><span>' + (bad ? 'Falló' : esc(r.result)) + '</span></div>' +
+        '<div class="m"><span>p95 <b>' + esc(r.p95) + '</b></span><span>errores <b>' + esc(r.err) + '</b></span><span>usuarios <b>' + esc(r.users) + '</b></span></div><small>' + esc(r.date) + '</small></div>';
+    });
+    h += '</div>';
+  }
+  h += '<h2>Hitos</h2>';
+  S.milestones.forEach(function (m) {
+    h += '<div class="ms"><div class="hd"><b>' + esc(m.name) + '</b><span class="st">' + esc(m.status) + ' · ' + m.done + '/' + m.total + '</span></div>' + bar(m.pct);
+    m.tasks.forEach(function (t) {
+      h += '<div class="task s' + t.state + '" data-act="task" data-g="' + m.i + '" data-t="' + t.t + '"><span class="ic"></span><span>' + esc(t.text) + '</span></div>';
+    });
+    h += '<input class="add" type="text" placeholder="Nueva tarea y Enter" data-act="addtask" data-g="' + m.i + '"></div>';
+  });
+  h += '<input type="text" placeholder="Nuevo hito y Enter" data-act="addms">';
+
+  h += '<h2>Notas</h2><ul class="notes">';
+  S.notes.slice(-8).reverse().forEach(function (n) { h += '<li>' + esc(n) + '</li>'; });
+  h += '</ul><input class="add" type="text" placeholder="Nueva nota y Enter" data-act="addnote">';
+  app.innerHTML = h;
+}
+
+var UG = null, editBudget = false;
+function fmtLeft(ms) {
+  var m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return m + ' min';
+  var h = Math.floor(m / 60);
+  if (h < 24) return h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+  var d = Math.floor(h / 24);
+  return d + ' d' + (h % 24 ? ' ' + (h % 24) + ' h' : '');
+}
+function lvl(p) { return p >= 80 ? 'crit' : p >= 50 ? 'warn' : ''; }
+function limBlock(label, v) {
+  if (!v) return '<div class="lim"><div class="l"><span>' + label + '</span><b>--</b></div>' + bar(0) + '<small>sin datos</small></div>';
+  var note = v.reset ? 'ventana reiniciada' : (v.left != null ? 'reinicia en ' + fmtLeft(v.left) : '');
+  return '<div class="lim"><div class="l"><span>' + label + '</span><b>' + v.pct + '%</b></div>' +
+    '<div class="bar"><i class="' + lvl(v.pct) + '" style="width:' + v.pct + '%"></i></div><small>' + note + '</small></div>';
+}
+function renderUsage() {
+  if (!UG) return;
+  var m = UG.month, h = limBlock('5 horas', UG.five_hour) + limBlock('Semanal', UG.seven_day);
+  h += '<div class="lim"><div class="l"><span>Mensual</span><b>' + (m.budget ? m.pct + '%' : '~$' + m.spent) + '</b></div>';
+  h += m.budget ? '<div class="bar"><i class="' + lvl(m.pct) + '" style="width:' + m.pct + '%"></i></div>' : bar(0);
+  if (editBudget) h += '<input type="text" inputmode="decimal" placeholder="Tope en USD y Enter" data-act="budget">';
+  else h += '<small>' + (m.budget ? '$' + m.spent + ' de $' + m.budget + ' · ' : 'gasto estimado · ') + '<button class="link" data-act="editbudget" style="font-size:11px">' + (m.budget ? 'cambiar tope' : 'definir tope') + '</button></small>';
+  h += '</div>';
+  if (!UG.five_hour && !UG.seven_day) h += '<div class="msg">Sin datos de límites. Activá la barra de estado: node .claude/roadmap-panel/setup-statusline.js</div>';
+  else if (UG.ageMs > 600000) h += '<div class="msg">Último dato de límites: hace ' + fmtLeft(UG.ageMs) + '. Se actualiza con cada mensaje en Claude Code.</div>';
+  document.getElementById('usage').innerHTML = h;
+}
+function loadUsage() {
+  return api('/api/usage').then(function (j) { UG = j; renderUsage(); }).catch(function () {});
+}
+
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-act]');
+  if (!el || el.tagName === 'INPUT') return;
+  var d = el.dataset;
+  switch (d.act) {
+    case 'editbudget': editBudget = true; renderUsage(); var bi = document.querySelector('[data-act=budget]'); if (bi) bi.focus(); break;
+    case 'init': api('/api/init', {}).then(function (j) { S = j; mtime = j.mtime; render(); }); break;
+    case 'task': op({ op: 'task', g: +d.g, t: +d.t, state: 'cycle' }); break;
+    case 'ans': op({ op: 'answer', q: +d.q, text: d.v }); break;
+    case 'clear': op({ op: 'answer', q: +d.q, text: '' }); break;
+    case 'urg': op({ op: 'urgency', q: +d.q, level: { urgent: 'normal', normal: 'soon', soon: 'urgent' }[d.l] }); break;
+    case 'agent': op({ op: 'agent', i: +d.i, state: { activo: 'libre', libre: 'en pausa' }[d.s] || 'activo' }); break;
+    case 'addq':
+      op({ op: 'addQuestion', title: document.getElementById('nq-t').value, options: document.getElementById('nq-o').value.split('|'),
+        suggestion: document.getElementById('nq-s').value, level: document.getElementById('nq-l').value });
+      break;
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  var d = e.target.dataset, v = e.target.value.trim();
+  if (d.act === 'budget') {
+    var n = parseFloat(v.replace(',', '.'));
+    if (v && !(n > 0)) { toast('Poné un número mayor a 0, o dejalo vacío para quitar el tope'); return; }
+    editBudget = false;
+    api('/api/usage-config', { mensual_usd: v ? n : null }).then(function (j) { UG = j; renderUsage(); }).catch(function (er) { toast(er.message); });
+    return;
+  }
+  if (!d.act || !v) return;
+  if (d.act === 'free') op({ op: 'answer', q: +d.q, text: v });
+  else if (d.act === 'addtask') op({ op: 'addTask', g: +d.g, text: v });
+  else if (d.act === 'addms') op({ op: 'addMilestone', name: v });
+  else if (d.act === 'addnote') op({ op: 'addNote', text: v });
+});
+
+document.addEventListener('focusout', function (e) {
+  if (e.target.dataset && e.target.dataset.act === 'budget' && editBudget) { editBudget = false; renderUsage(); }
+});
+
+load(true);
+loadUsage();
+setInterval(function () { if (!typing()) load(); }, 1500);
+setInterval(function () { if (!editBudget) loadUsage(); }, 5000);
+</script>
+</body>
+</html>

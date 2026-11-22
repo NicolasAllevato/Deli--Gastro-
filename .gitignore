@@ -88,3 +88,9 @@ spec-kit/
 
 # Simulador de clientes del bot (informes y base local)
 /reports/
+
+# Roadmap local (mod de Claude Code)
+ROADMAP.md
+
+# Worktrees temporales de agentes
+.claude/worktrees/

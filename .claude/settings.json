@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|PowerShell|Edit|Write|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/engram-errores.mjs\"",
+            "shell": "bash",
+            "timeout": 30,
+            "statusMessage": "engram: buscando errores parecidos"
+          }
+        ]
+      }
+    ]
+  }
+}
