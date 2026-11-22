@@ -163,6 +163,10 @@ describe("fase 5: plantillas y esquemas", () => {
     assert.match(tool.description, /docena/i);
     assert.match(tool.description, /cualquier cantidad/i);
     assert.match(tool.description, /nunca rechaces/i);
+    // La docena es el producto «empanadas» de Platos Principales y siempre se piden los gustos antes de cotizar.
+    assert.match(tool.description, /Platos Principales/);
+    assert.match(tool.description, /ANTES de cotizar.*gustos/i);
+    assert.match(tool.description, /notes de confirm_order/);
     const out = (await runQuote(t, { items: [{ product_id: PID, qty: 500 }], address: "Belgrano 123" })) as { ok: boolean; error: string };
     assert.equal(out.ok, false);
     assert.match(out.error, /qty.*1 y 100/);

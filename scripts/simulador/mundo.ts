@@ -68,7 +68,7 @@ const MENU: Array<[string, string, number]> = [
   ["Empanadas", "Empanada de carne cortada a cuchillo", 1800],
   ["Empanadas", "Empanada de jamón y queso", 1700],
   ["Empanadas", "Empanada de humita", 1700],
-  ["Promos", "12 empanadas", 18000],
+  ["Platos Principales", "empanadas", 35000],
   ["Bebidas", "Coca-Cola 1,5 L", 3500],
   ["Bebidas", "Agua sin gas 500 ml", 1500],
   ["Postres", "Flan casero con dulce de leche", 3800],
