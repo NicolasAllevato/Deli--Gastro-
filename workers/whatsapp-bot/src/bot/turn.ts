@@ -19,7 +19,7 @@ import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
-import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
+import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, looksLikeNewOrder, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
 import { esQueja } from "../../../../src/lib/reclamos/categoria.ts";
 import { withPrivacy } from "../privacy.ts";
 import {
@@ -564,7 +564,8 @@ async function complaintFollowUp(deps: TurnDeps, conversation: BotConversation, 
   const onlyPhotos = extras.images.length > 0 && words.length === 0;
   const recent = await deps.repo.history(conversation.id, 6).catch(() => []);
   const lastBot = recent.filter((m) => m.direction === "out").at(-1)?.body ?? null;
-  const answersComplaint = isComplaintReply(lastBot) && words.length > 0 && words.length <= 300;
+  // Un pedido claro («quiero 2 empanadas a Juramento 1500») no es la respuesta al reclamo: sigue su camino normal.
+  const answersComplaint = isComplaintReply(lastBot) && words.length > 0 && words.length <= 300 && !looksLikeNewOrder(words);
   if (!onlyPhotos && !answersComplaint) return null;
   const open = await deps.repo.openComplaint(conversation.id).catch(() => null);
   if (!open) return null;
