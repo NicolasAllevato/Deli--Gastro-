@@ -76,11 +76,19 @@ export const GUIONES: readonly Guion[] = [
     ],
   },
   {
+    numero: 11, titulo: "Dirección sin altura: pide el número",
+    pasos: [{
+      dice: "quiero 1 muzzarella grande para delivery a Santa Fe, Palermo",
+      esperaAlguna: [/altura|n[uú]mero|direcci[oó]n completa/i],
+      noDebe: [/Resumen de tu pedido/i],
+    }],
+  },
+  {
     numero: 12, titulo: "Dirección con piso y depto",
     pasos: [{
       dice: "1 muzzarella grande a Av. Cabildo 2000 piso 3 dto B, Belgrano",
-      esperaAlguna: [/Cabildo 2000/i],
-      noDebe: [/Comuna\s*\d+/i],
+      esperaAlguna: [/Cabildo 2000,? piso 3 dto B/i],
+      noDebe: [/Comuna\s*\d+/i, /,,/],
     }],
   },
   {

@@ -325,7 +325,8 @@ export function shortAddress(resolved: string, typed?: string): string {
       barrio = parts[idx + 1];
     }
   }
-  const extra = (typed?.match(EXTRA_RE) ?? []).map((e) => e.trim()).join(" ");
+  // Sin la coma o el punto que el cliente pegó al escribir «depto A,»: si no, el resumen sale con «,,».
+  const extra = (typed?.match(EXTRA_RE) ?? []).map((e) => e.trim().replace(/[,;.\s]+$/, "")).join(" ");
   if (!street) return oneLine(typed && typed.trim() ? typed : resolved, 120);
   const pieces = [street, extra, barrio && !CITY_LIKE.test(barrio) ? barrio : ""].filter(Boolean);
   return oneLine(pieces.join(", "), 120);
@@ -433,6 +434,7 @@ export const ORDER_REPLIES = {
   startOver: "Decime qué querés pedir y la dirección de entrega, y te armo el resumen.",
   requote: "Ese resumen ya no está vigente. Decime de nuevo qué querés pedir y la dirección, y te armo uno nuevo.",
   invalidQuote: "No pude armar el resumen con esos datos. Decime qué productos querés y a qué dirección te lo mandamos.",
+  askStreetNumber: "Para armar el pedido necesito la dirección completa: calle y altura (el número) y, si es departamento, piso y depto. ¿Me la pasás?",
   mpOnly: "Por WhatsApp se puede pagar en efectivo (al recibir) o con Mercado Pago.",
 } as const;
 
@@ -567,9 +569,19 @@ export function parseQuoteArgs(args: unknown): QuoteArgs | null {
   return { items, address };
 }
 
+/** La dirección trae altura (cualquier dígito) o dice que no tiene («s/n», «sin número»). Piso y depto no reemplazan a la altura. */
+export function hasStreetNumber(address: string): boolean {
+  return /\d/.test(address.replace(EXTRA_RE, " ")) || /\bs\/n\b|sin\s+n[uú]mero/i.test(address);
+}
+
 export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   const parsed = parseQuoteArgs(args);
   if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty y address. No envíes precios ni totales." };
+  // Sin altura no hay repartidor que llegue: se pide el número antes de cotizar (el resumen sale con calle y altura).
+  if (!hasStreetNumber(parsed.address)) {
+    t.state.fixedReply = ORDER_REPLIES.askStreetNumber;
+    return SENT;
+  }
   t.state.quoted = true;
   const response = await t.client.quote({ ...common(t), ...parsed });
   if (!response.ok) return fail(t, response, "quote");

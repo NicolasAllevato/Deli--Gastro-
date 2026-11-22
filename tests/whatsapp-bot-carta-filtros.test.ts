@@ -96,6 +96,24 @@ test("dirección corta: si el geocoder devuelve la calle sin altura, no toma «C
   assert.doesNotMatch(shortAddress(geo).split(",")[0] ?? "", /^Comuna/);
 });
 
+test("dirección corta: piso y depto salen sin comas de más aunque el cliente los escriba con coma", () => {
+  const geo = "1234, Avenida Santa Fe, Palermo, Buenos Aires, Comuna 14, Ciudad Autónoma de Buenos Aires, C1425BHV, Argentina";
+  assert.equal(shortAddress(geo, "Av. Santa Fe 1234 piso 8 depto A, Palermo"), "Av. Santa Fe 1234, piso 8 depto A, Palermo");
+  assert.equal(shortAddress(geo, "Av. Santa Fe 1234, piso 8, depto A, Palermo"), "Av. Santa Fe 1234, piso 8 depto A, Palermo");
+  assert.doesNotMatch(shortAddress(geo, "Av. Santa Fe 1234 piso 8 depto A, Palermo"), /,,|, ,/);
+});
+
+import { hasStreetNumber } from "../workers/whatsapp-bot/src/orders/flow.ts";
+
+test("hasStreetNumber: la calle necesita altura (o «s/n»); piso y depto no la reemplazan", () => {
+  assert.equal(hasStreetNumber("Av. Santa Fe 1234, Palermo"), true);
+  assert.equal(hasStreetNumber("Juramento 1500 timbre 2"), true);
+  assert.equal(hasStreetNumber("Av. del Libertador s/n, Núñez"), true);
+  assert.equal(hasStreetNumber("Ruta 8 sin número, Pilar"), true);
+  assert.equal(hasStreetNumber("Santa Fe, Palermo"), false);
+  assert.equal(hasStreetNumber("Santa Fe piso A depto B"), false);
+});
+
 test("resumen por renglones con dirección corta y la pregunta de pago al final", () => {
   const t = renderQuoteSummary({
     lines: [{ name: "Grande de muzzarella", qty: 1, price: 25000 }], subtotal: 25000, delivery_fee: 1270, total: 26270,
