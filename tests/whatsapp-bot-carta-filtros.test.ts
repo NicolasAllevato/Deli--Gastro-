@@ -88,6 +88,14 @@ test("dirección corta: calle altura, piso/depto, barrio (sin lugar, comuna, CP 
   assert.equal(shortAddress("Belgrano 123", "Belgrano 123"), "Belgrano 123");
 });
 
+test("dirección corta: si el geocoder devuelve la calle sin altura, no toma «Comuna 14» como calle y usa lo que escribió el cliente", () => {
+  const geo = "Palermo, Avenida Santa Fe, Palermo Pacífico, Palermo, Buenos Aires, Comuna 14, Ciudad Autónoma de Buenos Aires, C1425BHV, Argentina";
+  assert.equal(shortAddress(geo, "Av. Santa Fe 1234, Palermo"), "Av. Santa Fe 1234, Palermo");
+  assert.doesNotMatch(shortAddress(geo, "Av. Santa Fe 1234, Palermo"), /Comuna/);
+  // Sin lo que escribió el cliente tampoco se muestra la comuna como calle: se cae al texto del geocoder, truncado.
+  assert.doesNotMatch(shortAddress(geo).split(",")[0] ?? "", /^Comuna/);
+});
+
 test("resumen por renglones con dirección corta y la pregunta de pago al final", () => {
   const t = renderQuoteSummary({
     lines: [{ name: "Grande de muzzarella", qty: 1, price: 25000 }], subtotal: 25000, delivery_fee: 1270, total: 26270,
