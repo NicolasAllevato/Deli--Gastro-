@@ -82,8 +82,20 @@ export function complaintUpdateReply(numero: number, mode: ComplaintMode, openAt
   return mode === "abierto" ? `${head} Te escribe alguien del local.` : `${head} Te contactamos cuando abramos a las ${openAt}.`;
 }
 
-/** ¿El último mensaje del bot es el aviso de un reclamo? (el cliente está contestando sobre su reclamo). */
-export const isComplaintReply = (body: string | null | undefined): boolean => !!body && /\breclamo #\d+/.test(body);
+/**
+ * ¿El último mensaje del bot es el AVISO de un reclamo? (el cliente está contestando sobre su reclamo).
+ * Los acuses «lo sumé a tu reclamo #N» / «la sumé al reclamo #N» NO cuentan: si contaran, cada acuse haría que el
+ * mensaje siguiente también se sume al reclamo y el cliente quedaría atrapado (no podría volver a pedir).
+ */
+export const isComplaintReply = (body: string | null | undefined): boolean =>
+  !!body && /\breclamo #\d+/.test(body) && !/\b(?:lo|la)\s+sum[eé](?![a-záéíóúñ])/i.test(body);
+
+const ORDER_VERB = /\b(?:quiero|quisiera|quer[ií]a|dame|damelo|mandame|pasame|necesito|pido|pedir)\b/i;
+const ORDER_THING = /\d|\b(?:una?|unos|unas|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media|medio|docena|pizzas?|empanadas?|napo|muzza|muzzarella|promo|combo|pedido)\b/i;
+const COMPLAINT_WORD = /\b(?:llegó|llego|faltó|falto|fr[ií]o|tarde|mal|reclamo|queja|devuelv\w*|reembols\w*|plata|cobr\w*|dinero)\b/i;
+
+/** ¿Es un pedido nuevo y no la respuesta al reclamo? Con un reclamo abierto no se lo traga el seguimiento del reclamo. */
+export const looksLikeNewOrder = (text: string): boolean => ORDER_VERB.test(text) && ORDER_THING.test(text) && !COMPLAINT_WORD.test(text);
 
 /** Saca las marcas de foto del texto combinado del turno. */
 export const withoutPhotoMarks = (text: string): string => text.replace(/^\[foto\]\s*/gm, "").trim();
