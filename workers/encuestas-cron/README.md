@@ -17,7 +17,7 @@ Buenos Aires) y evita envíos dobles.
 ```bash
 cd workers/encuestas-cron
 npm install
-export CLOUDFLARE_ACCOUNT_ID=<id de "Proyectos OPSYN">   # el token ve 3 cuentas
+export CLOUDFLARE_ACCOUNT_ID=e7351dd776e005da826ba6f2a5aae4c1   # Opsyn-La gambeta Dely (cuenta única)
 # Cargar los secretos con un archivo JSON (nunca con un pipe de PowerShell: agrega un \n):
 #   { "BASE_URL": "https://...", "CRON_SECRET": "..." }
 npx wrangler secret bulk secretos.json                    # y borrar el archivo después

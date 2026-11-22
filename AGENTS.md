@@ -10,6 +10,27 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ---
 
+## Orquestación de agentes (obligatoria en cada sesión)
+
+Decisión del usuario (2026-11-19). Se aplica siempre en este proyecto, sin que haga falta pedirlo:
+
+- **Opus (sesión principal)** orquesta: planifica, decide arquitectura, resuelve errores complejos, despliega y commitea. No delega esas decisiones.
+- **`explorer`** (`.claude/agents/explorer.md`, Haiku, esfuerzo medio): toda investigación de código de solo lectura. Lanzarlo antes de planificar.
+- **`escritor`** (`.claude/agents/escritor.md`, Sonnet): toda implementación de un plan ya aprobado (código + tests + typecheck). No despliega ni hace push.
+- Flujo: explorer → plan de Opus (mostrar al usuario si es grande) → escritor → revisión y verificación de Opus → deploy/commit.
+
+## Aprendizaje de errores (engram)
+
+El hook `PostToolUseFailure` (`.claude/hooks/engram-errores.mjs`) registra cada error en engram (proyecto `deli-gastro-`) y trae errores parecidos ya vistos. Al resolver un error, guardar causa raíz + solución con `mem_save` (type `bugfix`, título con la etiqueta `[hash]` del error). Antes de depurar, mirar lo que trajo el hook.
+
+## Roles de usuarios del admin (decisión 2026-11-19)
+
+- Roles predeterminados con permisos prearmados por sección (ninguno / ver / editar): **admin**, **gerente de tienda**, **cajero**, **repartidor**.
+- **Solo el admin** crea usuarios y edita los permisos de cada usuario por separado.
+- **Repartidor**: una única función (la app de repartos que ya tiene); sus permisos no se editan.
+
+---
+
 # Skills disponibles en este proyecto
 
 Todas las skills están en `./Skills/`. Leer el SKILL.md correspondiente antes de usarlas.
