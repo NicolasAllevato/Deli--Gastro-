@@ -7,6 +7,7 @@
     "demo": "node scripts/demo.mjs",
     "demo:rapido": "node scripts/demo.mjs --rapido",
     "simular:bot": "node --no-warnings scripts/simulador/correr.ts",
+    "simulacro:bot": "node --no-warnings scripts/simulador/simulacro.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
