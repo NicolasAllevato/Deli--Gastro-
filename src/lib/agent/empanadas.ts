@@ -24,7 +24,7 @@ export interface PackSource {
   docenaUnits: number;
   /** id Fudo de la empanada suelta → id Fudo del producto-sabor equivalente en el grupo de la docena. */
   gustosMap: Readonly<Record<string, number>>;
-  products: ReadonlyArray<{ id: string; fudo_id: number | null }>;
+  products: ReadonlyArray<{ id: string; fudo_id: number | null; is_active?: boolean | number | null }>;
   /** Opciones del/los grupo(s) asociados a la docena. */
   docenaOptions: readonly ModifierOptionRow[];
 }
@@ -33,7 +33,7 @@ export interface PackSource {
 export function buildPackContext(src: PackSource): PackContext | null {
   if (!Number.isInteger(src.docenaUnits) || src.docenaUnits < 1) return null;
   const docena = src.products.find((p) => p.fudo_id === src.docenaFudoId);
-  if (!docena) return null;
+  if (!docena || docena.is_active === false || docena.is_active === 0) return null;
   const optionBySabor = new Map<number, number>();
   for (const o of src.docenaOptions) {
     if (o.is_active === false || o.is_active === 0) continue;

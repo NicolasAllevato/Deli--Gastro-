@@ -75,8 +75,8 @@ export async function loadPackContext(
   const looseIds = new Set(Object.keys(cfg.gustosMap));
   if (!orderProducts.some((p) => p.fudo_id != null && looseIds.has(String(p.fudo_id)))) return null;
 
-  const { data: products } = await db.from("products").select("id, fudo_id").in("fudo_id", [cfg.docenaFudoId, ...looseIds.values()].map(Number));
-  const rows = ((products ?? []) as Array<{ id: string; fudo_id: number | null }>).map((p) => ({ id: p.id, fudo_id: p.fudo_id === null ? null : Number(p.fudo_id) }));
+  const { data: products } = await db.from("products").select("id, fudo_id, is_active").in("fudo_id", [cfg.docenaFudoId, ...looseIds.values()].map(Number));
+  const rows = ((products ?? []) as Array<{ id: string; fudo_id: number | null; is_active?: boolean | number | null }>).map((p) => ({ id: p.id, fudo_id: p.fudo_id === null ? null : Number(p.fudo_id), is_active: p.is_active }));
   const catalog = await loadModifierCatalog(db, [cfg.docenaFudoId]);
   const groupIds = catalog.groupsByProduct.get(cfg.docenaFudoId) ?? [];
   const docenaOptions = [...catalog.options.values()].filter((o) => groupIds.includes(o.group_fudo_id));

@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import { isPortalVisible } from "@/lib/catalog/visibility";
+import { isOff, isPortalVisible } from "@/lib/catalog/visibility";
 import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
 import { buildItemsDesc, formatMoney, minutesSince, pointsForLines, REWARDS, type Reward } from "@/lib/orders";
 import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
@@ -119,7 +119,7 @@ export async function priceOrder(
     const fudoId = product?.fudo_id != null ? Number(product.fudo_id) : null;
     const isDocena = docena !== null && fudoId !== null && fudoId === docena.docenaFudoId;
     // La docena está oculta del portal (se pide solo empaquetada o con gustos), pero sí tiene que estar activa.
-    const visible = product ? (isDocena ? product.is_active !== false : isPortalVisible(product)) : false;
+    const visible = product ? (isDocena ? !isOff(product.is_active) : isPortalVisible(product)) : false;
     if (!product || !visible) return fail(400, "Un producto del carrito ya no está disponible.", "product_unavailable");
     const checked = validateLineOptions(
       { productName: product.name, productFudoId: fudoId, isDocena, docenaUnits: docena?.docenaUnits ?? 0, options },

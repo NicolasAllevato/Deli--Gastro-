@@ -73,6 +73,11 @@ describe("packEmpanadas", () => {
     assert.equal(built?.docenaProductId, DOCENA);
     assert.deepEqual([...built!.looseToOption], [[CARNE, 1], [JAMON, 2]]);
     assert.equal(buildPackContext({ ...src, products: src.products.slice(0, 2) }), null);
+    // D1 devuelve is_active como 0/1: una docena desactivada (0 o false) no se empaqueta.
+    const inactiva = (v: boolean | number) => src.products.map((p) => (p.id === DOCENA ? { ...p, is_active: v } : p));
+    assert.equal(buildPackContext({ ...src, products: inactiva(0) }), null);
+    assert.equal(buildPackContext({ ...src, products: inactiva(false) }), null);
+    assert.equal(buildPackContext({ ...src, products: inactiva(1) })?.docenaProductId, DOCENA);
   });
 });
 
