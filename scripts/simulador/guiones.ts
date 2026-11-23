@@ -92,11 +92,11 @@ export const GUIONES: readonly Guion[] = [
     }],
   },
   {
-    numero: 13, titulo: "Empanadas: cualquier cantidad (31 = 2 docenas + 7 sueltas)",
+    numero: 13, titulo: "Empanadas: cualquier cantidad (31 de carne = 2 docenas + 7 sueltas, sin 44)",
     pasos: [{
       dice: `quiero 31 empanadas de carne para delivery a ${DIRECCION}`,
-      esperaAlguna: [/2 x empanadas/i],
-      noDebe: [/no (se )?puedo|no se puede|m[uú]ltiplo|24 empanadas/i],
+      esperaAlguna: [/(?=[^]*2 x Docena de empanadas)(?=[^]*7 x Empanada de carne)/i],
+      noDebe: [/(?<![0-9])44(?![0-9])/, /no (se )?puedo|no se puede|m[uú]ltiplo|24 empanadas|(?<![0-9])31 x/i],
     }],
   },
   {
@@ -105,6 +105,22 @@ export const GUIONES: readonly Guion[] = [
       dice: `quiero una docena de empanadas para delivery a ${DIRECCION}`,
       esperaAlguna: [/gust/i],
       noDebe: [/Total/i],
+    }],
+  },
+  {
+    numero: 22, titulo: "Empanadas mezcladas: 20 de carne y 11 de jamón y queso (2 docenas + 7 sueltas)",
+    pasos: [{
+      dice: `quiero 20 de carne y 11 de jamón y queso, para delivery a ${DIRECCION}`,
+      esperaAlguna: [/(?=[^]*Docena de empanadas)(?=[^]*7 x Empanada de jam[oó]n y queso)/i],
+      noDebe: [/(?<![0-9])31 x/i, /no (se )?puedo|no se puede|m[uú]ltiplo/i],
+    }],
+  },
+  {
+    numero: 23, titulo: "Una docena con gustos: 6 de carne y 6 de jamón y queso (1 docena mezclada)",
+    pasos: [{
+      dice: `una docena, 6 de carne y 6 de jamón y queso, para delivery a ${DIRECCION}`,
+      esperaAlguna: [/(?=[^]*1 x Docena de empanadas)(?=[^]*6 Carne)(?=[^]*6 Jam[oó]n y queso)/i],
+      noDebe: [/no (se )?puedo|no se puede/i, /(?<![0-9])12 x Empanada/i],
     }],
   },
   {

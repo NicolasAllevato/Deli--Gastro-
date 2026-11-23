@@ -161,12 +161,12 @@ describe("fase 5: plantillas y esquemas", () => {
     const t = { state: {} } as unknown as Parameters<typeof runQuote>[0];
     const tool = orderTools(t).find((x) => x.name === "quote_order")!;
     assert.match(tool.description, /docena/i);
-    assert.match(tool.description, /cualquier cantidad/i);
+    assert.match(tool.description, /múltiplo de 12/i);
     assert.match(tool.description, /nunca rechaces/i);
-    // La docena es el producto «empanadas» de Platos Principales y siempre se piden los gustos antes de cotizar.
-    assert.match(tool.description, /Platos Principales/);
+    // Cada gusto va suelto con su cantidad total: el sistema arma las docenas (detalle en whatsapp-bot-empanadas-grupos.test.ts).
+    assert.match(tool.description, /CADA GUSTO/);
     assert.match(tool.description, /ANTES de cotizar.*gustos/i);
-    assert.match(tool.description, /notes de confirm_order/);
+    assert.match(tool.description, /EXACTAMENTE/);
     const out = (await runQuote(t, { items: [{ product_id: PID, qty: 500 }], address: "Belgrano 123" })) as { ok: boolean; error: string };
     assert.equal(out.ok, false);
     assert.match(out.error, /qty.*1 y 100/);

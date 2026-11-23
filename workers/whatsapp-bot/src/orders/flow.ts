@@ -555,8 +555,23 @@ const ownKeys = (value: unknown, allowed: readonly string[]): value is Record<st
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface QuoteArgs {
-  items: { product_id: string; qty: number }[];
+  items: { product_id: string; qty: number; options?: { option_id: number; qty: number }[] }[];
   address: string;
+}
+
+const MAX_LINE_OPTIONS = 30;
+
+/** Opciones de una línea (sabores, bebidas): option_id entero, qty entero 1..100, máx. 30. */
+function parseLineOptions(value: unknown): { option_id: number; qty: number }[] | null {
+  if (!Array.isArray(value) || value.length > MAX_LINE_OPTIONS) return null;
+  const out: { option_id: number; qty: number }[] = [];
+  for (const o of value as unknown[]) {
+    if (!ownKeys(o, ["option_id", "qty"])) return null;
+    const { option_id: optionId, qty } = o;
+    if (typeof optionId !== "number" || !Number.isInteger(optionId) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > 100) return null;
+    out.push({ option_id: optionId, qty });
+  }
+  return out;
 }
 
 /** Esquema estricto: ni precios, ni totales, ni cliente, ni canje. */
@@ -566,10 +581,16 @@ export function parseQuoteArgs(args: unknown): QuoteArgs | null {
   if (address.length < 5 || address.length > 200 || args.items.length < 1 || args.items.length > 30) return null;
   const items: QuoteArgs["items"] = [];
   for (const item of args.items as unknown[]) {
-    if (!ownKeys(item, ["product_id", "qty"])) return null;
+    if (!ownKeys(item, ["product_id", "qty", "options"])) return null;
     const { product_id: id, qty } = item;
     if (typeof id !== "string" || !UUID.test(id) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > 100) return null;
-    items.push({ product_id: id, qty });
+    if (item.options === undefined) {
+      items.push({ product_id: id, qty });
+      continue;
+    }
+    const options = parseLineOptions(item.options);
+    if (!options) return null;
+    items.push({ product_id: id, qty, options });
   }
   return { items, address };
 }
@@ -581,7 +602,7 @@ export function hasStreetNumber(address: string): boolean {
 
 export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   const parsed = parseQuoteArgs(args);
-  if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty (entero entre 1 y 100 por línea; para más, sumá otra línea o usá docenas), address y como mucho 30 líneas. No envíes precios ni totales. Corregí y volvé a llamar; no inventes un motivo para el cliente." };
+  if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty (entero entre 1 y 100 por línea; para más, sumá otra línea del mismo producto), options opcional (hasta 30 de {option_id entero de grupos_de_opciones, qty entero 1 a 100}), address y como mucho 30 líneas. No envíes precios ni totales. Corregí y volvé a llamar; no inventes un motivo para el cliente." };
   // Sin altura no hay repartidor que llegue: se pide el número antes de cotizar (el resumen sale con calle y altura).
   if (!hasStreetNumber(parsed.address)) {
     t.state.fixedReply = ORDER_REPLIES.askStreetNumber;
