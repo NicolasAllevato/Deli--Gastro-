@@ -294,7 +294,7 @@ async function runQuote(ctx: Context, body: Parsed<"quote">): Promise<BotRespons
   // Los topes se evalúan antes de que quoteOrder guarde el borrador: uno fuera de tope nunca se persiste.
   const checkQuote: OrderActionDeps["checkQuote"] = (q) =>
     q.units > config.maxUnits || q.total > config.maxTotal ? { error: LIMIT_MESSAGE, code: "limit_exceeded" } : null;
-  const result = await quoteOrder({ ...actionDeps(ctx, body.inboundWamid), checkQuote }, { items: body.items, address: body.address });
+  const result = await quoteOrder({ ...actionDeps(ctx, body.inboundWamid), checkQuote }, { items: body.items, address: body.address, notes: body.notes || undefined });
   if (isActionError(result)) return fromActionError(result, 422);
   return reply(200, { ...result, ok: true });
 }

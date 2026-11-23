@@ -25,6 +25,8 @@ const draftSchema = z.object({
   minOrder: z.number().finite().nonnegative(),
   /** Saldo a favor (pesos) que se mostró aplicado en la cotización: el total que el cliente aceptó ya lo descuenta. */
   creditApplied: z.number().finite().nonnegative().optional(),
+  /** Indicaciones del cliente dichas al armar el pedido («sin cebolla», «tocar timbre»): pasan a orders.notes al confirmar. */
+  notes: z.string().min(1).max(300).optional(),
   /** Mensaje del cliente que disparó la cotización. */
   quotedByMessageId: z.string().min(1),
   /** Cuándo se cotizó (ISO): pasado el vencimiento hay que volver a cotizar. */

@@ -165,12 +165,25 @@ describe("ronda 2: después de cancelar, el cliente sabe qué pasa con la plata"
     assert.equal(c.t.state.fixedReply, ORDER_REPLIES.cancelledUnpaid);
     assert.equal(c.takeover(), false);
   });
+  it("pedido en efectivo (sin pago acreditado): cancelado normal, sin «ya estaba pagado» ni derivar", async () => {
+    const c = cancelConfirmed({ ok: true, status: 200, data: { ok: true, paid: false } });
+    await runCancel(c.t, { confirmed: true });
+    assert.equal(c.t.state.fixedReply, ORDER_REPLIES.cancelledCash);
+    assert.doesNotMatch(ORDER_REPLIES.cancelledCash, /pagado|direcci[oó]n correcta/i);
+    assert.equal(c.takeover(), false);
+  });
   it("pedido ya pagado: se cancela y deriva para resolver el pago (sin prometer reembolso)", async () => {
-    const c = cancelConfirmed({ ok: true, status: 200, data: { ok: true } });
+    const c = cancelConfirmed({ ok: true, status: 200, data: { ok: true, paid: true } });
     await runCancel(c.t, { confirmed: true });
     assert.equal(c.t.state.fixedReply, ORDER_REPLIES.cancelledPaid);
     assert.doesNotMatch(ORDER_REPLIES.cancelledPaid, /reembols|devolvemos|te devuelven/i);
     assert.equal(c.takeover(), true);
+  });
+  it("respuesta sin el campo paid: no se asume pagado", async () => {
+    const c = cancelConfirmed({ ok: true, status: 200, data: { ok: true } });
+    await runCancel(c.t, { confirmed: true });
+    assert.equal(c.t.state.fixedReply, ORDER_REPLIES.cancelledCash);
+    assert.equal(c.takeover(), false);
   });
   it("SÍ a cancelar un resumen sin confirmar: se descarta sin derivar", async () => {
     const c = cancelConfirmed({ ok: false, kind: "api", status: 409, code: "rejected", error: "No encontré un pedido para cancelar." }, true);
@@ -325,3 +338,16 @@ describe("ronda 6: cierres con calidez y sin afirmar estados", () => {
   });
 });
 
+
+describe("notas del cliente en el pedido", () => {
+  it("parseQuoteArgs acepta notes y las limpia; el resumen muestra «Nota: ...»", async () => {
+    const { parseQuoteArgs, renderQuoteSummary } = await import("../workers/whatsapp-bot/src/orders/flow.ts");
+    const id = "11111111-1111-4111-8111-111111111111";
+    const parsed = parseQuoteArgs({ items: [{ product_id: id, qty: 1 }], address: "Juramento 1500, Belgrano", notes: "  PRUEBA - no preparar " });
+    assert.equal(parsed?.notes, "PRUEBA - no preparar");
+    assert.equal(parseQuoteArgs({ items: [{ product_id: id, qty: 1 }], address: "Juramento 1500", notes: 5 }), null);
+    const text = renderQuoteSummary({ lines: [{ name: "Muzza", qty: 1, price: 1000 }], subtotal: 1000, delivery_fee: 0, total: 1000, resolved_address: "Juramento 1500, Belgrano", notes: "PRUEBA - no preparar" });
+    assert.match(text!, /Nota: PRUEBA - no preparar/);
+    assert.doesNotMatch(renderQuoteSummary({ lines: [{ name: "Muzza", qty: 1, price: 1000 }], subtotal: 1000, delivery_fee: 0, total: 1000, resolved_address: "Juramento 1500" })!, /Nota:/);
+  });
+});

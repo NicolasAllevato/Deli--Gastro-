@@ -255,6 +255,26 @@ describe("confirmOrder", () => {
     assert.equal(draftOf(demo), undefined);
   });
 
+  it("la nota dicha al cotizar queda en el borrador, en la cotización y llega a orders.notes al confirmar", async () => {
+    const demo = newDemo();
+    const out = await quoteOrder(depsFor(demo, "m1"), {
+      items: [{ product_id: productId(demo, "Hamburguesa Clásica"), qty: 1 }],
+      address: "Av. Corrientes 1234",
+      notes: "PRUEBA - no preparar",
+    });
+    assert.equal((out as { notes?: string }).notes, "PRUEBA - no preparar");
+    assert.equal(draftOf(demo)?.notes, "PRUEBA - no preparar");
+    await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
+    assert.equal(demo.store.orders.at(-1)!.notes, "PRUEBA - no preparar");
+  });
+
+  it("sin nota al cotizar ni al confirmar, orders.notes queda vacío", async () => {
+    const demo = newDemo();
+    await quoted(demo, "m1");
+    await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
+    assert.ok(!demo.store.orders.at(-1)!.notes);
+  });
+
   it("Mercado Pago abre el pago y NO crea el pedido", async () => {
     const demo = newDemo();
     await quoted(demo, "m1");
@@ -315,8 +335,17 @@ describe("orderStatus / cancelOrder", () => {
     assert.deepEqual(dry, { ok: true, dry_run: true, note: "Prueba: el pedido no se canceló." });
     assert.equal(demo.store.orders.at(-1)!.status !== "Cancelado", true);
 
-    assert.deepEqual(await cancelOrder(depsFor(demo, "m5")), { ok: true });
+    assert.deepEqual(await cancelOrder(depsFor(demo, "m5")), { ok: true, paid: false });
     assert.equal(demo.store.orders.find((o) => o.client_id === demo.store.wa_conversations[0]!.client_id && o.status === "Cancelado") !== undefined, true);
+  });
+
+  it("pedido con pago de Mercado Pago aprobado: la cancelación informa paid true", async () => {
+    const demo = newDemo();
+    await quoted(demo, "m1");
+    await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
+    const order = demo.store.orders.at(-1)!;
+    demo.store.payment_intents.push({ id: crypto.randomUUID(), order_id: order.id, status: "approved", mp_payment_id: null } as never);
+    assert.deepEqual(await cancelOrder(depsFor(demo, "m5")), { ok: true, paid: true });
   });
 
   it("fuera de Recibidos no se puede cancelar", async () => {

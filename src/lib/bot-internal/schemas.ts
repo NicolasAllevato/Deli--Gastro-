@@ -33,6 +33,7 @@ export const quoteSchema = z
     ...base,
     items: z.array(quoteLine).min(1).max(MAX_LINES),
     address: z.string().trim().min(5).max(200),
+    notes: z.string().max(600).transform(cleanNotes).pipe(z.string().max(300)).optional(),
   })
   .strict();
 
