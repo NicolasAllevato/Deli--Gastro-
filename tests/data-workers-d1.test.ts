@@ -105,7 +105,10 @@ describe("whatsapp-bot en modo d1", () => {
     const menu = await bot.menu();
     assert.deepEqual(menu.map((m) => [m.name, m.price]), [["Muzza", 10000]], "solo activos, en pesos");
     assert.equal(await bot.setMarketingOptIn("123", true), 0);
-    assert.deepEqual(await bot.config(), { store: { open: true } });
+    // La migración 0023 siembra la config de la docena: se compara solo la clave que carga el test.
+    const { docena_fudo_id, docena_unidades, empanada_gustos_map, ...cfg } = (await bot.config()) as Record<string, unknown>;
+    assert.ok(docena_fudo_id === 212 && docena_unidades === 12 && empanada_gustos_map);
+    assert.deepEqual(cfg, { store: { open: true } });
     assert.equal((await bot.getConversation(PHONE))?.id, conv.id);
     assert.equal((await bot.latestOrder("c-ana"))?.total !== undefined, true);
   });
