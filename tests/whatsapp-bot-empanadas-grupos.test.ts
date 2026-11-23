@@ -56,7 +56,10 @@ describe("textos: descripción de quote_order y prompt", () => {
     assert.match(tool.description, /NO uses productos «docena»/);
     assert.match(tool.description, /EXACTAMENTE/);
     assert.match(tool.description, /ANTES de cotizar.*gustos/i);
-    assert.match(tool.description, /carne suave vs carne picante/);
+    // Si el cliente ya nombró el gusto no se sobrepregunta (mezclar / suave o picante).
+    assert.match(tool.description, /NO preguntes si quiere mezclar/);
+    assert.match(tool.description, /solo es la picante si dice «picante»/);
+    assert.doesNotMatch(tool.description, /carne suave vs carne picante/);
     assert.match(tool.description, /Nunca rechaces/i);
     assert.match(tool.description, /sin inventar un motivo/);
     assert.doesNotMatch(tool.description, /floor\(N\/12\)|mod 12/);
