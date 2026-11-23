@@ -4,6 +4,7 @@
  * Los números de escenario son los del plan; los que faltan (9, 11, 13, 17, 18) son de la fase 2, contra producción.
  */
 import type { Paso } from "./simulacro-reglas.ts";
+import { GUIONES_ADVERSARIALES } from "./guiones-adversariales.ts";
 
 export interface Guion {
   numero: number;
@@ -16,7 +17,7 @@ export interface Guion {
 const DIRECCION = "Av. Santa Fe 1234, Palermo";
 const NO_FUGA = [/quote_order|get_menu|get_business_info/i];
 
-export const GUIONES: readonly Guion[] = [
+const GUIONES_BASE: readonly Guion[] = [
   {
     numero: 1, titulo: "Saludo",
     pasos: [{ dice: "hola", esperaAlguna: [/Gambi/i, /Gambeta/i], noDebe: NO_FUGA }],
@@ -202,3 +203,5 @@ export const GUIONES: readonly Guion[] = [
     ],
   },
 ];
+
+export const GUIONES: readonly Guion[] = [...GUIONES_BASE, ...GUIONES_ADVERSARIALES];

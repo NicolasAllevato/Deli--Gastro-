@@ -161,6 +161,14 @@ describe("draftIssue: todos los motivos", () => {
     assert.equal(await issue("Tu pedido está en camino.", "pedido_estado"), null);
   });
 
+  it("limits: el modelo expone un tope interno o propone partir el pedido", async () => {
+    const { issue } = setup();
+    assert.equal(await issue("La cantidad máxima por línea es 100. ¿Hago dos líneas de 100 y 50?", "pedido_nuevo"), "limits");
+    assert.equal(await issue("No puedo procesar 150 empanadas en una sola línea.", "pedido_nuevo"), "limits");
+    assert.equal(await issue("Necesito dividir el pedido en varias líneas.", "pedido_nuevo"), "limits");
+    assert.equal(await issue("Dale, ¿a qué dirección lo mandamos?", "pedido_nuevo"), null);
+  });
+
   it("price: un monto que no es del menú, de las zonas ni el costo por km", async () => {
     const { issue } = setup({}, [{ name: "Palermo", fee: 600, minOrder: 0 }]);
     assert.equal(await issue("La muzza sale $12.345."), "price");

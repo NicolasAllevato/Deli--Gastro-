@@ -161,6 +161,36 @@ describe("turno: saludo primero", () => {
     assert.equal(await w.send("hola quiero pedir"), "greeted");
   });
 
+  it("un primer mensaje con una pregunta o pedido raro saluda Y responde en el mismo turno", async () => {
+    for (const [intent, text] of [["otro", "quiero una pizza de 3 metros y que me la traigan en helicóptero"], ["otro", "tienen pizza sin tacc?"], ["saludo", "hola, ¿hacen envíos a Belgrano?"]] as const) {
+      const w = world({ intent, lastOut: null, final: "Eso no lo hacemos, pero te muestro las pizzas." });
+      assert.equal(await w.send(text), "answered", text);
+      assert.equal(w.sent.length, 2, text);
+      assert.match(w.sent[0], /^¡Hola, Tata!/);
+      assert.equal(w.sent[1], "Eso no lo hacemos, pero te muestro las pizzas.");
+    }
+  });
+
+  it("«tengo saldo a favor?» como primer mensaje: saluda y explica que se descuenta solo en el próximo resumen, sin montos", async () => {
+    for (const intent of ["pedido_estado", "otro", "consulta_local"]) {
+      const w = world({ intent, lastOut: null });
+      await w.send("tengo saldo a favor?");
+      assert.equal(w.sent.length, 2, intent);
+      assert.match(w.sent[0], /^¡Hola, Tata!/);
+      assert.match(w.sent[1], /saldo a favor/i);
+      assert.match(w.sent[1], /resumen de tu pr[oó]ximo pedido/i);
+      assert.doesNotMatch(w.sent[1], /\$\s?\d|No encontr/);
+    }
+  });
+
+  it("«hola» solo o «hola quiero pedir» siguen recibiendo solo el saludo", async () => {
+    for (const [intent, text] of [["saludo", "hola buenas tardes"], ["saludo", "hola como andas?"], ["otro", "hola quiero pedir"]] as const) {
+      const w = world({ intent, lastOut: null });
+      assert.equal(await w.send(text), "greeted", text);
+      assert.equal(w.sent.length, 1, text);
+    }
+  });
+
   it("con charla reciente no saluda de nuevo", async () => {
     const w = world({ intent: "pedido_nuevo", lastOut: new Date() });
     assert.equal(await w.send("quiero pedir"), "order_redirect");

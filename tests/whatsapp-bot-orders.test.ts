@@ -153,8 +153,9 @@ describe("fase 5: plantillas y esquemas", () => {
     // Las empanadas se piden en cualquier cantidad (docenas + sueltas): el tope real lo ponen bot_max_units y bot_max_total.
     assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 21 }] }));
     assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 31 }] }));
-    assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 100 }] }));
-    assert.equal(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 101 }] }), null);
+    assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 150 }] }));
+    assert.ok(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 500 }] }));
+    assert.equal(parseQuoteArgs({ ...base, items: [{ product_id: PID, qty: 501 }] }), null);
   });
 
   it("quote_order: la descripción explica docenas + sueltas y el error de argumentos dice qué corregir", async () => {
@@ -167,9 +168,12 @@ describe("fase 5: plantillas y esquemas", () => {
     assert.match(tool.description, /CADA GUSTO/);
     assert.match(tool.description, /ANTES de cotizar.*gustos/i);
     assert.match(tool.description, /EXACTAMENTE/);
-    const out = (await runQuote(t, { items: [{ product_id: PID, qty: 500 }], address: "Belgrano 123" })) as { ok: boolean; error: string };
+    const out = (await runQuote(t, { items: [{ product_id: PID, qty: 501 }], address: "Belgrano 123" })) as { ok: boolean; error: string };
     assert.equal(out.ok, false);
-    assert.match(out.error, /qty.*1 y 100/);
+    assert.match(out.error, /qty.*1 y 500/);
+    assert.doesNotMatch(tool.description, /hasta 100|100 por l[ií]nea/i);
+    assert.match(tool.description, /nunca menciones.*l[ií]mites/i);
+    assert.match(tool.description, /docena y media.*18/i);
     assert.match(out.error, /no inventes/i);
   });
 

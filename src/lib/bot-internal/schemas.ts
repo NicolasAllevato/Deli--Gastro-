@@ -2,7 +2,9 @@ import { z } from "zod";
 
 /** Topes del borde. Los precios, totales y el cliente NUNCA vienen del Worker: se derivan en el servidor. */
 export const MAX_LINES = 30;
-export const MAX_QTY = 100;
+export const MAX_QTY = 500;
+/** Cantidad por opción (sabores, bebidas de una promo). */
+export const MAX_OPTION_QTY = 100;
 
 const base = {
   conversationId: z.string().trim().min(1).max(64),
@@ -19,7 +21,7 @@ export function cleanNotes(raw: string): string {
   return printable.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-const quoteOption = z.object({ option_id: z.number().int().positive(), qty: z.number().int().min(1).max(MAX_QTY) }).strict();
+const quoteOption = z.object({ option_id: z.number().int().positive(), qty: z.number().int().min(1).max(MAX_OPTION_QTY) }).strict();
 /** `options`: option_id = id del modificador en Fudo; qty por unidad de la línea. Los precios los pone el servidor. */
 const quoteLine = z
   .object({ product_id: z.string().uuid(), qty: z.number().int().min(1).max(MAX_QTY), options: z.array(quoteOption).min(1).max(40).optional() })
