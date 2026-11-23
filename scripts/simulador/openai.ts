@@ -51,3 +51,24 @@ export async function chatJson(run: RunModel, system: string, user: string, maxT
   })) as { choices?: { message?: { content?: string } }[] };
   return raw?.choices?.[0]?.message?.content ?? "";
 }
+
+/**
+ * Envuelve el modelo para registrar cada herramienta: la llamada con sus argumentos (lo que pide el modelo) y el resultado
+ * que recibe (mensajes `tool` nuevos al final del historial de la siguiente llamada).
+ */
+export function conRegistroDeHerramientas(run: RunModel, sink: (line: string) => void): RunModel {
+  const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}…(${s.length} car.)` : s);
+  return async (model, input) => {
+    const messages = Array.isArray((input as { messages?: unknown }).messages) ? ((input as { messages: Record<string, unknown>[] }).messages) : [];
+    let at = messages.length;
+    while (at > 0 && messages[at - 1].role === "tool") at--;
+    for (const m of messages.slice(at)) sink(`  TOOL-RESULT ${clip(String(m.content ?? ""), 1500)}`);
+    const out = await run(model, input);
+    const calls = (out as { choices?: { message?: { tool_calls?: { function?: { name?: string; arguments?: string } }[] } }[] })?.choices?.[0]?.message?.tool_calls ?? [];
+    const resp = (out as { choices?: { message?: { content?: string | null } }[] })?.choices?.[0]?.message;
+    const offered = ((input as { tools?: { function?: { name?: string } }[] }).tools ?? []).map((t) => t.function?.name).join(",");
+    sink(`MODEL tools=[${offered}] -> ${calls.length ? `${calls.length} llamada(s)` : clip(String(resp?.content ?? ""), 160).replace(/\s+/g, " ")}`);
+    for (const c of calls) sink(`TOOL-CALL ${c.function?.name ?? "?"}(${clip(c.function?.arguments ?? "", 400)})`);
+    return out;
+  };
+}

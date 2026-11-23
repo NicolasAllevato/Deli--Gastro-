@@ -8,6 +8,7 @@ import type { SqlDatabase } from "../../../../src/lib/data/sql.ts";
 import { fromCents } from "../../../../src/lib/data/money.ts";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import { phoneTail, resolveMatches } from "./phone-tail.ts";
+import { shortAddress } from "./short-address.ts";
 import { buildFtsQuery, likePatterns, NO_QUERY_LIMIT, SEARCH_LIMIT } from "./kb-search.ts";
 import type { BotRepo, CartaSeccion, ComplaintCategory, ComplaintTicket, HistoryItem, InboundRepo, KnowledgeEntry, OptionGroup } from "./types.ts";
 
@@ -357,21 +358,24 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
     async customerProfile(phone) {
       const tail = phoneTail(phone);
       if (tail.length !== 10) return null;
-      // Todo por phone_digits: el perfil es siempre del mismo teléfono de la conversación, nunca de otro cliente.
-      const owned = "SELECT id FROM clients WHERE phone_digits = ? AND is_anonymous = 0";
+      // Clientes de ESTE teléfono: los de phone_digits y el que la conversación ya tiene vinculado (client_id). Hay fichas con
+      // phone_digits NULL (cargadas a mano o de antes de esa columna): sin el vínculo el cliente registrado parecía nuevo.
+      const owned = `SELECT id FROM clients WHERE is_anonymous = 0 AND (phone_digits = ?
+        OR id IN (SELECT client_id FROM wa_conversations WHERE client_id IS NOT NULL AND substr(client_phone, -10) = ?))`;
+      const ownedBind = [tail, tail];
       const head = await db
         .prepare(
           // Dirección: la del pedido más reciente (no cancelado); sin pedidos, la que el cliente cargó en su ficha. Siempre UNA.
-          `SELECT (SELECT name FROM clients WHERE phone_digits = ? AND is_anonymous = 0 ORDER BY created_at LIMIT 1) AS name,
+          `SELECT (SELECT name FROM clients WHERE id IN (${owned}) ORDER BY created_at LIMIT 1) AS name,
              (SELECT count(*) FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado') AS order_count,
              coalesce(
                (SELECT delivery_address FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado'
                   AND delivery_address IS NOT NULL AND trim(delivery_address) <> '' ORDER BY created_at DESC LIMIT 1),
-               (SELECT trim(address) FROM clients WHERE phone_digits = ? AND is_anonymous = 0
+               (SELECT trim(address) FROM clients WHERE id IN (${owned})
                   AND address IS NOT NULL AND trim(address) <> '' ORDER BY updated_at DESC LIMIT 1)
              ) AS last_address`,
         )
-        .bind(tail, tail, tail, tail)
+        .bind(...ownedBind, ...ownedBind, ...ownedBind, ...ownedBind)
         .first<{ name: string | null; order_count: number; last_address: string | null }>();
       const orderCount = Number(head?.order_count ?? 0);
       if (!head || (!head.name && orderCount === 0 && !head.last_address)) return null;
@@ -381,9 +385,9 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
            WHERE oi.order_id IN (SELECT id FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado' ORDER BY created_at DESC LIMIT 20)
            GROUP BY oi.name ORDER BY qty DESC, oi.name LIMIT 3`,
         )
-        .bind(tail)
+        .bind(...ownedBind)
         .all<{ name: string; qty: number }>();
-      return { name: head.name, orderCount, topProducts: results.map((r) => r.name), lastAddress: head.last_address };
+      return { name: head.name, orderCount, topProducts: results.map((r) => r.name), lastAddress: head.last_address ? shortAddress(head.last_address) : null };
     },
 
     async lastOutboundAt(conversationId) {

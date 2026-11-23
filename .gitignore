@@ -94,3 +94,6 @@ ROADMAP.md
 
 # Worktrees temporales de agentes
 .claude/worktrees/
+
+# Datos reales de producción para el simulador (solo lectura; se regeneran con exportar-datos-reales.ts)
+/scripts/simulador/datos-reales/
