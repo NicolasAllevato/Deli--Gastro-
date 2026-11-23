@@ -566,6 +566,8 @@ interface QuoteArgs {
 }
 
 const MAX_LINE_OPTIONS = 30;
+/** Tope de una línea (el servidor valida lo mismo): las empanadas sueltas de un gusto pueden pasar 100. El tope real de unidades lo pone bot_max_units en el servidor. */
+export const MAX_LINE_QTY = 500;
 
 /** Opciones de una línea (sabores, bebidas): option_id entero, qty entero 1..100, máx. 30. */
 function parseLineOptions(value: unknown): { option_id: number; qty: number }[] | null {
@@ -589,7 +591,7 @@ export function parseQuoteArgs(args: unknown): QuoteArgs | null {
   for (const item of args.items as unknown[]) {
     if (!ownKeys(item, ["product_id", "qty", "options"])) return null;
     const { product_id: id, qty } = item;
-    if (typeof id !== "string" || !UUID.test(id) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > 100) return null;
+    if (typeof id !== "string" || !UUID.test(id) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > MAX_LINE_QTY) return null;
     if (item.options === undefined) {
       items.push({ product_id: id, qty });
       continue;
@@ -608,7 +610,7 @@ export function hasStreetNumber(address: string): boolean {
 
 export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   const parsed = parseQuoteArgs(args);
-  if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty (entero entre 1 y 100 por línea; para más, sumá otra línea del mismo producto), options opcional (hasta 30 de {option_id entero de grupos_de_opciones, qty entero 1 a 100}), address y como mucho 30 líneas. No envíes precios ni totales. Corregí y volvé a llamar; no inventes un motivo para el cliente." };
+  if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty (entero entre 1 y 500 por línea; es un detalle interno: NUNCA se lo menciones al cliente), options opcional (hasta 30 de {option_id entero de grupos_de_opciones, qty entero 1 a 100}), address y como mucho 30 líneas. No envíes precios ni totales. Corregí y volvé a llamar; no inventes un motivo para el cliente." };
   // Sin altura no hay repartidor que llegue: se pide el número antes de cotizar (el resumen sale con calle y altura).
   if (!hasStreetNumber(parsed.address)) {
     t.state.fixedReply = ORDER_REPLIES.askStreetNumber;

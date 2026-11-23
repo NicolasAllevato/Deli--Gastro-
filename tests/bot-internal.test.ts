@@ -175,7 +175,7 @@ describe("validación (zod)", () => {
     const pid = productId(demo);
     const cases: Array<Record<string, unknown>> = [
       quoteBody(demo, { items: [{ product_id: pid, qty: 0 }] }),
-      quoteBody(demo, { items: [{ product_id: pid, qty: 101 }] }),
+      quoteBody(demo, { items: [{ product_id: pid, qty: 501 }] }),
       quoteBody(demo, { items: [{ product_id: pid, qty: 1.5 }] }),
       quoteBody(demo, { items: [] }),
       quoteBody(demo, { items: Array.from({ length: 31 }, () => ({ product_id: pid, qty: 1 })) }),

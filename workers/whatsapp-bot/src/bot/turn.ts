@@ -15,7 +15,7 @@ import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
 import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
 import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
-import { promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
+import { isPureGreeting, promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
@@ -55,6 +55,57 @@ export type TurnOutcome =
 const GREETING_ONLY: readonly Intent[] = ["saludo", "pedido_nuevo", "otro"];
 /** Cantidades escritas con letras: señal de que el primer mensaje ya trae el pedido y no solo "quiero pedir". */
 const QUANTITY_WORDS = /\b(?:una?|unos|unas|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media|medio|docena)\b/i;
+
+/** Mensajes más largos que esto traen algo más que «hola quiero pedir»: no se pierden detrás del saludo. */
+const OPENING_MAX_WORDS = 6;
+
+/** El primer mensaje trae una pregunta o un pedido con contenido (no solo un saludo ni «quiero pedir»): se saluda Y se responde. */
+export function openingHasContent(text: string): boolean {
+  if (isPureGreeting(text)) return false;
+  return /[?¿]/.test(text) || text.trim().split(/\s+/).length > OPENING_MAX_WORDS;
+}
+
+/** Pregunta por su saldo a favor (crédito en pesos por reclamos). No confunde con tarjeta de crédito ni con el saldo de Mercado Pago. */
+export function asksCredit(text: string): boolean {
+  const t = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  if (/tarjeta|mercado ?pago|(^|[^a-z])mp([^a-z]|$)/.test(t)) return false;
+  return /(^|[^a-z])saldo([^a-z]|$)|credito (a favor|disponible|que tengo)/.test(t);
+}
+
+/** El saldo a favor se descuenta solo del próximo pedido; el bot no consulta montos, así que no los inventa. */
+export const CREDIT_REPLY = "Si tenés saldo a favor, se descuenta solo: lo vas a ver aplicado en el resumen de tu próximo pedido 😊 ¿Querés que armemos uno?";
+
+/**
+ * Un número suelto («2») como respuesta a la pregunta por la dirección o por la cantidad es la CANTIDAD del pedido en curso:
+ * sin esta pista el modelo a veces lo tomaba como dirección y contestaba «hubo un error con la dirección».
+ */
+export function bareNumberHint(text: string, lastBot: string | null): string | null {
+  if (!/^\s*\d{1,3}\s*$/.test(text) || !lastBot || !/cu[aá]nt[ao]s?|cantidad|direcci[oó]n/i.test(lastBot) || !/[?¿]/.test(lastBot)) return null;
+  return `El cliente respondió solo un número («${text.trim()}») a tu última pregunta: es la CANTIDAD del producto que venían pidiendo (tomalo del historial), no una dirección ni una altura. Anotala sin decir que hubo un error y pedí lo que falte (dirección completa con calle y altura, o si es delivery o retiro).`;
+}
+
+/**
+ * Pedido de empanadas con cantidad y gusto («una docena y media de carne», «150 empanadas de carne»): se cotiza directo.
+ * Va solo en esos turnos (en el prompt general confundía los cambios de cantidad de otros pedidos).
+ */
+export function empanadaHint(text: string): string | null {
+  if (!/empanada|docena|\d+\s+de\s+\p{L}+/iu.test(text)) return null;
+  return "EMPANADAS en este pedido: si ya dijo cantidad y gusto («18 de carne», «una docena y media de carne», «150 empanadas de carne») y tenés la dirección, llamá quote_order YA con ese gusto suelto y la cantidad total en unidades (docena y media = 18, media docena = 6): no preguntes si quiere mezclar, no le pidas confirmar el gusto («de carne» = la Empanada de carne común), no le pidas dividir el pedido y no le menciones topes ni límites (NO existe ningún máximo por línea: no digas «máximo por línea», «hasta 100» ni propongas dividir en líneas); si el pedido es muy grande, el sistema se lo explica.";
+}
+
+/**
+ * Producto nombrado solo por su sabor («la de jamón y morrón»): puede ser una pizza aunque exista una empanada parecida.
+ * Va solo en esos turnos para no alargar el prompt general (cada regla de más movía otros guiones).
+ */
+export function flavorHint(text: string): string | null {
+  if (!/\b(?:la|una|las|unas)\s+de\s+\p{L}+/iu.test(text) || /pizza|empanada|docena|bebida|gaseosa|postre|cafe|caf[eé]/i.test(text)) return null;
+  return "El cliente nombró un producto solo por su sabor, sin decir la categoría: llamá get_menu y buscalo en TODAS las categorías, puede ser una pizza aunque haya una empanada parecida. Nunca respondas «no tenemos» sin haber revisado también las pizzas y los platos.";
+}
+
+/** El borrador cuenta un tope interno de las herramientas («máximo por línea», «en una sola línea») o propone partir el pedido por eso. */
+export function exposesInternalLimit(draft: string): boolean {
+  return /(?:m[aá]xim[oa]|l[ií]mite|hasta \d+)[^.\n]{0,30}por l[ií]nea|(?:sola|una|dos|varias|otra|cada) l[ií]neas?\b|(?:dividir|partir|separar|fraccionar) (?:el |tu )?pedido/i.test(draft);
+}
 
 const HISTORY_TURNS = 8;
 const ORDER_INTENTS: readonly Intent[] = ["pedido_nuevo", "pedido_datos", "pedido_confirmar", "pedido_cancelar"];
@@ -170,7 +221,7 @@ export function historyMessages(items: { direction: "in" | "out"; body: string }
 }
 
 /** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
-export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "blocked";
+export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "limits" | "blocked";
 
 const RETRY_HINT: Record<DraftIssue, string> = {
   empty: "Tu respuesta anterior quedó vacía. Respondé ahora al cliente en 1 a 3 líneas.",
@@ -180,6 +231,7 @@ const RETRY_HINT: Record<DraftIssue, string> = {
   hours: "El horario que dijiste no coincide con el del local: decí solo el que devuelve get_business_info (hours). Si no lo tenés, decí que lo consultás con el local.",
   zone: "No prometas envíos a zonas ni distancias que no figuren en get_business_info (zones, delivery_radius_km). Si no está, decí que lo consultás con el local.",
   promise: "No prometas hacerlo después ni digas «un momento»: hacelo ahora con las herramientas o decí qué dato falta.",
+  limits: "Nunca menciones límites ni topes internos (máximo por línea, partir o dividir el pedido): no existen para el cliente. Llamá quote_order YA con la cantidad total que pidió.",
   blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
 };
 
@@ -201,6 +253,7 @@ export const SAFE_FALLBACK: Record<DraftIssue, string> = {
   hours: CONSULT_LOCAL_REPLY,
   zone: CONSULT_LOCAL_REPLY,
   promise: "Cualquier cosa que necesites, escribime y te ayudo 😊",
+  limits: ORDER_REPLIES.startOver,
   blocked: REPLIES.failure,
 };
 
@@ -228,6 +281,7 @@ export async function draftIssue(
     if (zoneMismatch(draft, { zones, radiusKm: settings.deliveryRadiusKm })) return "zone";
   }
   if (promisesLater(draft)) return "promise";
+  if (exposesInternalLimit(draft)) return "limits";
   const appHost = new URL(deps.appUrl).host;
   const check = withPrivacy(draft, inspectOutbound(draft, { customerPhone: conversation.phone, allowedHosts: [appHost, ...ALLOWED_HOSTS] }));
   return check.verdict === "block" ? "blocked" : null;
@@ -280,7 +334,10 @@ async function answer(
         }
       : {}),
   };
-  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile);
+  const numberHint = bareNumberHint(turnText, lastBot);
+  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile) + [numberHint, empanadaHint(turnText), flavorHint(turnText)].filter(Boolean).map((h) => `
+
+${h}`).join("");
   const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard, deps.log);
   const ask = (extra?: string, forceToolFirst = false) =>
     respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history, settings.ordersEnabled), userText: wrapUntrusted(turnText), tools, forceToolFirst });
@@ -311,7 +368,7 @@ async function answer(
       ? `${RETRY_HINT.promise} Si quiere pedir, llamá quote_order YA con los product_id de get_menu y la dirección "${knownAddress}".`
       : RETRY_HINT[issue];
     // Pedido que el modelo contestó con texto (resumen propio o promesa): el reintento lo obliga a usar las herramientas.
-    const retryNeedsTool = (issue === "template" || issue === "promise") && (intent === "pedido_nuevo" || intent === "pedido_datos") && tools.some((x) => x.name === "quote_order");
+    const retryNeedsTool = (issue === "template" || issue === "promise" || issue === "limits") && (intent === "pedido_nuevo" || intent === "pedido_datos") && tools.some((x) => x.name === "quote_order");
     if (attempt === 0) draft = await ask(hint, retryNeedsTool);
   }
 
@@ -498,7 +555,13 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   if (!orderWithSubstance && (await shouldGreet(deps, conversation.id, text, outNewestFirst))) {
     const promos = promosForToday(await deps.repo.menu().catch(() => []), new Date());
     await reply(deps, conversation, renderGreeting(settings, conversation.displayName, promos));
-    if (confidence < MIN_CONFIDENCE || GREETING_ONLY.includes(intent)) return "greeted";
+    // Saludo + contenido: si el mensaje trae una pregunta o un pedido, también se responde en este turno.
+    const credit = asksCredit(text);
+    if (!credit && !openingHasContent(text) && (confidence < MIN_CONFIDENCE || GREETING_ONLY.includes(intent))) return "greeted";
+  }
+  if (asksCredit(text) && inbound.verdict !== "suspicious") {
+    await reply(deps, conversation, CREDIT_REPLY);
+    return "answered";
   }
   const reminder = order && thread.decisive ? pendingReminder(thread.decisive) : null;
   if (confidence < MIN_CONFIDENCE) {

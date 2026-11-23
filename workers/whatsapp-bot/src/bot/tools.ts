@@ -4,7 +4,7 @@ import type { BotConversation, BotRepo, KnowledgeEntry } from "../repo/types.ts"
 import { openNow, type BotSettings } from "./settings.ts";
 import { promosForModel, promosForToday } from "./greeting.ts";
 import { cartaCategoryForModel, cartaMenuForModel, categoryForModel, menuForModel, MENU_RESULT_CHARS, optionGroupsForModel } from "./menu.ts";
-import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
+import { LEGACY_STATUS, MAX_LINE_QTY, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
 const PAYMENT_METHODS = ["Efectivo", "Transferencia", "Mercado Pago"];
@@ -71,6 +71,8 @@ export function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
         "EMPANADAS: mandá CADA GUSTO como el producto suelto de ese gusto (ej. «Empanada de carne…») con la CANTIDAD TOTAL que pidió el cliente de ese gusto: «31 de carne» = UNA línea de Empanada de carne con qty 31; «20 de carne y 11 de jamón y queso» = DOS líneas (qty 20 y qty 11). El sistema arma las docenas solo y cobra el precio de docena: NO uses productos «docena», «12 empanadas» ni «empanadas» y NO hagas cuentas de docenas. " +
         "La suma de las cantidades de las líneas de empanadas debe ser EXACTAMENTE lo que pidió el cliente: no sumes ni inventes unidades; si dudás de la cantidad, repreguntá. " +
         "Si piden «una docena» o «media docena» sin decir los gustos, ANTES de cotizar preguntales los gustos (12 o 6 en total, se puede mezclar). Si el cliente ya nombró el gusto («2 docenas de pollo», «31 de carne»), NO preguntes si quiere mezclar ni pidas confirmar el gusto: todas son de ese gusto. «De carne» sin más es la «Empanada de carne» común; solo es la picante si dice «picante». " +
+        "CANTIDADES EN PALABRAS: «una docena y media de carne» = 18 de carne (UNA línea qty 18), «media docena de carne» = 6, «dos docenas y media» = 30: ya dijo el gusto, cotizá directo sin preguntar si quiere mezclar. " +
+        "Nunca menciones al cliente límites o topes internos de las herramientas (cantidad máxima por línea, etc.) ni le pidas partir el pedido: cotizá la cantidad pedida y, si el sistema no la acepta, el resumen o el mensaje del sistema le explica. " +
         "Nunca rechaces ni cambies la cantidad porque no sea múltiplo de 12; si la herramienta falla, corregí los argumentos y volvé a llamarla sin inventar un motivo. " +
         "Productos con `grupos` en get_menu (ej. promos con bebida): preguntale al cliente qué elige y mandá `options` en esa línea con los option_id de `grupos_de_opciones` y su qty (por unidad de la línea; respetá el min/max del grupo).",
       parameters: OBJECT_NO_EXTRA(
@@ -80,7 +82,7 @@ export function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
             items: OBJECT_NO_EXTRA(
               {
                 product_id: { type: "string" },
-                qty: { type: "integer", minimum: 1, maximum: 100 },
+                qty: { type: "integer", minimum: 1, maximum: MAX_LINE_QTY },
                 options: { type: "array", maxItems: 30, items: OBJECT_NO_EXTRA({ option_id: { type: "integer" }, qty: { type: "integer", minimum: 1, maximum: 100 } }, ["option_id", "qty"]) },
               },
               ["product_id", "qty"],
