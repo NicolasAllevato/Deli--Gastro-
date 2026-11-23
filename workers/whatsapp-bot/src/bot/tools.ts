@@ -154,8 +154,9 @@ function allTools(
       run: async (args) => {
         const q = typeof (args as { categoria?: unknown })?.categoria === "string" ? (args as { categoria: string }).categoria : "";
         const carta = repo.carta ? await repo.carta() : [];
-        const fromCarta = carta.length > 0 ? cartaCategoryForModel(carta, q.slice(0, 60), Boolean(order)) : null;
-        return fromCarta ?? categoryForModel(await repo.menu(), q.slice(0, 60), Boolean(order));
+        const menu = await repo.menu();
+        const fromCarta = carta.length > 0 ? cartaCategoryForModel(carta, q.slice(0, 60), Boolean(order), menu) : null;
+        return fromCarta ?? categoryForModel(menu, q.slice(0, 60), Boolean(order));
       },
     },
     {

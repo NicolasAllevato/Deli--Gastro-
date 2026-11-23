@@ -103,4 +103,19 @@ export const GUIONES_ADVERSARIALES: readonly Guion[] = [
     dice: "quiero una pizza de 3 metros y que me la traigan en helicóptero",
     esperaAlguna: [/no (lo )?(trabaj|tenemos|hacemos|puedo|ofrecemos)|Muzzarella|carta|pizzas?/i],
     noDebe: [/helic[oó]ptero[^\n]*\$\s?\d/i, /Resumen de tu pedido/i] }] },
+  { numero: 50, titulo: "Cambio de pedido con variantes parecidas (sin gas, grande de jamón y morrón, gustos de docena)", pasos: [
+    { dice: `quiero 2 porciones de muzzarella y una fainá para delivery a ${DIR}`, esperaAlguna: [/Porci[oó]n de muzzarella/i] },
+    {
+      dice: "mejor 6 empanadas de carne y 6 de pollo, 2 aguas sin gas y una grande de jamón y morrón para Juramento 1500",
+      esperaAlguna: [/(?=[^]*Agua sin gas)(?=[^]*Jam[oó]n y morrones grande)(?=[^]*Carne)(?=[^]*Pollo)/i],
+      noDebe: [/Agua con gas/i, /Fugazzeta/i, /Porci[oó]n de jam[oó]n/i, /(?<![0-9])(12|18) x/i, SIN_PEDIR] },
+  ] },
+  { numero: 51, titulo: "Primer mensaje «hola, ¿tengo saldo a favor?» (paso fijo, sin derivar)", pasos: [{
+    dice: "hola, ¿tengo saldo a favor?",
+    esperaAlguna: [/saldo a favor, se descuenta solo/i],
+    noDebe: [/Te paso con una persona/i, /\$\s?\d/] }] },
+  { numero: 52, titulo: "Agua sin gas y grande de jamón y morrón en un pedido directo", pasos: [{
+    dice: `2 aguas sin gas y una grande de jamón y morrón para delivery a ${DIR}`,
+    esperaAlguna: [/(?=[^]*2 x Agua sin gas)(?=[^]*1 x Jam[oó]n y morrones grande)/i],
+    noDebe: [/Agua con gas/i, /Porci[oó]n/i, SIN_PEDIR] }] },
 ];

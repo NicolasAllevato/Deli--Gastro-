@@ -291,6 +291,35 @@ describe("fase 5: con el flag apagado el camino es el de siempre", () => {
     assert.doesNotMatch(toolOutput, /"id"/);
   });
 
+  it("«hola, ¿tengo saldo a favor?» con intención humano responde el paso fijo, no deriva a una persona", async () => {
+    const s = setup({ enabled: true, history: [{ direction: "in", body: "hola, ¿tengo saldo a favor?" }] });
+    const m = model("humano", "x");
+    await processTurn(turn("hola, ¿tengo saldo a favor?"), deps(s, m.run));
+    assert.ok(s.sent.some((x) => /saldo a favor, se descuenta solo/.test(x)), s.sent.join(" | "));
+    assert.ok(!s.sent.some((x) => /Te paso con una persona/.test(x)));
+    assert.equal(s.state.takeover, false);
+  });
+
+  it("quote_order rechaza una cotización que contradice lo que escribió el cliente (y deja cotizar tras corregir)", async () => {
+    const A = "00000000-0000-4000-8000-00000000000a";
+    const B = "00000000-0000-4000-8000-00000000000b";
+    const s = setup({ enabled: true });
+    s.repo.menu = async () => [
+      { id: A, name: "Agua con gas", description: null, price: 1, category: "Bebidas" },
+      { id: B, name: "Agua sin gas", description: null, price: 1, category: "Bebidas" },
+    ];
+    const t = { client: s.orders, repo: s.repo, conversation: { id: "c1", phone: PHONE, clientId: "cl1", displayName: null, humanTakeover: false }, inboundWamid: "w", inboundText: "2 aguas sin gas", hasAudio: false, lastBotMessage: null, appUrl: "https://x", hours: { open: "00:00", close: "23:59" }, state: { quoted: false, fixedReply: null } } as unknown as Parameters<typeof runQuote>[0];
+    const bad = (await runQuote(t, { items: [{ product_id: A, qty: 2 }], address: "Belgrano 123" })) as { ok: boolean; error: string };
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /sin gas/);
+    assert.ok(bad.error.includes(B));
+    assert.equal(s.calls.length, 0);
+    assert.equal(t.state.quoted, false);
+    const good = (await runQuote(t, { items: [{ product_id: B, qty: 2 }], address: "Belgrano 123" })) as { ok: boolean };
+    assert.equal(good.ok, true);
+    assert.equal(s.calls.length, 1);
+  });
+
   it("con flag encendido pero sin secreto (sin cliente) avisa que no está disponible", async () => {
     const s = setup({ enabled: true });
     assert.equal(await processTurn(turn("quiero pizza"), deps(s, model("pedido_nuevo", "x").run, false)), "order_redirect");

@@ -72,6 +72,9 @@ export function asksCredit(text: string): boolean {
   return /(^|[^a-z])saldo([^a-z]|$)|credito (a favor|disponible|que tengo)/.test(t);
 }
 
+/** Pide hablar con una persona del local (no es solo una pregunta por su saldo). */
+const asksPerson = (text: string): boolean => /(persona|humano|encargad[oa]|due[ñn][oa]|gerente|alguien|atienda)/i.test(text.normalize("NFD").replace(/[̀-ͯ]/g, ""));
+
 /** El saldo a favor se descuenta solo del próximo pedido; el bot no consulta montos, así que no los inventa. */
 export const CREDIT_REPLY = "Si tenés saldo a favor, se descuenta solo: lo vas a ver aplicado en el resumen de tu próximo pedido 😊 ¿Querés que armemos uno?";
 
@@ -547,7 +550,9 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const classified = saysPaid(text) ? { intent: "pedido_estado" as Intent, confidence: 1 } : await classify(deps.run, wrapUntrusted(text), lastBot);
   const { intent, confidence } = classified;
 
-  if (intent === "humano") return complaintFlow(deps, conversation, settings, text, extras);
+  // «¿Tengo saldo a favor?» el clasificador lo toma por reclamo (humano): se responde con el paso fijo, no se deriva (salvo que pida una persona).
+  const creditQuestion = asksCredit(text) && !asksPerson(text);
+  if (intent === "humano" && !creditQuestion) return complaintFlow(deps, conversation, settings, text, extras);
   // Charla nueva (el bot no respondió en 2 h, o el cliente solo saluda y no se lo saludó hace poco): saludo por nombre con las promos de hoy.
   // Ráfaga apilada con un pedido concreto ("hola" + "una muzza" + "a Rivadavia 5000"): gana el pedido, sin saludo aparte.
   // Con sustancia: un dígito, varias líneas o una cantidad en palabras ("una napo y dos empanadas"): no se pierde detrás del saludo.
