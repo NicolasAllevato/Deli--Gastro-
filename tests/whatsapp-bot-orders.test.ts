@@ -448,15 +448,25 @@ describe("fase 5: pedidos con el flag encendido", () => {
     assert.deepEqual(s.calls, []);
   });
 
-  it("limit_exceeded y forbidden NO pasan la conversación a humano", async () => {
-    for (const [code, expected] of [["limit_exceeded", /web/], ["forbidden", /Reintentá/]] as const) {
-      const s = setup({
-        enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }],
-        orders: { confirm: async () => ({ ok: false, kind: "api", status: 422, code, error: "Tope." }) },
-      });
-      await processTurn(turn("si"), deps(s, model("x", "x").run));
-      assert.equal(s.state.takeover, false, code);
-      assert.match(s.sent[0], expected);
+  it("forbidden NO pasa la conversación a humano", async () => {
+    const s = setup({
+      enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }],
+      orders: { confirm: async () => ({ ok: false, kind: "api", status: 422, code: "forbidden", error: "Tope." }) },
+    });
+    await processTurn(turn("si"), deps(s, model("x", "x").run));
+    assert.equal(s.state.takeover, false);
+    assert.match(s.sent[0], /Reintentá/);
+  });
+
+  it("limit_exceeded deriva de verdad a una persona (el mensaje lo promete)", async () => {
+    for (const op of ["confirm", "quote"] as const) {
+      const fail = async () => ({ ok: false as const, kind: "api" as const, status: 422, code: "limit_exceeded", error: "El pedido supera lo que puedo tomar por acá. Te paso con una persona." });
+      const s = op === "confirm"
+        ? setup({ enabled: true, history: [{ direction: "out", body: SUMMARY }, { direction: "in", body: "si" }], orders: { confirm: fail } })
+        : setup({ enabled: true, orders: { quote: fail } });
+      await processTurn(turn(op === "confirm" ? "si" : "2 muzzas"), deps(s, op === "confirm" ? model("x", "x").run : model("pedido_nuevo", "x", [quoteCall]).run));
+      assert.equal(s.state.takeover, true, op);
+      assert.match(s.sent[0], /persona.*web/s, op);
     }
   });
 
