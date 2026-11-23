@@ -277,6 +277,11 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
   for (const line of lines as Record<string, unknown>[]) {
     if (typeof line?.name !== "string" || !isNum(line.qty) || !isNum(line.price)) return null;
     rows.push(`• ${line.qty} x ${oneLine(line.name, 80)} — ${money(line.qty * line.price)}`);
+    // Gustos o bebidas elegidas (por unidad): una línea de detalle, solo si la línea las lleva.
+    const opts = Array.isArray(line.options)
+      ? (line.options as Record<string, unknown>[]).filter((o) => typeof o?.name === "string" && isNum(o.qty) && o.qty > 0)
+      : [];
+    if (opts.length > 0) rows.push(`   ${opts.map((o) => `${o.qty} ${oneLine(String(o.name), 40)}`).join(", ")}`);
   }
   // Por renglones y con aire: productos, montos, dirección corta y la pregunta de pago.
   return [

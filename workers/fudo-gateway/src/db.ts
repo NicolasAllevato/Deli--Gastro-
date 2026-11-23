@@ -1,4 +1,4 @@
-import type { FudoMaps, OrderForFudo } from "./payload";
+import type { FudoMaps, OptionForFudo, OrderForFudo } from "./payload";
 import { mirrorEnabled, mirroredTable, mirrorWrite, withRepresentation, type MirrorEnv } from "./d1-mirror.ts";
 import { restD1 } from "./d1-rest.ts";
 
@@ -49,7 +49,7 @@ interface OrderRow {
   fudo_order_id: number | null;
   fudo_attempts: number;
   clients: { name: string; phone: string | null } | null;
-  order_items: Array<{ product_id: string | null; name: string; qty: number; unit_price: number | string }>;
+  order_items: Array<{ product_id: string | null; name: string; qty: number; unit_price: number | string; fudo_options?: OptionForFudo[] | null }>;
 }
 
 export interface ClaimedOrder {
@@ -62,7 +62,7 @@ export interface ClaimedOrder {
  * y todavía no tiene `fudo_order_id`. Así el cron y el pedido directo de la app no lo mandan dos veces.
  */
 export async function claimOrder(env: DbEnv, orderId: string): Promise<ClaimedOrder | null> {
-  const select = "id,total,delivery_fee,delivery_address,payment_method,notes,fudo_order_id,fudo_attempts,clients(name,phone),order_items(product_id,name,qty,unit_price)";
+  const select = "id,total,delivery_fee,delivery_address,payment_method,notes,fudo_order_id,fudo_attempts,clients(name,phone),order_items(product_id,name,qty,unit_price,fudo_options)";
   const [row] = await rest<OrderRow[]>(
     env,
     `orders?id=eq.${encodeURIComponent(orderId)}&fudo_sync_status=in.(pending,failed)&fudo_order_id=is.null&select=${select}`,

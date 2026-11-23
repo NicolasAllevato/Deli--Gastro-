@@ -35,7 +35,7 @@ stock, clientes. Para eso Fudo menciona "una API más extensa" (`soporte@fu.do`)
 | `items[].quantity` | sí | `PricedOrder.lines[].qty` | |
 | `items[].price` | sí | `PricedOrder.lines[].price` | Precio unitario nuestro |
 | `items[].comment` | no | — | Máx. 254 |
-| `items[].subitems[]` | no | — | No tenemos modificadores hoy |
+| `items[].subitems[]` | no | `order_items.fudo_options` | **Preparado, SIN VERIFICAR contra Fudo real (`ENABLE_WRITES=false`)**. Cada opción elegida (gusto de la docena, bebida de una promo) viaja como `{productId: fudo_product_id del sabor, productGroupId: group_fudo_id, quantity: qty por unidad, price: precio de la opción}`. Una línea con opciones se expande en `qty` items de cantidad 1 (cada uno con sus subitems) para no depender de si Fudo multiplica los subitems por la cantidad del item; el `price` del item es el base (`unit_price` menos lo que suman las opciones). Ver `buildFudoOrder` en `workers/fudo-gateway/src/payload.ts`. Falta confirmar con una venta real: si el total del item suma los subitems, el `price` y la cantidad. |
 | `type` | sí | `delivery` (siempre hoy) | `pickup` si sumamos retiro |
 | `typeOptions.address` | sí* | `orders.delivery_address` | lat/lng no viajan; ir en `comment` si sirve |
 | `typeOptions.expectedTime` | no | — | Podemos mandar hora estimada |

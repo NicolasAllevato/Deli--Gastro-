@@ -161,9 +161,10 @@ export interface ProductGroupRow { product_fudo_id: number; group_fudo_id: numbe
 export interface ModifierSyncPlan { groups: ModifierGroupRow[]; options: ModifierOptionRow[]; productGroups: ProductGroupRow[] }
 
 /**
- * Filas de modificadores listas para D1. El nombre y el precio de cada opción salen del producto sabor
- * (Fudo guarda el sabor como un producto de $0); sin producto conocido se usa el nombre del modificador, y
- * sin ninguno de los dos la opción se descarta. Solo se vinculan productos con grupos que existen.
+ * Filas de modificadores listas para D1. El nombre de cada opción sale del producto sabor (Fudo guarda el sabor
+ * como un producto); sin producto conocido se usa el nombre del modificador, y sin ninguno de los dos la opción se
+ * descarta. El PRECIO sale del ProductModifier (`attributes.price`), nunca del producto: el producto Pepsi cuesta
+ * $3.500 suelto pero dentro de una promo su modificador vale $0. Solo se vinculan productos con grupos que existen.
  */
 export function planModifierSync(input: { groups: FudoModifierGroup[]; modifiers: FudoModifier[]; products: FudoProduct[] }): ModifierSyncPlan {
   const productById = new Map(input.products.map((p) => [p.id, p]));
@@ -185,7 +186,7 @@ export function planModifierSync(input: { groups: FudoModifierGroup[]; modifiers
       group_fudo_id: m.groupId,
       product_fudo_id: m.productId,
       name,
-      price_cents: Math.round((product?.price ?? m.price ?? 0) * 100),
+      price_cents: Math.round((m.price ?? 0) * 100),
       position,
       is_active: product ? (product.active ? 1 : 0) : 1,
     });

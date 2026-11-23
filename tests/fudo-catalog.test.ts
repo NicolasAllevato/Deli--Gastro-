@@ -222,9 +222,9 @@ const GROUP_3 = {
   attributes: { name: "bebidas promo", minQuantity: 2.0, maxQuantity: 2.0, required: false, kind: "EXTRAS", priceAggregation: "SUM" },
   relationships: { productModifiers: { data: [] } },
 };
-const modifier = (id: string, productId: string, groupId: string) => ({
+const modifier = (id: string, productId: string, groupId: string, price = 0) => ({
   type: "ProductModifier", id,
-  attributes: { name: null, price: 0.0 },
+  attributes: { name: null, price },
   relationships: { product: { data: { type: "Product", id: productId } }, productModifiersGroup: { data: { type: "ProductModifiersGroup", id: groupId } } },
 });
 const apiProduct = (id: string, name: string, price: number, groups: string[] = []) => ({
@@ -267,6 +267,15 @@ describe("planModifierSync", () => {
       [1, "Carne cortada a cuchillo", 0, 0, 1],
       [2, "Jamón y queso", 1, 0, 1],
     ]);
+  });
+
+  it("el precio sale del modificador, no del producto sabor", () => {
+    const priced = planModifierSync({
+      groups: parseFudoModifierGroups({ data: [GROUP_1] }),
+      modifiers: parseFudoModifiers({ data: [modifier("5", "300", "1", 0), modifier("6", "301", "1", 1250.5)] }),
+      products: parseFudoProducts({ data: [apiProduct("300", "Pepsi (Lata)", 3500), apiProduct("301", "Sabor", 0)] }),
+    });
+    assert.deepEqual(priced.options.map((o) => [o.name, o.price_cents]), [["Pepsi (Lata)", 0], ["Sabor", 125050]]);
   });
 
   it("arma el grupo y el vínculo producto-grupo", () => {

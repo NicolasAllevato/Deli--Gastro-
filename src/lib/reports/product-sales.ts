@@ -28,6 +28,9 @@ export interface SalesOption {
   name: string;
   product_id?: string | null;
   fudo_product_id?: number | null;
+  /** Presentes solo en opciones elegidas en la app (sabor de docena, bebida de promo): no vuelven combo a la línea. */
+  group_fudo_id?: number | null;
+  option_fudo_id?: number | null;
 }
 
 /** Línea de `order_items` tal como la trae `order_items(*)` (las columnas de Fudo existen desde la migración 031). */
@@ -113,7 +116,8 @@ function classify(
 ): NormalLine {
   const price = unitPrice ?? priceByName.get(base.name) ?? 0;
   const marked = promoMarked(base, rules);
-  const combo = explicitCombo || options.length > 0 || (marked && price > 0);
+  // Las opciones de la app (con `option_fudo_id`) son sabores de un producto normal; las de Fudo sí marcan combo.
+  const combo = explicitCombo || options.some((o) => o.option_fudo_id == null) || (marked && price > 0);
   // Componente de promo a $0: se cuenta como producto con el nombre limpio.
   const name = !combo && marked && price === 0 ? stripPromoMarks(base.name) : base.name;
   return { key: productSalesKey({ ...base, name }), name, qty: base.qty, unitPrice, combo, options };

@@ -157,7 +157,7 @@ export interface Database {
           unit_price: number
           fudo_product_id: number | null
           fudo_comment: string | null
-          fudo_options: Array<{ qty: number; name: string; product_id?: string | null; fudo_product_id?: number | null }> | null
+          fudo_options: Array<{ qty: number; name: string; product_id?: string | null; fudo_product_id?: number | null; group_fudo_id?: number | null; option_fudo_id?: number | null; price?: number | null }> | null
           is_combo: boolean
           created_at: string
         }
@@ -170,7 +170,7 @@ export interface Database {
           unit_price: number
           fudo_product_id?: number | null
           fudo_comment?: string | null
-          fudo_options?: Array<{ qty: number; name: string; product_id?: string | null; fudo_product_id?: number | null }> | null
+          fudo_options?: Array<{ qty: number; name: string; product_id?: string | null; fudo_product_id?: number | null; group_fudo_id?: number | null; option_fudo_id?: number | null; price?: number | null }> | null
           is_combo?: boolean
         }
         Update: Record<string, never>
@@ -272,6 +272,24 @@ export interface Database {
         Row: { payment_method: string; fudo_payment_method_id: number; updated_at: string }
         Insert: { payment_method: string; fudo_payment_method_id: number; updated_at?: string }
         Update: { fudo_payment_method_id?: number }
+        Relationships: []
+      }
+      fudo_modifier_groups: {
+        Row: { fudo_id: number; name: string; min_qty: number | null; max_qty: number | null; required: number; kind: string | null }
+        Insert: { fudo_id: number; name: string; min_qty?: number | null; max_qty?: number | null; required?: number; kind?: string | null }
+        Update: { name?: string; min_qty?: number | null; max_qty?: number | null; required?: number; kind?: string | null }
+        Relationships: []
+      }
+      fudo_modifier_options: {
+        Row: { fudo_id: number; group_fudo_id: number; product_fudo_id: number; name: string; price_cents: number; position: number; is_active: boolean | number }
+        Insert: { fudo_id: number; group_fudo_id: number; product_fudo_id: number; name: string; price_cents?: number; position?: number; is_active?: boolean | number }
+        Update: { name?: string; price_cents?: number; position?: number; is_active?: boolean | number }
+        Relationships: []
+      }
+      fudo_product_groups: {
+        Row: { product_fudo_id: number; group_fudo_id: number }
+        Insert: { product_fudo_id: number; group_fudo_id: number }
+        Update: { group_fudo_id?: number }
         Relationships: []
       }
       wa_campaigns: {
