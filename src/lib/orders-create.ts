@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import { isPortalVisible } from "@/lib/catalog/visibility";
+import { isOff, isPortalVisible } from "@/lib/catalog/visibility";
 import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
 import { buildItemsDesc, formatMoney, minutesSince, pointsForLines, REWARDS, type Reward } from "@/lib/orders";
 import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
@@ -10,6 +10,9 @@ import { loadDeliverySettings } from "@/lib/zones-server";
 import { quoteDelivery } from "@/lib/zones";
 import { fudoGatewayConfig, requestFudoSync } from "@/lib/fudo/gateway";
 import { mirrorOrder, mirrorTableRows } from "@/lib/d1-mirror";
+import { packEmpanadas } from "@/lib/agent/empanadas";
+import { describeOptions, optionsKey, validateLineOptions, type LineOptionInput, type ResolvedOption } from "@/lib/order-options";
+import { docenaConfigFrom, loadModifierCatalog, loadPackContext } from "@/lib/order-options-server";
 
 type Db = ReturnType<typeof createAdminClient>;
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
@@ -23,6 +26,8 @@ const fail = (status: number, message: string, code?: string): { ok: false; stat
 export interface OrderItemInput {
   productId: string;
   qty: number;
+  /** Opciones elegidas (sabores de la docena, bebidas de una promo). `qty` por unidad de la línea. */
+  options?: LineOptionInput[];
 }
 
 export interface DeliveryPoint {
@@ -42,6 +47,12 @@ export interface PricedOrder {
     productRate: number | null;
     /** Puntos por $100 de la categoría (`null` = no da puntos). */
     categoryRate: number | null;
+    /** Id del producto en Fudo (`products.fudo_id`). */
+    fudoProductId: number | null;
+    /** Opciones ya validadas contra el catálogo (con nombre y precio del servidor). Por unidad de la línea. */
+    options?: ResolvedOption[];
+    /** Unidades reales para los topes del bot: una docena cuenta como sus 12 empanadas. */
+    units: number;
   }>;
   subtotal: number;
   fee: number;
@@ -67,15 +78,25 @@ export async function priceOrder(
   const quote = quoteDelivery(point, zones, quoteOptions);
   if (!quote.covered) return fail(400, quote.reason, "out_of_zone");
 
-  const qtyByProduct = new Map<string, number>();
-  for (const item of items) {
-    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) ?? 0) + item.qty);
+  // Las empanadas sueltas se empaquetan en docenas antes de cotizar (ver `packEmpanadas`).
+  const firstIds = [...new Set(items.map((i) => i.productId))];
+  const { data: firstProducts, error: firstError } = await db.from("products").select("*").in("id", firstIds);
+  if (firstError) return fail(500, firstError.message);
+  const pack = await loadPackContext(db, config, firstProducts ?? []);
+  const packed = packEmpanadas(items.map((i) => ({ product_id: i.productId, qty: i.qty, options: i.options })), pack);
+
+  // Una línea por producto + opciones: dos docenas con distintos gustos no se pueden sumar.
+  const qtyByLine = new Map<string, { productId: string; qty: number; options: LineOptionInput[] | undefined }>();
+  for (const item of packed) {
+    const key = `${item.product_id}|${optionsKey(item.options)}`;
+    const cur = qtyByLine.get(key);
+    qtyByLine.set(key, { productId: item.product_id, qty: (cur?.qty ?? 0) + item.qty, options: item.options });
   }
 
-  const { data: products, error } = await db
-    .from("products")
-    .select("*")
-    .in("id", [...qtyByProduct.keys()]);
+  const productIds = [...new Set([...qtyByLine.values()].map((l) => l.productId))];
+  const { data: products, error } = productIds.every((id) => firstIds.includes(id))
+    ? { data: firstProducts, error: null }
+    : await db.from("products").select("*").in("id", productIds);
   if (error) return fail(500, error.message);
 
   const categoryIds = [...new Set((products ?? []).flatMap((p) => (p.category_id ? [p.category_id] : [])))];
@@ -85,12 +106,27 @@ export async function priceOrder(
   if (categoryError) return fail(500, categoryError.message);
   const categoryRate = new Map((categoryRows ?? []).map((c) => [c.id, c.points_per_100 === null ? null : Number(c.points_per_100)]));
 
+  const docena = docenaConfigFrom(config);
+  const fudoIds = (products ?? []).flatMap((p) => (p.fudo_id != null ? [Number(p.fudo_id)] : []));
+  const catalog = await loadModifierCatalog(db, fudoIds);
+  // Opción de la docena → empanada suelta equivalente: así los gustos se cuentan junto a las sueltas en el reporte.
+  const looseByOption = new Map([...(pack?.looseToOption ?? [])].map(([productId, optionId]) => [optionId, productId]));
+
   const lines: PricedOrder["lines"] = [];
   let subtotal = 0;
-  for (const [productId, qty] of qtyByProduct) {
+  for (const { productId, qty, options } of qtyByLine.values()) {
     const product = (products ?? []).find((p) => p.id === productId);
-    if (!product || !isPortalVisible(product)) return fail(400, "Un producto del carrito ya no está disponible.", "product_unavailable");
-    const price = Number(product.price);
+    const fudoId = product?.fudo_id != null ? Number(product.fudo_id) : null;
+    const isDocena = docena !== null && fudoId !== null && fudoId === docena.docenaFudoId;
+    // La docena está oculta del portal (se pide solo empaquetada o con gustos), pero sí tiene que estar activa.
+    const visible = product ? (isDocena ? !isOff(product.is_active) : isPortalVisible(product)) : false;
+    if (!product || !visible) return fail(400, "Un producto del carrito ya no está disponible.", "product_unavailable");
+    const checked = validateLineOptions(
+      { productName: product.name, productFudoId: fudoId, isDocena, docenaUnits: docena?.docenaUnits ?? 0, options },
+      catalog,
+    );
+    if (!checked.ok) return fail(400, checked.message);
+    const price = Number(product.price) + checked.unitExtra;
     subtotal += price * qty;
     lines.push({
       productId,
@@ -100,6 +136,9 @@ export async function priceOrder(
       categoryId: product.category_id ?? null,
       productRate: product.points_per_100 === null ? null : Number(product.points_per_100),
       categoryRate: (product.category_id && categoryRate.get(product.category_id)) || null,
+      fudoProductId: fudoId,
+      ...(checked.options.length > 0 ? { options: checked.options.map((o) => ({ ...o, productId: looseByOption.get(o.option_id) ?? null })) } : {}),
+      units: qty * (isDocena ? docena.docenaUnits : 1),
     });
   }
 
@@ -176,7 +215,10 @@ export interface OrderLine {
   productId: string;
   name: string;
   qty: number;
+  /** Precio unitario con las opciones incluidas. */
   price: number;
+  fudoProductId?: number | null;
+  options?: ResolvedOption[];
 }
 
 /**
@@ -223,8 +265,10 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
     ok: true,
     value: {
       clientId: input.clientId,
-      itemsDesc: buildItemsDesc(lines),
-      lines: lines.map(({ productId, name, qty, price }) => ({ productId, name, qty, price })),
+      itemsDesc: buildItemsDesc(lines.map((l) => (l.options?.length ? { ...l, name: `${l.name} (${describeOptions(l.options)})` } : l))),
+      lines: lines.map(({ productId, name, qty, price, fudoProductId, options }) => ({
+        productId, name, qty, price, fudoProductId, ...(options ? { options } : {}),
+      })),
       total,
       fee,
       pointsEarned: pointsForLines(lines),
@@ -237,6 +281,28 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
     },
   };
 }
+
+/** Fila de `order_items`. `fudo_options` es compatible con `LineOption` del gateway y suma el grupo y la opción de Fudo. */
+const orderItemRow = (orderId: string) => (l: OrderLine) => ({
+  order_id: orderId,
+  product_id: l.productId,
+  name: l.name,
+  qty: l.qty,
+  unit_price: l.price,
+  fudo_product_id: l.fudoProductId ?? null,
+  fudo_options: l.options?.length
+    ? l.options.map((o) => ({
+        qty: o.qty,
+        name: o.name,
+        product_id: o.productId ?? null,
+        fudo_product_id: o.product_fudo_id,
+        group_fudo_id: o.group_fudo_id,
+        option_fudo_id: o.option_id,
+        price: o.price,
+      }))
+    : null,
+  is_combo: false,
+});
 
 /** Inserta el pedido de una cotización, cobra los puntos del canje y deja la bitácora. */
 export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recibidos"): Promise<Outcome<OrderRow>> {
@@ -267,7 +333,7 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
   if (lines.length > 0) {
     const { data: itemRows, error: itemsError } = await db
       .from("order_items")
-      .insert(lines.map((l) => ({ order_id: order.id, product_id: l.productId, name: l.name, qty: l.qty, unit_price: l.price })))
+      .insert(lines.map(orderItemRow(order.id)))
       .select();
     if (!itemsError) await mirrorTableRows("orders.items", "order_items", itemRows ?? []);
     // Sin líneas no se puede mandar a Fudo: queda en la bitácora para cargarlo a mano.

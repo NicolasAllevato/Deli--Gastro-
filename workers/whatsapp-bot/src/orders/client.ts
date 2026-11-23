@@ -73,7 +73,7 @@ export interface CommonFields {
 }
 
 export interface QuoteRequest extends CommonFields {
-  items: { product_id: string; qty: number }[];
+  items: { product_id: string; qty: number; options?: { option_id: number; qty: number }[] }[];
   address: string;
 }
 

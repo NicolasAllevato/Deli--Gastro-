@@ -76,12 +76,14 @@ export interface ActionError {
 }
 
 export interface QuoteInput {
-  items: Array<{ product_id: string; qty: number }>;
+  /** `options`: sabores de la docena o bebidas de una promo; `qty` por unidad de la línea. */
+  items: Array<{ product_id: string; qty: number; options?: Array<{ option_id: number; qty: number }> }>;
   address: string;
 }
 
 export interface QuoteResult {
-  lines: Array<{ name: string; qty: number; price: number }>;
+  /** `price` es el unitario con las opciones incluidas; `options` (por unidad) solo si la línea las lleva. */
+  lines: Array<{ name: string; qty: number; price: number; options?: Array<{ name: string; qty: number }> }>;
   subtotal: number;
   delivery_fee: number;
   total: number;
@@ -218,16 +220,20 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   // La dirección del pedido lleva el piso/depto para el repartidor.
   const deliveryAddress = (extra ? `${place.label} — ${extra}` : place.label).slice(0, 200);
 
-  const items = input.items.map((i) => ({ productId: i.product_id, qty: i.qty }));
+  const items = input.items.map((i) => ({ productId: i.product_id, qty: i.qty, ...(i.options?.length ? { options: i.options } : {}) }));
   const priced = await priceOrder(db, items, { address: place.label, lat: place.lat, lng: place.lng });
   if (!priced.ok) return failure(priced);
 
   const { lines, subtotal, fee, minOrder, zone } = priced.value;
   // Topes de quien llama: se evalúan ANTES de guardar, así un borrador fuera de tope nunca existe.
-  const rejected = deps.checkQuote?.({ units: lines.reduce((sum, l) => sum + l.qty, 0), total: subtotal + fee });
+  const rejected = deps.checkQuote?.({ units: lines.reduce((sum, l) => sum + l.units, 0), total: subtotal + fee });
   if (rejected) return rejected;
   const draft: OrderDraft = {
-    items: lines.map((l) => ({ productId: l.productId, qty: l.qty })),
+    items: lines.map((l) => ({
+      productId: l.productId,
+      qty: l.qty,
+      ...(l.options?.length ? { options: l.options.map((o) => ({ option_id: o.option_id, qty: o.qty })) } : {}),
+    })),
     address: deliveryAddress,
     lat: place.lat,
     lng: place.lng,
@@ -242,7 +248,12 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   if (!saved) return { error: "No pude guardar la cotización. Probá de nuevo.", code: "unavailable" };
 
   return {
-    lines: lines.map((l) => ({ name: l.name, qty: l.qty, price: l.price })),
+    lines: lines.map((l) => ({
+      name: l.name,
+      qty: l.qty,
+      price: l.price,
+      ...(l.options?.length ? { options: l.options.map((o) => ({ name: o.name, qty: o.qty })) } : {}),
+    })),
     subtotal,
     delivery_fee: fee,
     total: subtotal + fee,

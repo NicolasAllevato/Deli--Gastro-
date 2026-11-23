@@ -1,19 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-const { parseFudoProducts, parseFudoCategories, planCatalogSync } = await import("../workers/fudo-gateway/src/catalog.ts");
+const { parseFudoProducts, parseFudoCategories, parseFudoModifierGroups, parseFudoModifiers, planModifierSync, planCatalogSync } = await import("../workers/fudo-gateway/src/catalog.ts");
 
 describe("parseFudoProducts", () => {
   it("lee la forma plana { products: [...] }", () => {
     const out = parseFudoProducts({ products: [{ id: 7, name: " Muzza ", price: 9500, active: true, productCategoryId: 3 }] });
-    assert.deepEqual(out, [{ id: 7, name: "Muzza", price: 9500, active: true, categoryId: 3, sellAlone: null }]);
+    assert.deepEqual(out, [{ id: 7, name: "Muzza", price: 9500, active: true, categoryId: 3, sellAlone: null, modifierGroupIds: [] }]);
   });
 
   it("lee la forma JSON:API con atributos y relaciones", () => {
     const out = parseFudoProducts({
       data: [{ id: "12", attributes: { name: "Fugazzeta", price: "11000.50", active: false, sellAlone: true }, relationships: { productCategory: { data: { id: "4" } } } }],
     });
-    assert.deepEqual(out, [{ id: 12, name: "Fugazzeta", price: 11000.5, active: false, categoryId: 4, sellAlone: true }]);
+    assert.deepEqual(out, [{ id: 12, name: "Fugazzeta", price: 11000.5, active: false, categoryId: 4, sellAlone: true, modifierGroupIds: [] }]);
   });
 
   it("tolera precio ausente o inválido (price null) y descarta entradas sin id o nombre", () => {
@@ -211,3 +211,106 @@ describe("planCatalogSync", () => {
   });
 });
 
+
+const GROUP_1 = {
+  type: "ProductModifiersGroup", id: "1",
+  attributes: { name: "Elige tu Relleno", minQuantity: null, maxQuantity: 1.0, required: false, kind: "EXTRAS", priceAggregation: "SUM" },
+  relationships: { productModifiers: { data: [{ id: "1" }, { id: "2" }] } },
+};
+const GROUP_3 = {
+  type: "ProductModifiersGroup", id: "3",
+  attributes: { name: "bebidas promo", minQuantity: 2.0, maxQuantity: 2.0, required: false, kind: "EXTRAS", priceAggregation: "SUM" },
+  relationships: { productModifiers: { data: [] } },
+};
+const modifier = (id: string, productId: string, groupId: string, price = 0) => ({
+  type: "ProductModifier", id,
+  attributes: { name: null, price },
+  relationships: { product: { data: { type: "Product", id: productId } }, productModifiersGroup: { data: { type: "ProductModifiersGroup", id: groupId } } },
+});
+const apiProduct = (id: string, name: string, price: number, groups: string[] = []) => ({
+  type: "Product", id,
+  attributes: { name, price, active: true, sellAlone: true },
+  relationships: { productModifiersGroups: { data: groups.map((g) => ({ id: g })) } },
+});
+
+describe("parseFudoModifierGroups / parseFudoModifiers", () => {
+  it("lee grupos JSON:API", () => {
+    assert.deepEqual(parseFudoModifierGroups({ data: [GROUP_1, GROUP_3, { id: "x" }] }), [
+      { id: 1, name: "Elige tu Relleno", minQty: null, maxQty: 1, required: false, kind: "EXTRAS" },
+      { id: 3, name: "bebidas promo", minQty: 2, maxQty: 2, required: false, kind: "EXTRAS" },
+    ]);
+  });
+
+  it("lee modificadores con el producto y el grupo de las relaciones", () => {
+    assert.deepEqual(parseFudoModifiers({ data: [modifier("1", "193", "1"), { id: "9", attributes: {} }] }), [
+      { id: 1, groupId: 1, productId: 193, name: null, price: 0 },
+    ]);
+  });
+
+  it("parseFudoProducts lee los grupos del producto", () => {
+    const [p, q] = parseFudoProducts({ data: [apiProduct("212", "Docena de empanadas", 36000, ["1", "1"]), apiProduct("5", "Muzza", 9000)] });
+    assert.deepEqual(p.modifierGroupIds, [1]);
+    assert.deepEqual(q.modifierGroupIds, []);
+  });
+});
+
+describe("planModifierSync", () => {
+  const products = parseFudoProducts({ data: [apiProduct("193", "Carne cortada a cuchillo", 0), apiProduct("192", "Jamón y queso", 0), apiProduct("212", "Docena de empanadas", 36000, ["1"])] });
+  const plan = planModifierSync({
+    groups: parseFudoModifierGroups({ data: [GROUP_1] }),
+    modifiers: parseFudoModifiers({ data: [modifier("1", "193", "1"), modifier("2", "192", "1"), modifier("3", "999", "1"), modifier("4", "193", "77")] }),
+    products,
+  });
+
+  it("nombra cada opción por su producto sabor y descarta las huérfanas", () => {
+    assert.deepEqual(plan.options.map((o) => [o.fudo_id, o.name, o.position, o.price_cents, o.is_active]), [
+      [1, "Carne cortada a cuchillo", 0, 0, 1],
+      [2, "Jamón y queso", 1, 0, 1],
+    ]);
+  });
+
+  it("el precio sale del modificador, no del producto sabor", () => {
+    const priced = planModifierSync({
+      groups: parseFudoModifierGroups({ data: [GROUP_1] }),
+      modifiers: parseFudoModifiers({ data: [modifier("5", "300", "1", 0), modifier("6", "301", "1", 1250.5)] }),
+      products: parseFudoProducts({ data: [apiProduct("300", "Pepsi (Lata)", 3500), apiProduct("301", "Sabor", 0)] }),
+    });
+    assert.deepEqual(priced.options.map((o) => [o.name, o.price_cents]), [["Pepsi (Lata)", 0], ["Sabor", 125050]]);
+  });
+
+  it("arma el grupo y el vínculo producto-grupo", () => {
+    assert.deepEqual(plan.groups, [{ fudo_id: 1, name: "Elige tu Relleno", min_qty: null, max_qty: 1, required: 0, kind: "EXTRAS" }]);
+    assert.deepEqual(plan.productGroups, [{ product_fudo_id: 212, group_fudo_id: 1 }]);
+  });
+});
+
+describe("planCatalogSync con grupos de modificadores", () => {
+  const categories = [{ id: 9, name: "Productos genéricos" }, { id: 10, name: "Opciones" }];
+  const fudoProducts = [
+    { id: 212, name: "Docena de empanadas", price: 36000, active: true, categoryId: 9, sellAlone: false, modifierGroupIds: [1] },
+    { id: 300, name: "Pepsi (Lata)", price: 2000, active: true, categoryId: 9, sellAlone: true, modifierGroupIds: [] },
+    { id: 193, name: "Carne cortada a cuchillo", price: 0, active: true, categoryId: 10, sellAlone: false, modifierGroupIds: [] },
+    { id: 301, name: "Sabor con precio", price: 500, active: true, categoryId: 10, sellAlone: false, modifierGroupIds: [] },
+  ];
+
+  it("importa la docena (con grupos) y no el resto de lo excluido", () => {
+    const plan = planCatalogSync({ fudoCategories: categories, fudoProducts, categories: [], products: [] });
+    assert.deepEqual(plan.productInserts.map((p) => p.fudo_id), [212]);
+    assert.equal(plan.productInserts[0].category_fudo_id, null);
+    assert.deepEqual(plan.categoryInserts, []);
+  });
+
+  it("no la importa si está inactiva o sin precio", () => {
+    for (const patch of [{ active: false }, { price: 0 }, { price: null }]) {
+      const plan = planCatalogSync({ fudoCategories: categories, fudoProducts: [{ ...fudoProducts[0], ...patch }, fudoProducts[1]], categories: [], products: [] });
+      assert.deepEqual(plan.productInserts.map((p) => p.fudo_id), []);
+    }
+  });
+
+  it("es idempotente: la docena ya importada no genera actualización", () => {
+    const existing = [{ id: "p1", name: "Docena de empanadas", fudo_id: 212, price: 36000, is_active: true, category_id: null }];
+    const plan = planCatalogSync({ fudoCategories: categories, fudoProducts, categories: [], products: existing });
+    assert.deepEqual(plan.productUpdates, []);
+    assert.deepEqual(plan.deactivate, []);
+  });
+});

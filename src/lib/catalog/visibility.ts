@@ -9,7 +9,7 @@ export interface PortalVisibilityFields {
   show_in_portal?: boolean | number | null;
 }
 
-const isOff = (v: boolean | number | null | undefined): boolean => v === false || v === 0;
+export const isOff = (v: boolean | number | null | undefined): boolean => v === false || v === 0;
 
 export function isPortalVisible(p: PortalVisibilityFields): boolean {
   return !isOff(p.is_active) && !isOff(p.show_in_portal);

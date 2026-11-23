@@ -3,7 +3,7 @@ import { toolsForIntent } from "../guardrails.ts";
 import type { BotConversation, BotRepo, KnowledgeEntry } from "../repo/types.ts";
 import { openNow, type BotSettings } from "./settings.ts";
 import { promosForModel, promosForToday } from "./greeting.ts";
-import { cartaCategoryForModel, cartaMenuForModel, categoryForModel, menuForModel, MENU_RESULT_CHARS } from "./menu.ts";
+import { cartaCategoryForModel, cartaMenuForModel, categoryForModel, menuForModel, MENU_RESULT_CHARS, optionGroupsForModel } from "./menu.ts";
 import { LEGACY_STATUS, money, runCancel, runConfirm, runQuote, runStatus, type OrderTurn } from "../orders/flow.ts";
 
 const EMPTY = { type: "object", properties: {} };
@@ -68,10 +68,24 @@ export function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
       name: "quote_order",
       description:
         "Cotiza el pedido con productos (product_id de get_menu y cantidad) y la dirección de entrega. El resumen con el total se le envía solo al cliente. " +
-        "Las empanadas se venden sueltas Y por docena y se pueden pedir en cualquier cantidad: para N empanadas mandá el producto de la docena (el llamado exactamente «empanadas», categoría Platos Principales, 12 unidades; NO uses «12 empanadas» de Promos) × floor(N/12) y el producto del gusto × (N mod 12) en la MISMA cotización (ej. 31 = 2 docenas + 7 sueltas). Nunca rechaces ni cambies la cantidad porque no sea múltiplo de 12; si la herramienta falla, corregí los argumentos y volvé a llamarla sin inventar un motivo. Si el cliente pide docena(s) sin decir los gustos, ANTES de cotizar preguntale de qué gustos quiere cada docena (se puede mezclar); al confirmar, pasá esos gustos en notes de confirm_order (ej. «Docena 1: 6 carne, 6 jamón y queso»).",
+        "EMPANADAS: mandá CADA GUSTO como el producto suelto de ese gusto (ej. «Empanada de carne…») con la CANTIDAD TOTAL que pidió el cliente de ese gusto: «31 de carne» = UNA línea de Empanada de carne con qty 31; «20 de carne y 11 de jamón y queso» = DOS líneas (qty 20 y qty 11). El sistema arma las docenas solo y cobra el precio de docena: NO uses productos «docena», «12 empanadas» ni «empanadas» y NO hagas cuentas de docenas. " +
+        "La suma de las cantidades de las líneas de empanadas debe ser EXACTAMENTE lo que pidió el cliente: no sumes ni inventes unidades; si dudás de la cantidad, repreguntá. " +
+        "Si piden «una docena» o «media docena» sin decir los gustos, ANTES de cotizar preguntales los gustos (12 o 6 en total, se puede mezclar); si el gusto es ambiguo (carne suave vs carne picante), preguntalo. " +
+        "Nunca rechaces ni cambies la cantidad porque no sea múltiplo de 12; si la herramienta falla, corregí los argumentos y volvé a llamarla sin inventar un motivo. " +
+        "Productos con `grupos` en get_menu (ej. promos con bebida): preguntale al cliente qué elige y mandá `options` en esa línea con los option_id de `grupos_de_opciones` y su qty (por unidad de la línea; respetá el min/max del grupo).",
       parameters: OBJECT_NO_EXTRA(
         {
-          items: { type: "array", minItems: 1, maxItems: 30, items: OBJECT_NO_EXTRA({ product_id: { type: "string" }, qty: { type: "integer", minimum: 1, maximum: 100 } }, ["product_id", "qty"]) },
+          items: {
+            type: "array", minItems: 1, maxItems: 30,
+            items: OBJECT_NO_EXTRA(
+              {
+                product_id: { type: "string" },
+                qty: { type: "integer", minimum: 1, maximum: 100 },
+                options: { type: "array", maxItems: 30, items: OBJECT_NO_EXTRA({ option_id: { type: "integer" }, qty: { type: "integer", minimum: 1, maximum: 100 } }, ["option_id", "qty"]) },
+              },
+              ["product_id", "qty"],
+            ),
+          },
           address: { type: "string", minLength: 5, maxLength: 200 },
         },
         ["items", "address"],
@@ -112,12 +126,22 @@ function allTools(
   return [
     {
       name: "get_menu",
-      description: "Menú COMPLETO agrupado por categoría (con emoji): cada producto con nombre y price_text (ya formateado, copialo tal cual)" + (order ? " y su id (product_id para quote_order)." : "."),
+      description:
+        "Menú COMPLETO agrupado por categoría (con emoji): cada producto con nombre y price_text (ya formateado, copialo tal cual)" +
+        (order
+          ? " y su id (product_id para quote_order). Los productos que exigen elegir opciones (ej. una promo con 2 bebidas) traen `grupos` (ids) y `grupos_de_opciones` explica cada grupo: nombre, min/max a elegir y sus opciones con id (option_id para quote_order)."
+          : "."),
       parameters: EMPTY,
       maxResultChars: MENU_RESULT_CHARS,
       run: async () => {
-        const [menu, carta] = await Promise.all([repo.menu(), repo.carta ? repo.carta() : Promise.resolve([])]);
-        return carta.length > 0 ? cartaMenuForModel(carta, menu, Boolean(order)) : menuForModel(menu, Boolean(order));
+        const [menu, carta, groups] = await Promise.all([
+          repo.menu(),
+          repo.carta ? repo.carta() : Promise.resolve([]),
+          order && repo.optionGroups ? repo.optionGroups().catch(() => ({})) : Promise.resolve({}),
+        ]);
+        const base = carta.length > 0 ? cartaMenuForModel(carta, menu, Boolean(order)) : menuForModel(menu, Boolean(order));
+        const grupos = order ? optionGroupsForModel(menu, groups) : {};
+        return Object.keys(grupos).length > 0 ? { ...base, grupos_de_opciones: grupos } : base;
       },
     },
     {

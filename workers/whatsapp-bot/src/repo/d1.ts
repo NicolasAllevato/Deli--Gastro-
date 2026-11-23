@@ -9,7 +9,7 @@ import { fromCents } from "../../../../src/lib/data/money.ts";
 import { TAKEOVER_KEY, takeoverMinutesFromConfig } from "../bot/settings.ts";
 import { phoneTail, resolveMatches } from "./phone-tail.ts";
 import { buildFtsQuery, likePatterns, NO_QUERY_LIMIT, SEARCH_LIMIT } from "./kb-search.ts";
-import type { BotRepo, CartaSeccion, ComplaintCategory, ComplaintTicket, HistoryItem, InboundRepo, KnowledgeEntry } from "./types.ts";
+import type { BotRepo, CartaSeccion, ComplaintCategory, ComplaintTicket, HistoryItem, InboundRepo, KnowledgeEntry, OptionGroup } from "./types.ts";
 
 type Log = (message: string, detail?: unknown) => void;
 type ConvRow = { id: string; client_phone: string; silenced: number };
@@ -69,6 +69,47 @@ async function cartaD1(db: SqlDatabase): Promise<CartaSeccion[]> {
     if (productos.some((p) => p !== null)) s.items = [...s.items, { nombre: r.nombre, nota: r.nota, productos }];
   }
   return out.filter((s) => s.items.length > 0);
+}
+
+/** Ids de grupos de opciones por producto del menú (products.fudo_id → fudo_product_groups). Sin las tablas o con error: sin grupos. */
+async function productGroupsD1(db: SqlDatabase): Promise<Map<string, number[]>> {
+  const out = new Map<string, number[]>();
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT p.id AS id, g.group_fudo_id AS gid
+         FROM products p JOIN fudo_product_groups g ON g.product_fudo_id = p.fudo_id
+         WHERE p.is_active = 1 AND COALESCE(p.show_in_portal, 1) = 1 ORDER BY p.id, g.group_fudo_id LIMIT ?`,
+      )
+      .bind(MENU_LIMIT * 4)
+      .all<{ id: string; gid: number }>();
+    for (const r of results) out.set(r.id, [...(out.get(r.id) ?? []), r.gid]);
+  } catch {
+    return new Map();
+  }
+  return out;
+}
+
+/** Grupos con opciones activas (id de opción = fudo_modifier_options.fudo_id). Sin las tablas o con error: sin grupos. */
+async function optionGroupsD1(db: SqlDatabase): Promise<Record<string, OptionGroup>> {
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT g.fudo_id AS gid, g.name AS gname, g.min_qty, g.max_qty, o.fudo_id AS oid, o.name AS oname
+         FROM fudo_modifier_groups g JOIN fudo_modifier_options o ON o.group_fudo_id = g.fudo_id AND o.is_active = 1
+         ORDER BY g.fudo_id, o.position, o.name LIMIT ?`,
+      )
+      .bind(MENU_LIMIT * 4)
+      .all<{ gid: number; gname: string; min_qty: number | null; max_qty: number | null; oid: number; oname: string }>();
+    const out: Record<string, OptionGroup> = {};
+    for (const r of results) {
+      const g = out[String(r.gid)] ?? { name: r.gname, min: r.min_qty, max: r.max_qty, options: [] };
+      out[String(r.gid)] = { ...g, options: [...g.options, { id: r.oid, name: r.oname }] };
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 /** Conversaciones con los mismos 10 dígitos, la de actividad más reciente primero. */
@@ -238,7 +279,15 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
         )
         .bind(MENU_LIMIT)
         .all<{ id: string; name: string; description: string | null; price_cents: number; category: string | null }>();
-      return results.map((r) => ({ id: r.id, name: r.name, description: r.description, price: fromCents(r.price_cents), category: r.category ?? "Otros" }));
+      const groupsByProduct = await productGroupsD1(db);
+      return results.map((r) => {
+        const groups = groupsByProduct.get(r.id);
+        return { id: r.id, name: r.name, description: r.description, price: fromCents(r.price_cents), category: r.category ?? "Otros", ...(groups ? { groups } : {}) };
+      });
+    },
+
+    async optionGroups() {
+      return optionGroupsD1(db);
     },
 
     async carta() {

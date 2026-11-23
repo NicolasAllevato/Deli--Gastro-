@@ -153,7 +153,8 @@ describe("config en D1 (tanda 1)", () => {
     await assert.rejects(catalog.listConfig(db, actors.ana), ForbiddenError);
     await assert.rejects(catalog.setConfigMany(db, actors.ana, [{ key: "k", value: 1 }]), ForbiddenError);
     await catalog.setConfigMany(db, actors.admin, [{ key: "a", value: { x: 1 } }, { key: "store", value: { open: false } }]);
-    const rows = await catalog.listConfig(db, actors.admin);
+    // La migración 0023 siembra la config de la docena: este test mira solo las claves que escribe.
+    const rows = (await catalog.listConfig(db, actors.admin)).filter((r) => r.key === "a" || r.key === "store");
     assert.deepEqual(rows, [{ key: "a", value: { x: 1 } }, { key: "store", value: { open: false } }]);
   });
 });

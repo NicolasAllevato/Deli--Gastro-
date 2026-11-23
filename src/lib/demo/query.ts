@@ -49,7 +49,7 @@ const KNOWN_TABLES: readonly TableName[] = [
   "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
   "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
   "payment_intents", "order_items", "courier_locations", "couriers",
-  "fudo_product_map", "fudo_payment_map",
+  "fudo_product_map", "fudo_payment_map", "fudo_modifier_groups", "fudo_modifier_options", "fudo_product_groups",
 ];
 
 /** Tablas cuya clave primaria es `key` (no `id`). */
@@ -89,6 +89,9 @@ const DEFAULTS: Record<TableName, () => Row> = {
   couriers: () => ({ active: true }),
   fudo_product_map: () => ({ fudo_name: null, updated_at: nowIso() }),
   fudo_payment_map: () => ({ updated_at: nowIso() }),
+  fudo_modifier_groups: () => ({ min_qty: null, max_qty: null, required: 0, kind: null }),
+  fudo_modifier_options: () => ({ price_cents: 0, position: 0, is_active: true }),
+  fudo_product_groups: () => ({}),
   delivery_zones: () => ({ fee: 0, min_order: 0, sort_order: 0, is_active: true }),
   integration_secrets: () => ({}),
   wa_conversations: () => ({

@@ -7,6 +7,8 @@ import { readFileSync, readdirSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SqlDatabase, SqlStatement, SqlValue, SqlRunResult } from "../../src/lib/data/sql.ts";
 import type { OrdersClient, OrderResponse } from "../../workers/whatsapp-bot/src/orders/client.ts";
+import { buildPackContext, packEmpanadas } from "../../src/lib/agent/empanadas.ts";
+import type { ModifierOptionRow } from "../../src/lib/order-options.ts";
 
 const ROOT = new URL("../../", import.meta.url);
 
@@ -68,10 +70,27 @@ const MENU: Array<[string, string, number]> = [
   ["Empanadas", "Empanada de carne cortada a cuchillo", 1800],
   ["Empanadas", "Empanada de jamón y queso", 1700],
   ["Empanadas", "Empanada de humita", 1700],
-  ["Platos Principales", "empanadas", 35000],
+  ["Productos genéricos", "Docena de empanadas", 36000],
   ["Bebidas", "Coca-Cola 1,5 L", 3500],
   ["Bebidas", "Agua sin gas 500 ml", 1500],
   ["Postres", "Flan casero con dulce de leche", 3800],
+  ["Empanadas", "Empanada de pollo", 1700],
+  ["Empanadas", "Empanada de verdura", 1700],
+  ["Empanadas", "Empanada de cebolla y queso", 1700],
+  ["Empanadas", "Empanada de roquefort y jamón", 1800],
+];
+
+/** id Fudo de la docena (oculta del menú) y de las 7 empanadas sueltas, igual que en producción. */
+const DOCENA_NAME = "Docena de empanadas";
+const DOCENA_FUDO_ID = 212;
+const GUSTOS: ReadonlyArray<{ product: string; fudoId: number; optionId: number; saborFudoId: number; label: string }> = [
+  { product: "Empanada de carne cortada a cuchillo", fudoId: 31, optionId: 2, saborFudoId: 200, label: "Carne cortada a cuchillo" },
+  { product: "Empanada de pollo", fudoId: 32, optionId: 4, saborFudoId: 197, label: "Pollo" },
+  { product: "Empanada de jamón y queso", fudoId: 33, optionId: 1, saborFudoId: 193, label: "Jamón y queso" },
+  { product: "Empanada de verdura", fudoId: 34, optionId: 5, saborFudoId: 202, label: "Verdura" },
+  { product: "Empanada de cebolla y queso", fudoId: 35, optionId: 3, saborFudoId: 201, label: "Cebolla y queso" },
+  { product: "Empanada de roquefort y jamón", fudoId: 97, optionId: 6, saborFudoId: 192, label: "Roquefort y jamón" },
+  { product: "Empanada de humita", fudoId: 98, optionId: 7, saborFudoId: 196, label: "Humita" },
 ];
 
 /** UUID fijo por posición del menú de ejemplo (formato que exige el bot). */
@@ -107,12 +126,38 @@ export function seedWorld(db: { raw: DatabaseSync }): void {
         .run(simProductId(MENU.findIndex(([, n]) => n === name)), cats.get(cat) ?? null, name, price * 100);
     }
   }
+  seedDocena(db);
   const zones = db.raw.prepare("SELECT count(*) AS n FROM delivery_zones").get() as { n: number };
   if (zones.n === 0) {
     const z = db.raw.prepare("INSERT INTO delivery_zones (id, name, shape, fee_cents, min_order_cents, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)");
     z.run("sim-z-1", "Palermo", JSON.stringify({ type: "circle", lat: -34.58, lng: -58.42, radius_km: 2 }), 150000, 1000000, 0);
     z.run("sim-z-2", "Belgrano", JSON.stringify({ type: "circle", lat: -34.56, lng: -58.45, radius_km: 2 }), 200000, 1200000, 1);
   }
+}
+
+/**
+ * Docena de empanadas oculta (fudo 212), fudo_id de las 7 sueltas, grupo «Elige tu Relleno» con sus opciones y la config
+ * del empaquetado. Idempotente; también arregla una base vieja del simulador (producto «empanadas»).
+ */
+function seedDocena(db: { raw: DatabaseSync }): void {
+  const { raw } = db;
+  const cat = (raw.prepare("SELECT id FROM categories WHERE name = 'Productos genéricos'").get() as { id: string } | undefined)?.id ?? "sim-cat-generico";
+  raw.prepare("INSERT OR IGNORE INTO categories (id, name) VALUES (?, 'Productos genéricos')").run(cat);
+  const legacy = raw.prepare("SELECT id FROM products WHERE name = 'empanadas' AND fudo_id IS NULL").get() as { id: string } | undefined;
+  if (legacy) raw.prepare("UPDATE products SET name = ?, price_cents = ?, category_id = ? WHERE id = ?").run(DOCENA_NAME, 3_600_000, cat, legacy.id);
+  const docena = raw.prepare("SELECT id FROM products WHERE name = ?").get(DOCENA_NAME) as { id: string } | undefined;
+  if (docena) raw.prepare("UPDATE products SET fudo_id = ?, show_in_portal = 0, is_active = 1 WHERE id = ?").run(DOCENA_FUDO_ID, docena.id);
+  for (const g of GUSTOS) raw.prepare("UPDATE products SET fudo_id = ? WHERE name = ? AND fudo_id IS NULL").run(g.fudoId, g.product);
+
+  raw.prepare("INSERT OR IGNORE INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (1, 'Elige tu Relleno', 12, 12, 1)").run();
+  for (const g of GUSTOS) {
+    raw.prepare("INSERT OR IGNORE INTO fudo_modifier_options (fudo_id, group_fudo_id, product_fudo_id, name, price_cents, position) VALUES (?, 1, ?, ?, 0, ?)").run(g.optionId, g.saborFudoId, g.label, g.optionId);
+  }
+  raw.prepare("INSERT OR IGNORE INTO fudo_product_groups (product_fudo_id, group_fudo_id) VALUES (?, 1)").run(DOCENA_FUDO_ID);
+  const cfg = raw.prepare("INSERT INTO global_config (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+  cfg.run("docena_fudo_id", JSON.stringify(DOCENA_FUDO_ID));
+  cfg.run("docena_unidades", JSON.stringify(12));
+  cfg.run("empanada_gustos_map", JSON.stringify(Object.fromEntries(GUSTOS.map((g) => [String(g.fudoId), g.saborFudoId]))));
 }
 
 /** Menú en texto para el juez (precio real, para detectar precios inventados). */
@@ -131,6 +176,20 @@ export interface FakeOrders extends OrdersClient {
   seedPaid(conversationId: string, minutesAgo: number): void;
   /** El cliente simulado dice que pagó: si había un link de pago pendiente, Mercado Pago lo acredita (como en la vida real). */
   markPaid(conversationId: string): boolean;
+}
+
+/** Contexto de empaquetado de docenas desde la base del simulador (null si falta la config o la docena). */
+function packContextFor(db: { raw: DatabaseSync }) {
+  const config: Record<string, unknown> = {};
+  for (const r of db.raw.prepare("SELECT key, value FROM global_config WHERE key IN ('docena_fudo_id', 'docena_unidades', 'empanada_gustos_map')").all() as { key: string; value: string }[]) config[r.key] = JSON.parse(r.value);
+  // Mismos tres valores que lee el servidor (docenaConfigFrom); acá siempre vienen ya parseados de la semilla.
+  if (typeof config.docena_fudo_id !== "number" || typeof config.docena_unidades !== "number" || typeof config.empanada_gustos_map !== "object" || config.empanada_gustos_map === null) return null;
+  const cfg = { docenaFudoId: config.docena_fudo_id, docenaUnits: config.docena_unidades, gustosMap: config.empanada_gustos_map as Record<string, number> };
+  const products = db.raw.prepare("SELECT id, fudo_id, is_active FROM products WHERE fudo_id IS NOT NULL").all() as { id: string; fudo_id: number; is_active: number }[];
+  const docenaOptions = db.raw
+    .prepare("SELECT o.fudo_id, o.group_fudo_id, o.product_fudo_id, o.name, o.price_cents, o.position, o.is_active FROM fudo_modifier_options o JOIN fudo_product_groups g ON g.group_fudo_id = o.group_fudo_id WHERE g.product_fudo_id = ?")
+    .all(cfg.docenaFudoId) as unknown as ModifierOptionRow[];
+  return buildPackContext({ ...cfg, products, docenaOptions });
 }
 
 /**
@@ -153,13 +212,19 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
     },
     async quote(body) {
       if (!body.address?.trim()) return fail(400, "invalid", "Falta la dirección.");
+      // Igual que el servidor real: las empanadas sueltas se empaquetan en docenas antes de cotizar.
+      const items = packEmpanadas(body.items ?? [], packContextFor(db));
       const lines = [];
-      for (const item of body.items ?? []) {
+      for (const item of items) {
         const p = db.raw.prepare("SELECT name, price_cents FROM products WHERE id = ? AND is_active = 1").get(item.product_id) as
           | { name: string; price_cents: number }
           | undefined;
         if (!p) return fail(409, "product_unavailable", "Ese producto no está disponible.");
-        lines.push({ name: p.name, qty: item.qty, price: p.price_cents / 100 });
+        const options = (item.options ?? []).map((o) => ({
+          name: (db.raw.prepare("SELECT name FROM fudo_modifier_options WHERE fudo_id = ?").get(o.option_id) as { name: string } | undefined)?.name ?? "opción " + o.option_id,
+          qty: o.qty,
+        }));
+        lines.push({ name: p.name, qty: item.qty, price: p.price_cents / 100, ...(options.length ? { options } : {}) });
       }
       if (lines.length === 0) return fail(400, "invalid", "El pedido está vacío.");
       const subtotal = lines.reduce((s, l) => s + l.qty * l.price, 0);

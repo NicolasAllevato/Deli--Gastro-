@@ -61,6 +61,16 @@ export interface MenuItem {
   description: string | null;
   price: number;
   category: string;
+  /** Ids de los grupos de opciones del producto (fudo_modifier_groups.fudo_id): promos con bebida a elegir, etc. */
+  groups?: number[];
+}
+
+/** Grupo de opciones (modificadores de Fudo): lo que el cliente elige dentro de un producto. `id` = fudo_modifier_options.fudo_id. */
+export interface OptionGroup {
+  name: string;
+  min: number | null;
+  max: number | null;
+  options: { id: number; name: string }[];
 }
 
 /** Línea de la carta estructurada (carta impresa): precio vivo del producto vinculado; null = sin precio. */
@@ -150,6 +160,8 @@ export interface BotRepo {
   inboundCounts(conversationId: string): Promise<{ lastMinute: number; lastDay: number }>;
   config(): Promise<Record<string, unknown>>;
   menu(): Promise<MenuItem[]>;
+  /** Grupos de opciones por id con sus opciones activas (orden por posición). Opcional: sin las tablas o en tests viejos no hay grupos. */
+  optionGroups?(): Promise<Record<string, OptionGroup>>;
   /** Carta estructurada activa (vacía = no hay, se usa el menú por categorías). Opcional como `knowledge`. */
   carta?(): Promise<CartaSeccion[]>;
   zones(): Promise<ZoneInfo[]>;

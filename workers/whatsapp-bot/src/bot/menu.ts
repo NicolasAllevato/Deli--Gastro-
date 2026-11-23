@@ -4,7 +4,7 @@
  * y el corte a 6000 caracteres dejaba solo la primera categoría (Bebidas): el bot decía que no había pizzas.
  * Todo puro: lo usan las herramientas y los tests.
  */
-import type { CartaSeccion, MenuItem } from "../repo/types.ts";
+import type { CartaSeccion, MenuItem, OptionGroup } from "../repo/types.ts";
 import { money } from "../orders/flow.ts";
 
 /** Tope del resultado de get_menu: entra un menú de ~150 productos con margen. */
@@ -18,6 +18,8 @@ export interface CompactItem {
   name: string;
   price_text: string;
   desc?: string;
+  /** Ids de grupos de opciones a elegir (ver `grupos_de_opciones` de get_menu). Solo con pedidos encendidos. */
+  grupos?: number[];
 }
 
 export interface CompactCategory {
@@ -49,7 +51,7 @@ function compactItem(p: MenuItem, withIds: boolean, withDesc: boolean): CompactI
   const item: CompactItem = { name: p.name.trim(), price_text: money(p.price) };
   const desc = withDesc ? (p.description ?? "").replace(/\s+/g, " ").trim() : "";
   if (desc) item.desc = desc.length > SHORT_DESC ? `${desc.slice(0, SHORT_DESC - 1)}…` : desc;
-  return withIds ? { id: p.id, ...item } : item;
+  return withIds ? { id: p.id, ...item, ...(p.groups?.length ? { grupos: p.groups } : {}) } : item;
 }
 
 /** Agrupa por categoría respetando el orden del catálogo (ya viene ordenado por categoría y nombre). */
@@ -61,6 +63,26 @@ export function groupMenu(menu: readonly MenuItem[], withIds: boolean, withDesc 
     groups.set(key, { ...group, productos: [...group.productos, compactItem(p, withIds, withDesc)] });
   }
   return [...groups.values()];
+}
+
+export interface OptionGroupForModel {
+  nombre: string;
+  min: number | null;
+  max: number | null;
+  opciones: { id: number; nombre: string }[];
+}
+
+/**
+ * Diccionario compacto `grupos_de_opciones` para get_menu: solo los grupos que algún producto del menú usa y que tienen opciones.
+ * Vacío = no se agrega nada al resultado.
+ */
+export function optionGroupsForModel(menu: readonly MenuItem[], groups: Readonly<Record<string, OptionGroup>>): Record<string, OptionGroupForModel> {
+  const used = new Set(menu.flatMap((p) => p.groups ?? []).map(String));
+  const out: Record<string, OptionGroupForModel> = {};
+  for (const [id, g] of Object.entries(groups)) {
+    if (used.has(id) && g.options.length > 0) out[id] = { nombre: g.name, min: g.min, max: g.max, opciones: g.options.map((o) => ({ id: o.id, nombre: o.name })) };
+  }
+  return out;
 }
 
 /** Resultado de get_menu: todas las categorías con todos sus productos (id solo con pedidos encendidos). */

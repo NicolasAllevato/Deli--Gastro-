@@ -31,7 +31,10 @@ export type TableName =
   | "courier_locations"
   | "couriers"
   | "fudo_product_map"
-  | "fudo_payment_map";
+  | "fudo_payment_map"
+  | "fudo_modifier_groups"
+  | "fudo_modifier_options"
+  | "fudo_product_groups";
 
 export type Tables = Record<TableName, Row[]>;
 
@@ -679,5 +682,6 @@ export function buildSeed(): Tables {
     integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [], payment_intents: [], order_items: [], courier_locations: [],
     couriers: demoCouriers(),
     fudo_product_map: fudoProductMap, fudo_payment_map: fudoPaymentMap,
+    fudo_modifier_groups: [], fudo_modifier_options: [], fudo_product_groups: [],
   };
 }

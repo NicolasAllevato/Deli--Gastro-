@@ -44,7 +44,13 @@ function defineTool<S extends z.ZodType>(spec: {
 
 const quoteSchema = z.object({
   items: z
-    .array(z.object({ product_id: z.string().min(1), qty: z.number().int().min(1).max(100) }))
+    .array(
+      z.object({
+        product_id: z.string().min(1),
+        qty: z.number().int().min(1).max(100),
+        options: z.array(z.object({ option_id: z.number().int().positive(), qty: z.number().int().min(1).max(100) })).min(1).max(40).optional(),
+      }),
+    )
     .min(1)
     .max(30),
   address: z.string().trim().min(5).max(200),
@@ -123,7 +129,15 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
             type: "array",
             items: {
               type: "object",
-              properties: { product_id: { type: "string" }, qty: { type: "integer", minimum: 1 } },
+              properties: {
+                product_id: { type: "string" },
+                qty: { type: "integer", minimum: 1 },
+                options: {
+                  type: "array",
+                  description: "Opciones a elegir (gustos de la docena, bebidas de una promo). qty por unidad.",
+                  items: { type: "object", properties: { option_id: { type: "integer" }, qty: { type: "integer", minimum: 1 } }, required: ["option_id", "qty"] },
+                },
+              },
               required: ["product_id", "qty"],
             },
           },

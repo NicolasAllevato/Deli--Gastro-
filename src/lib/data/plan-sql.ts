@@ -57,6 +57,7 @@ export const APP_TABLES = new Set([
   "categories", "products", "clients", "points_ledger", "orders", "order_items", "order_events", "reviews",
   "payment_intents", "delivery_zones", "reports_daily", "couriers", "courier_locations", "courier_shifts",
   "global_config", "legal_acceptances", "fudo_product_map", "fudo_payment_map", "fudo_sync_runs",
+  "fudo_modifier_groups", "fudo_modifier_options", "fudo_product_groups",
   "wa_conversations", "wa_messages", "wa_campaigns",
 ]);
 
