@@ -24,4 +24,15 @@ export const GUIONES_REALES: readonly Guion[] = [
       esperaAlguna: [/¿Te lo enviamos a Avenida Rivadavia 5000, piso 3 dto B\?/i],
       noDebe: [/necesito la direcci[oó]n/i, /Army|Argentina|Comuna|C1424CER/i, /Resumen de tu pedido/i] },
   ] },
+  { numero: 73, titulo: "[real] Pedido en efectivo confirmado y cancelado: cancelación normal, sin «ya estaba pagado» ni derivar", datosReales: true, pasos: [
+    { dice: "quiero 1 porción de muzza para Juramento 1500, Belgrano", esperaAlguna: [/efectivo o Mercado Pago/i] },
+    { dice: "efectivo", esperaAlguna: [/Respond[eé] S[IÍ]/i] },
+    { dice: "sí", esperaAlguna: [/confirmado/i] },
+    { dice: "quiero cancelar el pedido", esperaAlguna: [/Confirm[aá]s/i] },
+    { dice: "sí", esperaAlguna: [/cancelamos tu pedido/i], noDebe: [/pagado/i, /direcci[oó]n correcta/i, /persona del local/i] },
+  ] },
+  { numero: 74, titulo: "[real] La nota del cliente llega al resumen: «Nota: PRUEBA - no preparar»", datosReales: true, pasos: [
+    { dice: "quiero 1 porción de muzza para Juramento 1500, Belgrano. Nota: PRUEBA - no preparar",
+      esperaAlguna: [/Nota: PRUEBA - no preparar/i, /efectivo o Mercado Pago/i] },
+  ] },
 ];

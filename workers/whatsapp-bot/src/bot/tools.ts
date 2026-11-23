@@ -74,6 +74,7 @@ export function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
         "CANTIDADES EN PALABRAS: «una docena y media de carne» = 18 de carne (UNA línea qty 18), «media docena de carne» = 6, «dos docenas y media» = 30: ya dijo el gusto, cotizá directo sin preguntar si quiere mezclar. " +
         "Nunca menciones al cliente límites o topes internos de las herramientas (cantidad máxima por línea, etc.) ni le pidas partir el pedido: cotizá la cantidad pedida y, si el sistema no la acepta, el resumen o el mensaje del sistema le explica. " +
         "Nunca rechaces ni cambies la cantidad porque no sea múltiplo de 12; si la herramienta falla, corregí los argumentos y volvé a llamarla sin inventar un motivo. " +
+        "INDICACIONES: si el cliente pidió algo para el pedido («sin cebolla», «tocar timbre», «nota: ...», «PRUEBA»), mandalo textual en `notes` (sin la palabra «nota:»); llega al local y el resumen lo muestra. No lo omitas ni lo pongas en la dirección. " +
         "Productos con `grupos` en get_menu (ej. promos con bebida): preguntale al cliente qué elige y mandá `options` en esa línea con los option_id de `grupos_de_opciones` y su qty (por unidad de la línea; respetá el min/max del grupo).",
       parameters: OBJECT_NO_EXTRA(
         {
@@ -89,6 +90,7 @@ export function orderTools(order: OrderTurn, guard?: AddressGuard): BotTool[] {
             ),
           },
           address: { type: "string", minLength: 5, maxLength: 200 },
+          notes: { type: "string", maxLength: 300 },
         },
         ["items", "address"],
       ),

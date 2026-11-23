@@ -239,7 +239,7 @@ export function menuText(db: { raw: DatabaseSync }): string {
 }
 
 /** Estado de un pedido simulado. `pagado` = ya pagado y en "Recibidos" (como un pedido real recién pagado). */
-type FakeState = "cotizado" | "esperando_pago" | "pagado" | "cancelado";
+type FakeState = "cotizado" | "esperando_pago" | "pagado" | "efectivo" | "cancelado";
 
 export interface FakeOrders extends OrdersClient {
   /** Siembra un pedido ya pagado hace `minutesAgo` minutos (escenario "ya pagué y quiero cancelar"). */
@@ -311,6 +311,7 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
         lines, subtotal, delivery_fee: coversAll ? 0 : recargo ? 3000 : 1500,
         total: coversAll ? 0 : subtotal + (recargo ? 3000 : 1500), ...(coversAll ? { credit_applied: subtotal } : {}),
         ...(recargo ? { free_zone_available: true } : {}), resolved_address: body.address.trim(),
+        ...(body.notes ? { notes: body.notes } : {}),
       });
     },
     async confirm(body) {
@@ -318,6 +319,11 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
       if (covered.has(body.conversationId)) {
         set(body.conversationId, "pagado");
         return ok({ order_code: "#SIM00057", total: 0, payment_method: body.payment_method });
+      }
+      // Efectivo: el servidor crea el pedido ya (Recibidos) y no hay ningún pago acreditado.
+      if (body.payment_method === "Efectivo") {
+        set(body.conversationId, "efectivo");
+        return ok({ order_code: "#SIM00058", total: null, payment_method: "Efectivo" });
       }
       set(body.conversationId, "esperando_pago");
       return ok({ awaiting_payment: true, payment_url: "https://mpago.la/simulacion", total: null });
@@ -328,10 +334,14 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
         set(body.conversationId, "cancelado");
         return ok({ note: "Se canceló el pago pendiente. No se cobró nada." });
       }
+      if (cur?.s === "efectivo") {
+        set(body.conversationId, "cancelado");
+        return ok({ paid: false });
+      }
       if (cur?.s === "pagado") {
         if (Date.now() - cur.at > 15 * 60_000) return fail(409, "rejected", "Pasaron más de 15 minutos: ya no se puede cancelar.");
         set(body.conversationId, "cancelado");
-        return ok({});
+        return ok({ paid: true });
       }
       if (cur?.s === "cancelado") return fail(409, "rejected", "El pedido ya está cancelado.");
       return fail(409, "rejected", "No encontré un pedido para cancelar.");
@@ -342,7 +352,7 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
       if (!cur || cur.s === "cotizado") return ok({ found: false });
       if (cur.s === "esperando_pago") return ok({ found: true, awaiting_payment: true, total: null, payment_url: "https://mpago.la/simulacion" });
       const minutes = Math.round((Date.now() - cur.at) / 60_000);
-      return ok({ found: true, order_code: "#SIM00001", status: cur.s === "pagado" ? "Recibidos" : "Cancelado", items: "pedido simulado", total: 15800, courier: null, minutes_since_order: minutes });
+      return ok({ found: true, order_code: "#SIM00001", status: cur.s === "pagado" || cur.s === "efectivo" ? "Recibidos" : "Cancelado", items: "pedido simulado", total: 15800, courier: null, minutes_since_order: minutes });
     },
   };
 }

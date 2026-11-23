@@ -320,9 +320,15 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
     ...surchargeLine(freeZone, fee),
     "",
     `Dirección: ${shortAddress(address, typedAddress)}`,
+    ...noteLine(data.notes),
     "",
     total === 0 && isNum(credit) && credit > 0 ? COVERED_PROMPT : PAYMENT_QUESTION,
   ].join("\n");
+}
+
+/** Indicaciones del cliente que el servidor guardó en el borrador: se muestran para que vea que quedaron. */
+export function noteLine(notes: unknown): string[] {
+  return typeof notes === "string" && notes.trim() ? [`Nota: ${oneLine(notes, 300)}`] : [];
 }
 
 /** Línea del saldo a favor: solo con el valor del servidor y si descuenta algo (el total ya viene rebajado). */
@@ -469,6 +475,7 @@ export function renderPaymentMessage(paymentUrl: string, total: number | null): 
 export const ORDER_REPLIES = {
   cancelled: "Listo, cancelamos tu pedido.",
   cancelledUnpaid: "Listo, cancelamos tu pedido 👍. No se cobró nada. Si querés, armamos otro cuando quieras.",
+  cancelledCash: "Listo, ya cancelamos tu pedido 👍",
   cancelledPaid: "Listo, ya cancelamos tu pedido 👍 Perdón por el lío. Como ya estaba pagado, te paso con una persona del local que te ayuda con el pago y, si querés, con un pedido nuevo a la dirección correcta.",
   noOrderHandoff: "No encontré un pedido en curso a tu nombre 😕. Te paso con una persona del local para que lo revise con vos.",
   draftDropped: "Listo, dejamos ese pedido sin confirmar: no se cobró nada. Si querés, armamos otro cuando quieras.",
@@ -620,6 +627,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 interface QuoteArgs {
   items: { product_id: string; qty: number; options?: { option_id: number; qty: number }[] }[];
   address: string;
+  notes?: string;
 }
 
 const MAX_LINE_OPTIONS = 30;
@@ -641,7 +649,7 @@ function parseLineOptions(value: unknown): { option_id: number; qty: number }[] 
 
 /** Esquema estricto: ni precios, ni totales, ni cliente, ni canje. */
 export function parseQuoteArgs(args: unknown): QuoteArgs | null {
-  if (!ownKeys(args, ["items", "address"]) || !Array.isArray(args.items) || typeof args.address !== "string") return null;
+  if (!ownKeys(args, ["items", "address", "notes"]) || !Array.isArray(args.items) || typeof args.address !== "string") return null;
   const address = args.address.trim();
   if (address.length < 5 || address.length > 200 || args.items.length < 1 || args.items.length > 30) return null;
   const items: QuoteArgs["items"] = [];
@@ -657,7 +665,10 @@ export function parseQuoteArgs(args: unknown): QuoteArgs | null {
     if (!options) return null;
     items.push({ product_id: id, qty, options });
   }
-  return { items, address };
+  if (args.notes === undefined) return { items, address };
+  if (typeof args.notes !== "string") return null;
+  const notes = args.notes.trim().slice(0, 300);
+  return notes ? { items, address, notes } : { items, address };
 }
 
 /** La dirección trae altura (cualquier dígito) o dice que no tiene («s/n», «sin número»). Piso y depto no reemplazan a la altura. */
@@ -779,13 +790,11 @@ export async function runCancel(t: OrderTurn, args: unknown): Promise<unknown> {
     }
     return fail(t, response, "cancel");
   }
-  // Con nota del servidor (pago pendiente cancelado): no se cobró nada. Sin nota: el pedido ya estaba pagado y la
-  // devolución la maneja una persona (el bot nunca promete reembolsos).
-  if (typeof response.data.note === "string") {
-    t.state.fixedReply = ORDER_REPLIES.cancelledUnpaid;
-    return { ok: true, note: "Ya se le avisó al cliente que el pedido quedó cancelado." };
-  }
-  return handOff(t, ORDER_REPLIES.cancelledPaid);
+  // Solo con un pago acreditado de verdad (paid === true) la devolución la maneja una persona (el bot nunca promete
+  // reembolsos). Pago pendiente cancelado: no se cobró nada. Efectivo o sin pago: cancelación normal, sin derivar.
+  if (response.data.paid === true) return handOff(t, ORDER_REPLIES.cancelledPaid);
+  t.state.fixedReply = typeof response.data.note === "string" ? ORDER_REPLIES.cancelledUnpaid : ORDER_REPLIES.cancelledCash;
+  return { ok: true, note: "Ya se le avisó al cliente que el pedido quedó cancelado." };
 }
 
 /** Estados de un pedido ya hecho que todavía se pueden cancelar desde el bot (el servidor igual lo valida). */

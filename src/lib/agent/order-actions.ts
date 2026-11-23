@@ -80,6 +80,8 @@ export interface QuoteInput {
   /** `options`: sabores de la docena o bebidas de una promo; `qty` por unidad de la línea. */
   items: Array<{ product_id: string; qty: number; options?: Array<{ option_id: number; qty: number }> }>;
   address: string;
+  /** Indicaciones del cliente (ya limpias, máx. 300): se guardan en el borrador y van a orders.notes. */
+  notes?: string;
 }
 
 export interface QuoteResult {
@@ -95,6 +97,8 @@ export interface QuoteResult {
   /** Hay zona de envío gratis y esta dirección paga recargo: el bot lo avisa en el resumen. */
   free_zone_available?: boolean;
   resolved_address: string;
+  /** Indicaciones del cliente tal como quedaron en el borrador; el resumen las muestra. */
+  notes?: string;
   /** Puntos que suma el cliente con este pedido: misma cuenta que al crearlo (`pointsForLines`). */
   points: number;
   note: string;
@@ -111,7 +115,8 @@ export type ConfirmResult =
   | { ok: true; awaiting_payment: true; payment_url: string; total: number; note: string }
   | { ok: true; order_code: string; total: number; payment_method: OrderPaymentMethod };
 
-export type CancelResult = ActionError | { ok: true; dry_run?: true; note?: string };
+/** `paid`: el pedido cancelado tenía un pago online acreditado (Mercado Pago aprobado); efectivo o sin pago = false. */
+export type CancelResult = ActionError | { ok: true; dry_run?: true; note?: string; paid?: boolean };
 
 export type OrderStatusResult =
   | { found: false }
@@ -249,6 +254,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     subtotal,
     minOrder,
     ...(creditApplied > 0 ? { creditApplied } : {}),
+    ...(input.notes ? { notes: input.notes.slice(0, 300) } : {}),
     quotedByMessageId: deps.messageId,
     quotedAt: clock(deps).toISOString(),
   };
@@ -270,6 +276,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     zone,
     ...(freeZoneAvailable && fee > 0 ? { free_zone_available: true } : {}),
     resolved_address: place.label,
+    ...(draft.notes ? { notes: draft.notes } : {}),
     points: pointsForLines(lines),
     note: "Mostrale el resumen y preguntale si confirma. No crees el pedido hasta su respuesta.",
   };
@@ -331,7 +338,7 @@ async function createFromDraft(
     items: draft.items,
     address: { address: draft.address, lat: draft.lat, lng: draft.lng },
     paymentMethod: input.payment_method,
-    notes: input.notes,
+    notes: input.notes || draft.notes,
     channel: "whatsapp" as const,
     actor: actorOf(deps),
     // Lo que el cliente aceptó: con el saldo a favor ya descontado. Si el saldo cambió, el total no coincide y se recotiza.
@@ -392,6 +399,11 @@ export async function orderStatus(deps: OrderActionDeps): Promise<OrderStatusRes
   };
 }
 
+async function hasApprovedPayment(db: OrderActionDeps["db"], orderId: string): Promise<boolean> {
+  const { data } = await db.from("payment_intents").select("id").eq("order_id", orderId).eq("status", "approved").limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
 export async function cancelOrder(deps: OrderActionDeps): Promise<CancelResult> {
   const { db } = deps;
   const conversation = await reloadConversation(deps);
@@ -407,6 +419,8 @@ export async function cancelOrder(deps: OrderActionDeps): Promise<CancelResult> 
   if (!order || !conversation.client_id) return { error: "No encontré un pedido para cancelar." };
   if (deps.dryRun) return { ok: true, dry_run: true, note: "Prueba: el pedido no se canceló." };
 
+  // Se mira ANTES de cancelar: al reembolsar, el pago pasa de "approved" a "refunded".
+  const paid = await hasApprovedPayment(db, order.id);
   const result = await cancelOrderForClient(db, order.id, conversation.client_id, actorOf(deps));
-  return result.ok ? { ok: true } : { error: result.message };
+  return result.ok ? { ok: true, paid } : { error: result.message };
 }
