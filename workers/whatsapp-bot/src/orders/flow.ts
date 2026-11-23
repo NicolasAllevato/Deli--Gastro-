@@ -469,7 +469,7 @@ export function isTransient(failure: OrderFailure): boolean {
     failure.status >= 500 || failure.status === 429 || failure.code === "unavailable";
 }
 
-/** Mensaje en español para cada rechazo del servidor (o falla de red). Nada de esto pasa la conversación a una persona. */
+/** Mensaje en español para cada rechazo del servidor (o falla de red). Solo arma el texto; `fail` decide si deriva. */
 export function errorReply(failure: OrderFailure, ctx: ErrorContext | string): string {
   const { appUrl, hours, op } = typeof ctx === "string" ? ({ appUrl: ctx } as ErrorContext) : ctx;
   const { code, kind } = failure;
@@ -547,6 +547,8 @@ async function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm
     return SENT;
   }
   const message = errorReply(response, { appUrl: t.appUrl, hours: t.hours, op });
+  // Pedido por encima del tope: el mensaje promete una persona, así que se deriva de verdad.
+  if (response.code === "limit_exceeded") return handOff(t, message);
   // Cancelar rechazado (ya en preparación, fuera de término, sin pedido): se explica y se deriva enseguida.
   if (op === "cancel" && (REASON_CODES.has(response.code) || response.status === 404)) {
     return handOff(t, message === ORDER_REPLIES.noOrder ? ORDER_REPLIES.noOrderHandoff : `${message} ${HANDOFF_SUFFIX}`);
