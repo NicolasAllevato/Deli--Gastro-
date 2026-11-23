@@ -14,7 +14,7 @@ import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
 import { asksSavedAddress, savedAddressAcceptedHint, buildResponderPrompt, closedTicketReply, isStaleBotMessage, namesAddress, offerSavedAddress, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
-import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
+import { deniesExistingProduct, hoursMismatch, zoneMismatch } from "./draft-checks.ts";
 import { isPureGreeting, promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu, completePizzaReply, namesProducts } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
@@ -61,10 +61,22 @@ const QUANTITY_WORDS = /\b(?:una?|unos|unas|dos|tres|cuatro|cinco|seis|siete|och
 /** Mensajes más largos que esto traen algo más que «hola quiero pedir»: no se pierden detrás del saludo. */
 const OPENING_MAX_WORDS = 6;
 
-/** El primer mensaje trae una pregunta o un pedido con contenido (no solo un saludo ni «quiero pedir»): se saluda Y se responde. */
+/** Palabras de saludo y de «quiero pedir» a secas: sin ellas, lo que queda es el contenido del mensaje (producto, promo, cantidad). */
+const OPENING_FILLER = new Set([
+  "hola", "holaa", "holi", "buenas", "buen", "buena", "buenos", "dia", "dias", "tarde", "tardes", "noche", "noches", "que", "tal", "hey",
+  "quiero", "quisiera", "queria", "necesito", "me", "gustaria", "voy", "vamos", "a", "hacer", "realizar", "armar", "un", "el", "pedido", "pedir", "ordenar", "encargar",
+  "algo", "por", "favor", "porfa", "porfavor", "si", "ok", "dale",
+]);
+
+/**
+ * El primer mensaje trae una pregunta o un pedido con contenido (no solo un saludo ni «quiero pedir»): se saluda Y se responde.
+ * «hola, quiero la promo Baila Ahora» tiene contenido aunque sea corto: lo que sobra al sacar saludo y relleno son 2 palabras o más.
+ */
 export function openingHasContent(text: string): boolean {
   if (isPureGreeting(text)) return false;
-  return /[?¿]/.test(text) || text.trim().split(/\s+/).length > OPENING_MAX_WORDS;
+  if (/[?¿]/.test(text) || text.trim().split(/\s+/).length > OPENING_MAX_WORDS) return true;
+  const words = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9ñ]+/).filter(Boolean);
+  return words.filter((w) => !OPENING_FILLER.has(w)).length >= 2;
 }
 
 /** Pregunta por su saldo a favor (crédito en pesos por reclamos). No confunde con tarjeta de crédito ni con el saldo de Mercado Pago. */
@@ -75,7 +87,7 @@ export function asksCredit(text: string): boolean {
 }
 
 /** Pide hablar con una persona del local (no es solo una pregunta por su saldo). */
-const asksPerson = (text: string): boolean => /(persona|humano|encargad[oa]|due[ñn][oa]|gerente|alguien|atienda)/i.test(text.normalize("NFD").replace(/[̀-ͯ]/g, ""));
+const asksPerson = (text: string): boolean => /\b(persona|humano|encargad[oa]|due[ñn][oa]|gerente|alguien|atienda)\b/i.test(text.normalize("NFD").replace(/[̀-ͯ]/g, ""));
 
 /** El saldo a favor se descuenta solo del próximo pedido; el bot no consulta montos, así que no los inventa. */
 export const CREDIT_REPLY = "Si tenés saldo a favor, se descuenta solo: lo vas a ver aplicado en el resumen de tu próximo pedido 😊 ¿Querés que armemos uno?";
@@ -232,7 +244,7 @@ export function historyMessages(items: { direction: "in" | "out"; body: string }
 }
 
 /** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
-export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "limits" | "menu_dump" | "blocked";
+export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "limits" | "menu_dump" | "denied_product" | "blocked";
 
 const RETRY_HINT: Record<DraftIssue, string> = {
   empty: "Tu respuesta anterior quedó vacía. Respondé ahora al cliente en 1 a 3 líneas.",
@@ -244,6 +256,7 @@ const RETRY_HINT: Record<DraftIssue, string> = {
   promise: "No prometas hacerlo después ni digas «un momento»: hacelo ahora con las herramientas o decí qué dato falta.",
   limits: "Nunca menciones límites ni topes internos (máximo por línea, partir o dividir el pedido): no existen para el cliente. Llamá quote_order YA con la cantidad total que pidió.",
   menu_dump: "El cliente nombró productos concretos para pedir: NO le muestres la carta ni sus categorías. Si algún producto es ambiguo (varias variantes), preguntá solo por ese en UNA línea con las opciones más cercanas y decile que el resto ya lo tenés anotado; si todo está claro, llamá quote_order YA.",
+  denied_product: "Dijiste que no tenemos un producto que SÍ está en el menú. Antes de negar nada, llamá get_categoria con lo que el cliente pidió (o get_menu), revisá TODAS las categorías (los gustos de empanadas pueden estar como «Empanada Humita») y respondé con lo que devuelve la herramienta: nombre y price_text.",
   blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
 };
 
@@ -270,6 +283,7 @@ export const SAFE_FALLBACK: Record<DraftIssue, string> = {
   zone: CONSULT_LOCAL_REPLY,
   promise: "Cualquier cosa que necesites, escribime y te ayudo 😊",
   limits: ORDER_REPLIES.startOver,
+  denied_product: CONSULT_LOCAL_REPLY,
   menu_dump: "Quiero armarte bien el pedido: ¿me confirmás de cada producto cuál querés (sabor, tamaño o presentación)? Lo que ya me dijiste lo tengo anotado.",
   blocked: REPLIES.failure,
 };
@@ -293,6 +307,8 @@ export async function draftIssue(
     const allowed = [...menu.map((p) => p.price), ...zones.flatMap((z) => [z.fee, z.minOrder]), ...(settings.deliveryCostPerKm ? [settings.deliveryCostPerKm] : [])];
     if (unknownPrices(draft, allowed).length > 0) return "price";
   }
+  // «No tenemos X» con X en el menú: el modelo contestó sin consultar las herramientas (o las leyó mal).
+  if (/\bno\s+(?:tenemos|tengo|hay|trabajamos|hacemos|vendemos|manejamos|contamos|preparamos|elaboramos)\b/i.test(draft) && deniesExistingProduct(draft, await deps.repo.menu().catch(() => []))) return "denied_product";
   if (hoursMismatch(draft, settings.hours)) return "hours";
   // Solo se leen las zonas si el texto habla de envíos o distancias. Sin zonas ni radio cargados no hay con qué comparar: no marca nada.
   if (/\b(?:enviamos|entregamos|repartimos|mandamos|llegamos|delivery|env[ií]os?|km)\b/i.test(draft)) {
@@ -392,7 +408,7 @@ ${h}`).join("");
       ? `${RETRY_HINT.promise} Si quiere pedir, llamá quote_order YA con los product_id de get_menu y la dirección "${knownAddress}".`
       : RETRY_HINT[issue];
     // Pedido que el modelo contestó con texto (resumen propio o promesa): el reintento lo obliga a usar las herramientas.
-    const retryNeedsTool = (issue === "template" || issue === "promise" || issue === "limits") && (intent === "pedido_nuevo" || intent === "pedido_datos") && tools.some((x) => x.name === "quote_order");
+    const retryNeedsTool = issue === "denied_product" || (issue === "template" || issue === "promise" || issue === "limits") && (intent === "pedido_nuevo" || intent === "pedido_datos") && tools.some((x) => x.name === "quote_order");
     if (attempt === 0) draft = await ask(hint, retryNeedsTool);
   }
 

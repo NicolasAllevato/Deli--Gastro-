@@ -6,6 +6,7 @@
 import type { Paso } from "./simulacro-reglas.ts";
 import { GUIONES_ADVERSARIALES } from "./guiones-adversariales.ts";
 import { GUIONES_SESION } from "./guiones-sesion.ts";
+import { GUIONES_REALES } from "./guiones-reales.ts";
 
 export interface Guion {
   numero: number;
@@ -17,7 +18,15 @@ export interface Guion {
   /** Charla vieja ya guardada (hace N minutos), para probar que una sesión nueva no la arrastra. */
   previo?: { de: "cliente" | "bot"; texto: string; haceMin: number }[];
   /** Cliente registrado: ficha con nombre y pedidos ya entregados con su dirección (hace N días). */
-  registrado?: { nombre: string; direccionFicha?: string; pedidos: { direccion: string; haceDias: number }[] };
+  registrado?: {
+    nombre: string;
+    direccionFicha?: string;
+    pedidos: { direccion: string; haceDias: number; estado?: string }[];
+    /** Como el cliente de prueba de producción: teléfono con «+54 9 11 …» y `phone_digits` NULL, ficha vinculada a la conversación. */
+    formatoProduccion?: boolean;
+  };
+  /** Solo corre con `--datos-reales` (menú y carta de producción); sin esa opción se saltea. */
+  datosReales?: boolean;
   pasos: Paso[];
 }
 
@@ -211,4 +220,4 @@ const GUIONES_BASE: readonly Guion[] = [
   },
 ];
 
-export const GUIONES: readonly Guion[] = [...GUIONES_BASE, ...GUIONES_ADVERSARIALES, ...GUIONES_SESION];
+export const GUIONES: readonly Guion[] = [...GUIONES_BASE, ...GUIONES_ADVERSARIALES, ...GUIONES_SESION, ...GUIONES_REALES];

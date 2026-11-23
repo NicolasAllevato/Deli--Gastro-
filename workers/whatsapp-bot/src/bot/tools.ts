@@ -204,9 +204,22 @@ function allTools(
     },
     {
       name: "get_promos_hoy",
-      description: "Promos de HOY del catálogo (según el día y la hora de Argentina), con price_text ya formateado. Usala si preguntan qué promos hay.",
+      description:
+        "Promos de HOY del catálogo (según el día y la hora de Argentina), con price_text ya formateado. Usala si preguntan qué promos hay." +
+        (order ? " Con pedidos: cada promo trae su product_id y, si exige elegir opciones (ej. 2 gaseosas), `grupos` y `grupos_de_opciones` (mismo formato que get_menu): preguntale al cliente qué elige antes de cotizar." : ""),
       parameters: EMPTY,
-      run: async () => ({ promos: promosForModel(promosForToday(await repo.menu(), new Date(now()))) }),
+      run: async () => {
+        const promos = promosForToday(await repo.menu(), new Date(now()));
+        const base = promosForModel(promos);
+        if (!order) return { promos: base };
+        // Con pedidos, la promo trae lo mismo que en get_menu (id y grupos de opciones): el modelo no cotiza «sin elegir las bebidas».
+        const groups = repo.optionGroups ? await repo.optionGroups().catch(() => ({})) : {};
+        const grupos = optionGroupsForModel(promos, groups);
+        return {
+          promos: base.map((p, i) => ({ ...p, product_id: promos[i].id, ...(promos[i].groups?.length ? { grupos: promos[i].groups } : {}) })),
+          ...(Object.keys(grupos).length > 0 ? { grupos_de_opciones: grupos } : {}),
+        };
+      },
     },
     {
       name: "order_status",

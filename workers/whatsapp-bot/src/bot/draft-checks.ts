@@ -121,3 +121,35 @@ function promisesFartherThan(draft: string, radiusKm: number): boolean {
   }
   return false;
 }
+
+// ---------- productos que existen ----------
+
+/** «No tenemos / no hay / no trabajamos …» y lo que sigue hasta una coma, punto o «pero». */
+const NEGATED_OFFER = /\bno\s+(?:tenemos|tengo|hay|trabajamos|hacemos|vendemos|manejamos|contamos con|preparamos|elaboramos)\s+([^,.;:!?\n()]+)/g;
+const OFFER_TAIL = /\s(?:pero|aunque|sino|por ahora|por el momento|hoy|ahora)\b.*$/;
+/** Palabras que no identifican un producto (artículos, relleno y términos genéricos del menú). */
+const NOT_A_PRODUCT_WORD = new Set([
+  "de", "del", "la", "el", "los", "las", "un", "una", "unos", "unas", "algo", "mas", "nada", "para", "por", "con", "sin", "ese", "esa", "eso",
+  "ningun", "ninguna", "disponible", "disponibles", "stock", "opcion", "opciones", "producto", "productos", "promo", "promos", "combo", "combos", "menu",
+]);
+
+const wordsOf = (text: string): string[] => fold(text).split(/[^a-z0-9ñ]+/).filter(Boolean);
+const stemOf = (word: string): string => (word.length > 3 ? word.replace(/(?:es|s)$/, "") : word);
+/** La palabra del menú es la misma del cliente, en singular o plural. */
+const sameWord = (menuWord: string, stem: string): boolean => menuWord === stem || menuWord === `${stem}s` || menuWord === `${stem}es`;
+
+/**
+ * Si el borrador afirma «no tenemos X» y X es un producto ACTIVO del menú (todas las palabras de X están en su nombre,
+ * en singular o plural), devuelve el nombre del producto; si no, null. «No tenemos empanadas de humita» contradice
+ * «Empanada Humita». Las frases genéricas («no hay promos») y lo que no está en el menú («no tenemos pastas») no marcan nada.
+ */
+export function deniesExistingProduct(draft: string, menu: readonly { name: string }[]): string | null {
+  const products = menu.map((p) => ({ name: p.name, words: wordsOf(p.name) }));
+  for (const m of fold(draft).matchAll(NEGATED_OFFER)) {
+    const stems = wordsOf((m[1] ?? "").replace(OFFER_TAIL, "")).filter((w) => w.length >= 3 && !NOT_A_PRODUCT_WORD.has(w)).map(stemOf);
+    if (stems.length === 0) continue;
+    const hit = products.find((p) => stems.every((s) => p.words.some((w) => sameWord(w, s))));
+    if (hit) return hit.name;
+  }
+  return null;
+}
