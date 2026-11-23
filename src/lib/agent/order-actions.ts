@@ -3,6 +3,7 @@ import type { Database, Json } from "@/types/database";
 import { isDemoMode } from "@/lib/demo/mode";
 import { geocodeAddress, type GeocodeResult } from "@/lib/geocode";
 import { minutesSince, pointsForLines, type PAYMENT_METHODS } from "@/lib/orders";
+import { availableCredit } from "@/lib/credit-server";
 import { cancelOrderForClient, createDeliveryOrder, priceOrder } from "@/lib/orders-create";
 import { getGateway, type PaymentGateway } from "@/lib/payments/gateway";
 import { cancelPendingIntent, latestPendingIntent, startOnlinePayment } from "@/lib/payments/intents";
@@ -86,6 +87,9 @@ export interface QuoteResult {
   lines: Array<{ name: string; qty: number; price: number; options?: Array<{ name: string; qty: number }> }>;
   subtotal: number;
   delivery_fee: number;
+  /** Saldo a favor (pesos) que se descuenta de este pedido; 0 si no tiene. `total` ya lo trae restado. */
+  credit_applied: number;
+  /** Lo que paga el cliente: subtotal + envío − saldo a favor. */
   total: number;
   zone: unknown;
   resolved_address: string;
@@ -228,6 +232,8 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   // Topes de quien llama: se evalúan ANTES de guardar, así un borrador fuera de tope nunca existe.
   const rejected = deps.checkQuote?.({ units: lines.reduce((sum, l) => sum + l.units, 0), total: subtotal + fee });
   if (rejected) return rejected;
+  // El saldo a favor (menos lo reservado en pagos pendientes) paga parte del pedido, envío incluido.
+  const creditApplied = conversation.client_id ? Math.min(await availableCredit(db, conversation.client_id), subtotal + fee) : 0;
   const draft: OrderDraft = {
     items: lines.map((l) => ({
       productId: l.productId,
@@ -240,6 +246,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     fee,
     subtotal,
     minOrder,
+    ...(creditApplied > 0 ? { creditApplied } : {}),
     quotedByMessageId: deps.messageId,
     quotedAt: clock(deps).toISOString(),
   };
@@ -256,7 +263,8 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     })),
     subtotal,
     delivery_fee: fee,
-    total: subtotal + fee,
+    credit_applied: creditApplied,
+    total: subtotal + fee - creditApplied,
     zone,
     resolved_address: place.label,
     points: pointsForLines(lines),
@@ -323,7 +331,8 @@ async function createFromDraft(
     notes: input.notes,
     channel: "whatsapp" as const,
     actor: actorOf(deps),
-    expectedTotal: draft.subtotal + draft.fee,
+    // Lo que el cliente aceptó: con el saldo a favor ya descontado. Si el saldo cambió, el total no coincide y se recotiza.
+    expectedTotal: draft.subtotal + draft.fee - (draft.creditApplied ?? 0),
   };
 
   // Mercado Pago: no se crea el pedido, se abre el pago y se le pasa el link al cliente.
@@ -333,6 +342,10 @@ async function createFromDraft(
       ? await startOnlinePayment(db, gateway, order)
       : ({ ok: false, message: "El pago con Mercado Pago todavía no está habilitado. Ofrecé efectivo o tarjeta." } as const);
     if (!started.ok) return failure(started);
+    // El saldo a favor cubrió todo: no hay link de pago, el pedido ya está creado.
+    if (started.value.order) {
+      return { ok: true, order_code: `#${started.value.order.id.slice(0, 8).toUpperCase()}`, total: 0, payment_method: input.payment_method };
+    }
     return {
       ok: true,
       awaiting_payment: true,

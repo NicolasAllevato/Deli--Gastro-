@@ -1,11 +1,12 @@
 /**
  * Agente de reclamos: con el ticket, el pedido vinculado y el historial del cliente, sugiere al local un diagnóstico,
- * una resolución (disculpa / reenvío / puntos / descuento) y un borrador del mensaje al cliente.
+ * una resolución (disculpa / reenvío / puntos / saldo a favor en pesos) y un borrador del mensaje al cliente.
  * OpenAI gpt-4o-mini por fetch (mismo patrón que src/lib/agent/openai.ts), salida JSON validada con zod y topes
  * de compensación de global_config. Nunca decide solo: el local revisa, edita y resuelve.
  */
 import { z } from "zod";
 import { CATEGORIA_LABEL, esConsulta, type Categoria } from "./categoria.ts";
+import { descuentoASaldoPesos } from "./saldo.ts";
 
 /** Respuesta del agente (y de la API) cuando el ticket es una consulta sin respuesta y no un reclamo. */
 export const ES_CONSULTA_ERROR = "Es una consulta, no un reclamo: no lleva sugerencia de compensación.";
@@ -13,11 +14,12 @@ export const ES_CONSULTA_ERROR = "Es una consulta, no un reclamo: no lleva suger
 export const AGENTE_MODEL = "gpt-4o-mini";
 export const AGENTE_TIMEOUT_MS = 20_000;
 export const DEFAULT_MAX_PUNTOS = 500;
-export const DEFAULT_MAX_DESCUENTO_PCT = 20;
+export { DEFAULT_MAX_SALDO } from "./saldo.ts";
 
 export interface Topes {
   maxPuntos: number;
-  maxDescuentoPct: number;
+  /** Tope del saldo a favor que sugiere el agente, en pesos. */
+  maxSaldo: number;
 }
 
 export interface ContextoAgente {
@@ -49,7 +51,7 @@ export const sugerenciaSchema = z
     diagnostico: z.string().trim().min(1).max(600),
     resolucion: z
       .object({
-        tipo: z.enum(["disculpa", "reenvio", "puntos", "descuento"]),
+        tipo: z.enum(["disculpa", "reenvio", "puntos", "saldo", "descuento"]),
         valor: z.number().int().positive().nullable().optional(),
         motivo: z.string().trim().min(1).max(400),
       })
@@ -63,19 +65,19 @@ export const AGENTE_SYSTEM = `Sos el asistente interno de atención de reclamos 
 Analizás UN reclamo y le sugerís al encargado cómo resolverlo. No hablás con el cliente: el encargado revisa y decide.
 
 Respondé SOLO un objeto JSON con esta forma exacta:
-{"diagnostico": "...", "resolucion": {"tipo": "disculpa|reenvio|puntos|descuento", "valor": número o null, "motivo": "..."}, "mensaje": "..."}
+{"diagnostico": "...", "resolucion": {"tipo": "disculpa|reenvio|puntos|saldo", "valor": número o null, "motivo": "..."}, "mensaje": "..."}
 
 Reglas:
 - diagnostico: 1 a 3 oraciones con qué pasó según los datos (pedido, demora real, estado, historial). Si falta información, decilo.
-- resolucion.tipo: "disculpa" (sin compensación), "reenvio" (mandar de nuevo lo que faltó o llegó mal), "puntos" (valor = puntos de fidelidad) o "descuento" (valor = % de descuento en el próximo pedido).
-- valor: entero solo para puntos o descuento; null en los otros. Puntos como máximo {{MAX_PUNTOS}}; descuento como máximo {{MAX_DESCUENTO}}%. Proporcional a la gravedad: un reclamo leve no lleva compensación grande.
+- resolucion.tipo: "disculpa" (sin compensación), "reenvio" (mandar de nuevo lo que faltó o llegó mal), "puntos" (valor = puntos de fidelidad) o "saldo" (valor = pesos de saldo a favor, que se descuentan en la próxima compra). No uses porcentajes de descuento: sugerí saldo en pesos.
+- valor: entero solo para puntos o saldo; null en los otros. Puntos como máximo {{MAX_PUNTOS}}; saldo como máximo {{MAX_SALDO}} pesos. Proporcional a la gravedad: un reclamo leve no lleva compensación grande.
 - Si el cliente reclamó varias veces antes, tenelo en cuenta (cliente valioso o reclamos repetidos sin fundamento).
 - resolucion.motivo: por qué recomendás eso, en una oración.
 - mensaje: borrador para el cliente por WhatsApp, en español rioplatense, cálido y breve (2 a 4 líneas), con el número de reclamo, sin prometer nada distinto de la resolución sugerida, sin datos personales ni links.
 - No inventes datos que no estén en el reclamo.`;
 
 export function systemPrompt(topes: Topes): string {
-  return AGENTE_SYSTEM.replace("{{MAX_PUNTOS}}", String(topes.maxPuntos)).replace("{{MAX_DESCUENTO}}", String(topes.maxDescuentoPct));
+  return AGENTE_SYSTEM.replace("{{MAX_PUNTOS}}", String(topes.maxPuntos)).replace("{{MAX_SALDO}}", String(topes.maxSaldo));
 }
 
 /** Datos del reclamo para el modelo. El texto del cliente va marcado como dato, no como instrucción. */
@@ -112,13 +114,18 @@ export class AgenteError extends Error {
 }
 
 /** Valida la salida y la ajusta a los topes: un valor fuera de rango se recorta, uno faltante se descarta a disculpa. */
-export function normalizarSugerencia(raw: unknown, topes: Topes): Sugerencia {
+export function normalizarSugerencia(raw: unknown, topes: Topes, pedidoTotal: number | null = null): Sugerencia {
   const parsed = sugerenciaSchema.safeParse(raw);
   if (!parsed.success) throw new AgenteError("La sugerencia no tiene el formato esperado.");
-  const s = parsed.data;
+  let s = parsed.data;
+  // Un descuento % (salida vieja o rebelde del modelo) se convierte en pesos sobre el total del pedido vinculado.
+  if (s.resolucion.tipo === "descuento") {
+    const pesos = pedidoTotal !== null ? descuentoASaldoPesos(Math.round(pedidoTotal * 100), s.resolucion.valor ?? 0) : 0;
+    s = { ...s, resolucion: { ...s.resolucion, tipo: "saldo", valor: pesos > 0 ? pesos : null } };
+  }
   const { tipo } = s.resolucion;
-  if (tipo === "puntos" || tipo === "descuento") {
-    const tope = tipo === "puntos" ? topes.maxPuntos : topes.maxDescuentoPct;
+  if (tipo === "puntos" || tipo === "saldo") {
+    const tope = tipo === "puntos" ? topes.maxPuntos : topes.maxSaldo;
     const valor = s.resolucion.valor ?? 0;
     if (valor <= 0 || tope <= 0) return { ...s, resolucion: { tipo: "disculpa", valor: null, motivo: s.resolucion.motivo } };
     return { ...s, resolucion: { ...s.resolucion, valor: Math.min(valor, tope) } };
@@ -168,7 +175,7 @@ export async function sugerirResolucion(c: ContextoAgente, deps: AgenteDeps): Pr
   } catch {
     throw new AgenteError("La sugerencia no es JSON válido.");
   }
-  return normalizarSugerencia(raw, c.topes);
+  return normalizarSugerencia(raw, c.topes, c.pedido?.total ?? null);
 }
 
 /* ------------------------------------------------------------ orquestación */
@@ -213,7 +220,7 @@ export function contextoDesde(d: DatosAgente): ContextoAgente {
         compensacion: r.compensacion_tipo ? `${r.compensacion_tipo} ${r.compensacion_valor ?? ""}`.trim() : null,
       })),
     },
-    topes: { maxPuntos: d.config.maxPuntos, maxDescuentoPct: d.config.maxDescuentoPct },
+    topes: { maxPuntos: d.config.maxPuntos, maxSaldo: d.config.maxSaldo },
   };
 }
 

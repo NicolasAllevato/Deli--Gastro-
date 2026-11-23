@@ -35,8 +35,9 @@ class Builder implements PromiseLike<QueryResult> {
   }
   insert(payload: unknown): this { this.plan.action = "insert"; this.plan.payload = payload; return this; }
   update(payload: unknown): this { this.plan.action = "update"; this.plan.payload = payload; return this; }
-  upsert(payload: unknown, opts?: { onConflict?: string }): this {
+  upsert(payload: unknown, opts?: { onConflict?: string; ignoreDuplicates?: boolean }): this {
     this.plan.action = "upsert"; this.plan.payload = payload; this.plan.onConflict = opts?.onConflict ?? "";
+    if (opts?.ignoreDuplicates) this.plan.ignoreDuplicates = true;
     return this;
   }
   delete(): this { this.plan.action = "delete"; return this; }

@@ -16,6 +16,7 @@ type Row = Record<string, unknown>;
 const D1_ONLY = new Set([
   "courier_user_id",
   "payment_intent_id",
+  "credit_applied",
   "fudo_sale_id",
   "fudo_sale_sync",
   "fudo_sale_error",

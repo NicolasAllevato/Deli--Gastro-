@@ -72,6 +72,7 @@ describe("quoteOrder", () => {
       lines: [{ name: "Hamburguesa Clásica", qty: 1, price: 8500 }],
       subtotal: 8500,
       delivery_fee: 600,
+      credit_applied: 0,
       total: 9100,
       zone: (out as { zone: unknown }).zone,
       resolved_address: NEAR.label,
@@ -172,6 +173,34 @@ describe("quoteOrder", () => {
     });
     // 15:00 UTC = 12:00 en Buenos Aires: fuera de 10:00–11:00.
     assert.deepEqual(await quoteOrder(depsFor(closed, "m1"), input), { error: "El local está cerrado. Abre de 10:00 a 11:00.", code: "closed" });
+  });
+});
+
+describe("saldo a favor en el bot", () => {
+  const conCredito = (pesos: number) =>
+    newDemo((s) => {
+      s.clients[0]!.credit = pesos;
+      s.wa_conversations[0]!.client_id = s.clients[0]!.id;
+    });
+
+  it("la cotización muestra el saldo aplicado, el total rebajado y confirmar no da total_changed", async () => {
+    const demo = conCredito(3000);
+    const out = (await quoted(demo)) as { credit_applied: number; total: number; delivery_fee: number; subtotal: number };
+    assert.deepEqual([out.credit_applied, out.total], [3000, 6100]);
+    assert.equal(draftOf(demo)!.creditApplied, 3000);
+    const done = await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
+    assert.equal("error" in done, false, JSON.stringify(done));
+    assert.equal((done as { total: number }).total, 6100);
+    assert.equal(demo.store.clients[0]!.credit, 0);
+  });
+
+  it("si el saldo cambió entre la cotización y la confirmación, pide recotizar", async () => {
+    const demo = conCredito(3000);
+    await quoted(demo);
+    demo.store.clients[0]!.credit = 1000;
+    const done = await confirmOrder(depsFor(demo, "m2"), { payment_method: "Efectivo" });
+    assert.equal((done as { code?: string }).code, "total_changed");
+    assert.equal(demo.store.clients[0]!.credit, 1000);
   });
 });
 

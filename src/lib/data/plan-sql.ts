@@ -54,7 +54,7 @@ type Row = Record<string, unknown>;
 
 /** Tablas de la app en D1 (nunca las de recetas ni las de Better Auth). */
 export const APP_TABLES = new Set([
-  "categories", "products", "clients", "points_ledger", "orders", "order_items", "order_events", "reviews",
+  "categories", "products", "clients", "points_ledger", "credit_ledger", "orders", "order_items", "order_events", "reviews",
   "payment_intents", "delivery_zones", "reports_daily", "couriers", "courier_locations", "courier_shifts",
   "global_config", "legal_acceptances", "fudo_product_map", "fudo_payment_map", "fudo_sync_runs",
   "fudo_modifier_groups", "fudo_modifier_options", "fudo_product_groups",
@@ -68,7 +68,9 @@ const PK: Record<string, string> = {
 
 /** Pesos (nombre de la app) → centavos (nombre en D1), por tabla. */
 const MONEY: Record<string, Record<string, string>> = {
-  orders: { total: "total_cents", delivery_fee: "delivery_fee_cents" },
+  orders: { total: "total_cents", delivery_fee: "delivery_fee_cents", credit_applied: "credit_applied_cents" },
+  clients: { credit: "credit_cents" },
+  credit_ledger: { delta: "delta_cents" },
   order_items: { unit_price: "unit_price_cents" },
   products: { price: "price_cents" },
   payment_intents: { total: "total_cents" },

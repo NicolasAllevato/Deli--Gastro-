@@ -11,7 +11,7 @@ const fecha = (iso: string) => formatDateTimeAR(iso, { dateStyle: "short", timeS
 const money = (cents: number) => `$${(cents / 100).toLocaleString("es-AR")}`;
 const inputClass = "w-full neumorphic-inset rounded-xl px-3 py-2 text-sm text-gray-800 bg-transparent";
 
-type Compensacion = "" | "puntos" | "descuento";
+type Compensacion = "" | "puntos" | "saldo";
 
 interface Props {
   id: string;
@@ -54,10 +54,11 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
     setError(null);
     setAviso(null);
     try {
-      const res = await call<{ aviso?: string; puntosAcreditados?: number }>(`/api/admin/reclamos/${id}`, body);
+      const res = await call<{ aviso?: string; puntosAcreditados?: number; saldoAcreditado?: number }>(`/api/admin/reclamos/${id}`, body);
       done?.();
       if (res.aviso) setAviso(`Guardado, pero el WhatsApp no salió: ${res.aviso}`);
       else if (res.puntosAcreditados) setAviso(`Se acreditaron ${res.puntosAcreditados} puntos y se le avisó al cliente.`);
+      else if (res.saldoAcreditado) setAviso(`Se acreditaron $${res.saldoAcreditado} de saldo a favor y se le avisó al cliente.`);
       setVersion((v) => v + 1);
       onChanged();
     } catch (e) {
@@ -88,7 +89,7 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
   function usarSugerencia(s: Sugerencia) {
     const { tipo, valor, motivo } = s.resolucion;
     setResolucion(`${SUGERENCIA_LABEL[tipo]}: ${motivo}`);
-    if ((tipo === "puntos" || tipo === "descuento") && valor) {
+    if ((tipo === "puntos" || tipo === "saldo") && valor) {
       setCompTipo(tipo);
       setCompValor(String(valor));
     } else {
@@ -156,7 +157,8 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
         <p className="text-sm text-gray-700">
           <strong>{consulta ? "Respuesta:" : "Resolución:"}</strong> {r.resolucion}
           {r.compensacion_tipo === "puntos" && ` · ${r.compensacion_valor} puntos`}
-          {r.compensacion_tipo === "descuento" && ` · ${r.compensacion_valor}% de descuento (aplicar a mano en el próximo pedido)`}
+          {r.compensacion_tipo === "saldo" && ` · $${r.compensacion_valor} de saldo a favor (se descuenta solo en la próxima compra)`}
+          {r.compensacion_tipo === "descuento" && ` · ${r.compensacion_valor}% de descuento (reclamo anterior: se aplicó a mano)`}
         </p>
       )}
 
@@ -168,7 +170,7 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
               <p className="text-sm text-gray-800">{r.sugerencia.diagnostico}</p>
               <p className="text-xs text-gray-600">
                 <strong>{SUGERENCIA_LABEL[r.sugerencia.resolucion.tipo]}</strong>
-                {r.sugerencia.resolucion.valor ? ` ${r.sugerencia.resolucion.valor}${r.sugerencia.resolucion.tipo === "descuento" ? "%" : " puntos"}` : ""} · {r.sugerencia.resolucion.motivo}
+                {r.sugerencia.resolucion.valor ? ` ${r.sugerencia.resolucion.valor}${r.sugerencia.resolucion.tipo === "puntos" ? " puntos" : r.sugerencia.resolucion.tipo === "descuento" ? "%" : " pesos"}` : ""} · {r.sugerencia.resolucion.motivo}
               </p>
               <p className="text-xs text-gray-600 whitespace-pre-wrap">Mensaje: {r.sugerencia.mensaje}</p>
             </>
@@ -224,13 +226,13 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
                 <select className={inputClass} value={compTipo} onChange={(e) => setCompTipo(e.target.value as Compensacion)}>
                   <option value="">Sin compensación</option>
                   <option value="puntos">Puntos</option>
-                  <option value="descuento">Descuento próximo pedido (%)</option>
+                  <option value="saldo">Saldo a favor ($)</option>
                 </select>
               </label>
               {compTipo && (
                 <label className="text-xs text-gray-500 flex flex-col gap-1">
-                  {compTipo === "puntos" ? "Puntos" : "Porcentaje"}
-                  <input type="number" min={1} max={compTipo === "puntos" ? 10000 : 100} className={inputClass} value={compValor} onChange={(e) => setCompValor(e.target.value)} />
+                  {compTipo === "puntos" ? "Puntos" : "Pesos"}
+                  <input type="number" min={1} max={compTipo === "puntos" ? 10000 : 100000} className={inputClass} value={compValor} onChange={(e) => setCompValor(e.target.value)} />
                 </label>
               )}
             </div>

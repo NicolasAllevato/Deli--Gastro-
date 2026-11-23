@@ -18,6 +18,7 @@ import { ES_CONSULTA_ERROR } from "./agente.ts";
 import { esConsulta } from "./categoria.ts";
 import { mensajeResolucion } from "./mensajes.ts";
 import type { EnvioResultado } from "./server.ts";
+import { descuentoASaldoPesos, SIN_PEDIDO_PARA_DESCUENTO } from "./saldo.ts";
 
 export interface ApiResult {
   status: number;
@@ -34,8 +35,8 @@ export interface ReclamosApiDeps {
   resolver(
     actor: Actor,
     id: string,
-    input: { resolucion: string; compensacion?: { tipo: "puntos" | "descuento"; valor: number } | null; mensaje?: string },
-  ): Promise<{ reclamo: Reclamo; puntosAcreditados: number }>;
+    input: { resolucion: string; compensacion?: { tipo: "puntos" | "descuento" | "saldo"; valor: number } | null; mensaje?: string },
+  ): Promise<{ reclamo: Reclamo; puntosAcreditados: number; saldoAcreditado?: number }>;
   enviar(actor: Actor, id: string, texto: string): Promise<EnvioResultado>;
   /** Guarda si el aviso de resolución al cliente salió o falló (para mostrar "no se pudo notificar" y reintentar). */
   marcarNotificacion(actor: Actor, id: string, ok: boolean, error?: string): Promise<void>;
@@ -135,11 +136,18 @@ export async function accionReclamo(actor: Actor, id: string, body: unknown, dep
         if (!actual) return { status: 404, body: { error: "No se encontró el reclamo." } };
         // Una consulta se responde, no se compensa: sin puntos ni descuento, y el aviso armado no habla de reclamo.
         const consulta = esConsulta(actual);
-        const compensacion = consulta ? null : (input.compensacion ?? null);
+        let compensacion = consulta ? null : (input.compensacion ?? null);
+        // El descuento % se convierte en saldo en pesos (sobre el total del pedido asociado) ANTES de armar el aviso.
+        if (compensacion?.tipo === "descuento") {
+          if (!actual.pedido) return { status: 409, body: { error: SIN_PEDIDO_PARA_DESCUENTO } };
+          const pesos = descuentoASaldoPesos(actual.pedido.total_cents, compensacion.valor);
+          if (pesos < 1) return { status: 409, body: { error: "El descuento da menos de $1 sobre ese pedido: usá «Saldo a favor» con un monto en pesos." } };
+          compensacion = { tipo: "saldo", valor: pesos };
+        }
         // El mensaje SIEMPRE sale: el editado por el local o uno armado con la resolución y la compensación.
         const mensaje = input.mensaje ?? mensajeResolucion(actual.numero, input.resolucion, compensacion, consulta);
-        const { puntosAcreditados } = await deps.resolver(actor, id, { resolucion: input.resolucion, compensacion, mensaje });
-        return { status: 200, body: { ok: true, puntosAcreditados, ...(await notificar(actor, id, mensaje, deps)) } };
+        const { puntosAcreditados, saldoAcreditado } = await deps.resolver(actor, id, { resolucion: input.resolucion, compensacion, mensaje });
+        return { status: 200, body: { ok: true, puntosAcreditados, saldoAcreditado: saldoAcreditado ?? 0, ...(await notificar(actor, id, mensaje, deps)) } };
       }
       case "renotificar": {
         const actual = await deps.get(actor, id);

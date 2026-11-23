@@ -82,6 +82,12 @@ export async function POST(req: NextRequest) {
     }
     const started = await startOnlinePayment(db, gateway, order);
     if (!started.ok) return NextResponse.json({ error: started.message }, { status: started.status });
+    // El saldo a favor pagó todo: no hay link de pago, el pedido ya existe.
+    if (started.value.order) {
+      const paid = started.value.order;
+      after(() => notifyOrderEvent(db, paid.id, "created"));
+      return NextResponse.json(paid, { status: 201 });
+    }
     return NextResponse.json(
       { paymentUrl: started.value.url, intentId: started.value.intentId, total: started.value.total },
       { status: 201 },

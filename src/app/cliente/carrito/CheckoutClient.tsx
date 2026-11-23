@@ -20,6 +20,8 @@ interface Props {
   showSamples: boolean;
   /** Saldo de puntos del cliente. */
   points: number;
+  /** Saldo a favor disponible en pesos: paga parte del pedido (envío incluido) o todo. */
+  credit: number;
   /** Nombre de la categoría de cada producto (id → nombre), para valuar el canje. */
   productCategories: Record<string, string>;
   /** El cobro con Mercado Pago está configurado: si no, la opción no se ofrece. */
@@ -37,7 +39,7 @@ async function readError(res: Response, fallback: string): Promise<string> {
   return json.error ?? fallback;
 }
 
-export default function CheckoutClient({ clientAddress, paused, showSamples, points, productCategories, onlinePayments }: Props) {
+export default function CheckoutClient({ clientAddress, paused, showSamples, points, credit, productCategories, onlinePayments }: Props) {
   const router = useRouter();
   const { lines, subtotal, setQty, clear, rewardId, setReward } = useCart();
 
@@ -114,8 +116,12 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
         );
   const discount = rewardOutcome?.ok ? rewardOutcome.discount : 0;
   const rewardBlocked = rewardOutcome?.ok === false;
-  const total = subtotal - discount + fee;
-  const payOnline = payment === "Mercado Pago";
+  const payable = subtotal - discount + fee;
+  // Misma cuenta que el servidor: el saldo a favor cubre hasta el total, envío incluido.
+  const creditApplied = Math.min(credit, Math.max(0, payable));
+  const total = payable - creditApplied;
+  // Con el saldo cubriendo todo no hay nada que pagar: no se abre Mercado Pago.
+  const payOnline = payment === "Mercado Pago" && total > 0;
   const canOrder = address !== null && covered !== null && !belowMin && !quoting && !rewardBlocked;
 
   const confirm = async () => {
@@ -394,6 +400,11 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
           </div>
         )}
         <div className="flex justify-between text-gray-600"><span>Envío</span><span>{formatMoney(fee)}</span></div>
+        {creditApplied > 0 && (
+          <div className="flex justify-between text-green-700 font-bold">
+            <span>Saldo a favor aplicado</span><span>-{formatMoney(creditApplied)}</span>
+          </div>
+        )}
         <div className="flex justify-between pt-3 border-t border-gray-200/60 font-headline font-black text-base text-gray-800">
           <span>Total</span><span className="text-brand-orange">{formatMoney(total)}</span>
         </div>

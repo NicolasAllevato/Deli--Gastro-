@@ -15,6 +15,7 @@ export type TableName =
   | "clients"
   | "orders"
   | "points_ledger"
+  | "credit_ledger"
   | "global_config"
   | "categories"
   | "products"
@@ -533,6 +534,7 @@ export function buildSeed(): Tables {
     address: SAMPLE_ADDRESSES[addr]!.address,
     tier,
     total_points: points,
+    credit: 0,
     wa_marketing_opt_in: i < 4,
     created_at: ago(60 * 24 * (120 - i * 15)),
     updated_at: ago(60 * 24),
@@ -676,7 +678,7 @@ export function buildSeed(): Tables {
   return {
     clients,
     orders: [...orders, ...extra.orders, ...buildFudoOrders(Date.now(), ORDERS.length + EXTRA_ORDER_COUNT + 1), ...buildDeliveredHistory(Date.now(), ORDERS.length + EXTRA_ORDER_COUNT + 11)],
-    points_ledger, global_config, categories, products,
+    points_ledger, credit_ledger: [], global_config, categories, products,
     reviews: [...reviews, ...extraReviews],
     order_events: [], delivery_zones: [...delivery_zones, ...demoZones],
     integration_secrets: [], wa_conversations: [], wa_messages: [], wa_campaigns: [], legal_acceptances: [], payment_intents: [], order_items: [], courier_locations: [],

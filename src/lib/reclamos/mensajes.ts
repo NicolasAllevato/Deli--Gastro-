@@ -10,7 +10,7 @@ export function dentroDeVentana(lastInboundAt: string | null, now: Date = new Da
 }
 
 export interface Compensacion {
-  tipo: "puntos" | "descuento";
+  tipo: "puntos" | "descuento" | "saldo";
   valor: number;
 }
 
@@ -25,6 +25,8 @@ export function mensajeResolucion(numero: number, resolucion: string, compensaci
   const extra =
     compensacion.tipo === "puntos"
       ? `Te sumamos ${compensacion.valor} puntos a tu cuenta 🎁`
-      : `Tenés un ${compensacion.valor}% de descuento en tu próximo pedido 🎁 (avisanos al pedir).`;
+      : compensacion.tipo === "saldo"
+        ? `Te acreditamos $${compensacion.valor} de saldo a favor para tu próxima compra 🎁 (se descuenta solo al pedir).`
+        : `Tenés un ${compensacion.valor}% de descuento en tu próximo pedido 🎁 (avisanos al pedir).`;
   return `${base}\n${extra}\nGracias por avisarnos 🙏`;
 }

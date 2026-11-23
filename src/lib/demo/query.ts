@@ -46,7 +46,7 @@ export interface QueryResult {
 }
 
 const KNOWN_TABLES: readonly TableName[] = [
-  "clients", "orders", "points_ledger", "global_config", "categories", "products", "reviews", "order_events",
+  "clients", "orders", "points_ledger", "credit_ledger", "global_config", "categories", "products", "reviews", "order_events",
   "delivery_zones", "integration_secrets", "wa_conversations", "wa_messages", "wa_campaigns", "legal_acceptances",
   "payment_intents", "order_items", "courier_locations", "couriers",
   "fudo_product_map", "fudo_payment_map", "fudo_modifier_groups", "fudo_modifier_options", "fudo_product_groups",
@@ -56,7 +56,7 @@ const KNOWN_TABLES: readonly TableName[] = [
 const KEY_TABLES: readonly TableName[] = ["global_config", "integration_secrets"];
 
 /** Tablas sin `updated_at` (solo se agregan filas). */
-const APPEND_ONLY: readonly TableName[] = ["points_ledger", "reviews", "order_events", "wa_messages", "legal_acceptances", "order_items"];
+const APPEND_ONLY: readonly TableName[] = ["points_ledger", "credit_ledger", "reviews", "order_events", "wa_messages", "legal_acceptances", "order_items"];
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -68,7 +68,7 @@ const DEFAULTS: Record<TableName, () => Row> = {
     status: "pending", mp_preference_id: null, checkout_url: null, mp_payment_id: null, order_id: null, refund_error: null,
   }),
   clients: () => ({
-    user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0, wa_marketing_opt_in: false,
+    user_id: null, phone: null, address: null, tier: "Bronce", total_points: 0, credit: 0, wa_marketing_opt_in: false,
   }),
   orders: () => ({
     client_id: null, status: "Recibidos", delivery_fee: 0, delivery_address: null,
@@ -79,6 +79,7 @@ const DEFAULTS: Record<TableName, () => Row> = {
     fudo_sale_type: null, fudo_sale_state: null, fudo_source: null, fudo_payment: null, fudo_payments: null, customer_name: null, delivered_in_app: false, geocode_attempts: 0,
   }),
   points_ledger: () => ({ order_id: null }),
+  credit_ledger: () => ({ order_id: null, reclamo_id: null, description: null }),
   global_config: () => ({}),
   categories: () => ({ description: "", is_active: true, fudo_id: null, source: "manual", fudo_synced_at: null }),
   products: () => ({ category_id: null, description: "", image_url: "", is_active: true, fudo_id: null, source: "manual", fudo_synced_at: null }),
@@ -176,6 +177,19 @@ function finalize(plan: QueryPlan, rows: Row[], count: number | null): QueryResu
   return fail("JSON object requested, multiple (or no) rows returned", "PGRST116");
 }
 
+/**
+ * Réplica del trigger credit_ledger_after_insert de D1: suma el delta al saldo del cliente y, como el CHECK
+ * credit >= 0, rechaza el asiento si lo deja negativo.
+ */
+function applyCreditTrigger(store: Tables, entry: Row): QueryResult | null {
+  const client = store.clients.find((c) => c.id === entry.client_id);
+  if (!client) return fail("FOREIGN KEY constraint failed", "23503");
+  const next = Number(client.credit ?? 0) + Number(entry.delta);
+  if (next < 0) return fail("CHECK constraint failed: credit_cents >= 0", "23514");
+  client.credit = next;
+  return null;
+}
+
 export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
   if (!KNOWN_TABLES.includes(plan.table)) return fail(`Tabla desconocida: ${plan.table}`, "42P01");
   const table = store[plan.table];
@@ -206,6 +220,8 @@ export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
           ? table.find((r) => conflictKeys.every((k) => r[k] === raw[k]))
           : undefined;
       if (existing) {
+        // ON CONFLICT DO NOTHING: la fila existente queda intacta y no cuenta como escrita.
+        if (plan.ignoreDuplicates) continue;
         Object.assign(existing, raw, { updated_at: nowIso() });
         written.push(existing);
         continue;
@@ -219,6 +235,13 @@ export function executePlan(plan: QueryPlan, store: Tables): QueryResult {
         ...(APPEND_ONLY.includes(plan.table) ? {} : { updated_at: stamp }),
       };
       table.push(row);
+      if (plan.table === "credit_ledger") {
+        const rejected = applyCreditTrigger(store, row);
+        if (rejected) {
+          table.pop();
+          return rejected;
+        }
+      }
       written.push(row);
     }
     return finalize(plan, plan.returning ? structuredClone(written) : [], null);
