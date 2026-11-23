@@ -29,7 +29,7 @@ const normalizar = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g,
 
 /**
  * Productos del menú cuyo nombre o descripción nombran lo que el cliente pregunta («sin tacc» → «Pizza de harina de arroz (sin TACC)»).
- * Palabras de 4 letras o más, sin las de relleno: así «tienen sushi» no trae nada y no se inventa una coincidencia.
+ * Palabras de 4 letras o más, sin las de relleno: así «tienen pastas» no trae nada y no se inventa una coincidencia.
  */
 export function menuMatchesForTema(menu: readonly { name: string; description: string | null; price: number; category: string }[], tema: string): { name: string; category: string; price_text: string }[] {
   const tokens = normalizar(tema).split(/[^a-z0-9ñ]+/).filter((t) => t.length >= 4 && !TEMA_STOPWORDS.has(t));

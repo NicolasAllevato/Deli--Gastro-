@@ -148,7 +148,9 @@ describe("precios", () => {
   it("turno completo: los precios reales pasan", async () => {
     const w = await world("consulta_menu", [], "Tenemos Coca-Cola 1,5 L a $3.500 y agua a $1.500.");
     assert.equal(await w.send("que bebidas tienen?"), "answered");
-    assert.deepEqual(w.sent, ["Tenemos Coca-Cola 1,5 L a $3.500 y agua a $1.500."]);
+    assert.equal(w.sent.length, 1);
+    // La respuesta del modelo sale intacta; en una consulta de precios el código le suma (una vez) la línea del portal.
+    assert.match(w.sent[0], /^Tenemos Coca-Cola 1,5 L a \$3\.500 y agua a \$1\.500\.(\n\nTambién podés pedir directo desde nuestra web: \S+\/cliente)?$/);
   });
   it("el prompt pide copiar el precio formateado", () => {
     assert.match(buildResponderPrompt(settingsFromConfig({}), "consulta_menu", null, false), /price_text/);

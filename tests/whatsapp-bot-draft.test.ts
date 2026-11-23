@@ -238,7 +238,7 @@ describe("turno: horario o zona inventados se reintentan y, si insiste, se consu
       getConversation: async (phone) => ({ ...CONVERSATION, phone }),
       history: async () => [{ direction: "in", body: "hola" }],
       inboundCounts: async () => ({ lastMinute: 1, lastDay: 1 }),
-      config: async () => ({ agente_activo: true, horario_apertura: "11:00", horario_cierre: "23:00", negocio_nombre: "La Gambeta" }),
+      config: async () => ({ agente_activo: true, horario_apertura: "11:00", horario_cierre: "23:00", negocio_nombre: "La Gambeta", bot_portal_recordatorio_horas: 0 }),
       menu: async () => [],
       zones: async () => [],
       latestOrder: async () => null,

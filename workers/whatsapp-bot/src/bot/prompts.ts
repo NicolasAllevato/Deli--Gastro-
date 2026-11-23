@@ -40,7 +40,7 @@ const FOCUS: Partial<Record<Intent, string>> = {
 
 /** Con pedidos por WhatsApp encendidos (fase 5): reglas del tomador de pedidos. */
 const ORDER_FOCUS =
-  "El cliente quiere hacer, modificar, confirmar o cancelar un pedido. Usá get_menu para obtener los product_id y quote_order con productos, cantidades y dirección (si falta algo, preguntalo). El resumen con el total se envía solo: no lo escribas vos ni inventes precios. Nunca digas que un pedido está confirmado o pagado: eso lo informa el sistema. Se paga en efectivo (al recibir) o con Mercado Pago: el resumen le pregunta cuál; no hay canje de puntos. Las cantidades salen de lo que el cliente pide AHORA: si este mensaje trae cantidades (\"quiero 1 grande de muzza\"), usá exactamente esas y no arrastres cantidades de mensajes o pedidos anteriores; solo combiná con lo anterior si el cliente dice que modifica el pedido en curso (\"mejor que sean 3\", \"agregale…\"). Si el cliente cambia productos o la dirección, llamá SIEMPRE a quote_order; no digas que agregaste o cambiaste nada sin cotizar. Para cancelar usá cancel_order en el mismo turno (el sistema revisa el pedido y le pregunta al cliente): no preguntes vos. Si solo se equivocó de dirección y todavía no pagó, ofrecé corregirla y re-cotizá con la dirección nueva. Si en medio del pedido pregunta algo del local (horario, zonas de envío, formas de pago, políticas, cancelaciones), respondé con get_business_info (completá `tema` con lo que pregunta) y retomá el pedido donde estaba: no lo reinicies.";
+  "El cliente quiere hacer, modificar, confirmar o cancelar un pedido. Usá get_menu para obtener los product_id y quote_order con productos, cantidades y dirección (si falta algo, preguntalo). El resumen con el total se envía solo: no lo escribas vos ni inventes precios. Nunca digas que un pedido está confirmado o pagado: eso lo informa el sistema. Se paga en efectivo (al recibir) o con Mercado Pago: el resumen le pregunta cuál; no hay canje de puntos. Las cantidades salen de lo que el cliente pide AHORA: si este mensaje trae cantidades (\"quiero 1 grande de muzza\"), usá exactamente esas y no arrastres cantidades de mensajes o pedidos anteriores; solo combiná con lo anterior si el cliente dice que modifica el pedido en curso (\"mejor que sean 3\", \"agregale…\"). Si el cliente cambia productos o la dirección, llamá SIEMPRE a quote_order; no digas que agregaste o cambiaste nada sin cotizar. Para cancelar usá cancel_order en el mismo turno (el sistema revisa el pedido y le pregunta al cliente): no preguntes vos. Si solo se equivocó de dirección y todavía no pagó, ofrecé corregirla y re-cotizá con la dirección nueva. Opciones de un producto (`grupos_de_opciones`): SOLO para el producto que trae ese grupo en `grupos` (nunca pidas gaseosas u otras opciones para productos que no lo traen, como una pizza común), el cliente elige EXACTAMENTE lo que pide el grupo (min/max, campo `elegir`), sin importar lo que diga la descripción del producto: si el grupo pide 2 gaseosas, pedile siempre 2 («¿qué 2 gaseosas preferís?»; puede repetir una) y nunca cotices con menos. Producto que nombra y no existe tal cual (ej. «café con leche») pero tiene variantes en la carta (café pocillo, jarrito, doble): preguntá cuál prefiere ofreciendo TODAS esas variantes, y hacelo en el mismo mensaje que cualquier otra aclaración pendiente del pedido (nunca preguntes solo por una parte). Si en medio del pedido pregunta algo del local (horario, zonas de envío, formas de pago, políticas, cancelaciones), respondé con get_business_info (completá `tema` con lo que pregunta) y retomá el pedido donde estaba: no lo reinicies.";
 
 /** Regla de no inventar: lo que no figura en las herramientas se consulta con el local (queda registrado). */
 export const CONSULTA_RULE =
@@ -76,25 +76,31 @@ export function lessonLines(lessons: readonly string[]): string[] {
 const flatClip = (s: string, max: number): string => s.replace(/\s+/g, " ").replace(/"""/g, "").trim().slice(0, max);
 
 /**
- * Bloque "Cliente habitual" (etapa 2): solo con pedidos previos. La dirección se ofrece como pregunta;
- * nunca se usa para cotizar sin que el cliente la confirme (además lo controla `profileAddressUnconfirmed`).
+ * Bloque "Cliente habitual / registrado": nombre, pedidos previos y UNA sola dirección (la última). La dirección se ofrece
+ * como pregunta y nunca se usa para cotizar sin que el cliente la confirme (lo controla `profileAddressUnconfirmed`;
+ * además el turno reemplaza la pregunta del modelo por `savedAddressQuestion`). Sin pedidos ni dirección no hay bloque.
  */
 export function customerProfileLines(profile: CustomerProfile | null | undefined): string[] {
-  if (!profile || profile.orderCount < 1) return [];
-  const lines = ["Cliente habitual (datos de ESTE cliente, de esta conversación; nunca los menciones a otra persona):"];
+  if (!profile) return [];
+  const address = profile.lastAddress ? flatClip(profile.lastAddress, 120) : null;
+  if (profile.orderCount < 1 && !address) return [];
+  const lines = ["Cliente registrado (datos de ESTE cliente, de esta conversación; nunca los menciones a otra persona):"];
   if (profile.name) lines.push(`- Se llama ${flatClip(profile.name, 60)}: saludalo por su nombre.`);
-  lines.push(`- Ya hizo ${profile.orderCount} ${profile.orderCount === 1 ? "pedido" : "pedidos"}.`);
+  if (profile.orderCount >= 1) lines.push(`- Ya hizo ${profile.orderCount} ${profile.orderCount === 1 ? "pedido" : "pedidos"}.`);
   const top = profile.topProducts.map((p) => flatClip(p, 60)).filter(Boolean);
   if (top.length) lines.push(`- Suele pedir: ${top.join(", ")}. Podés ofrecerle "lo de siempre" (usá get_menu para los product_id y precios actuales).`);
-  if (profile.lastAddress) {
-    lines.push(`- Su última dirección de entrega fue "${flatClip(profile.lastAddress, 120)}". Si quiere pedir y no dio dirección, preguntale «¿Te lo mandamos a la misma dirección (${flatClip(profile.lastAddress, 120)})?» y esperá que confirme antes de cotizar con ella.`);
+  if (address) {
+    lines.push(`- Su dirección de entrega registrada es "${address}" y es la ÚNICA que podés ofrecer: nunca ofrezcas ni menciones otra. Si quiere pedir y no dio dirección en esta charla, preguntale «${savedAddressQuestion(address)}» y esperá que confirme antes de cotizar con ella. Si te da otra dirección, usá esa.`);
   }
   return lines;
 }
 
+/** Pregunta fija con la dirección registrada del cliente (la arma el código, no el modelo). */
+export const savedAddressQuestion = (address: string): string => `¿Te lo enviamos a ${flatClip(address, 120)}?`;
+
 const normAddr = (s: string): string => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const AFFIRM = /^\s*(s[ií]+|dale|ok|okay|perfecto|de una|claro|exacto|correcto|esa|esa misma|ah[ií]|la misma|a la misma|confirmo)(?![\p{L}])/iu;
-const ASKS_SAME_ADDRESS = /misma direcci[oó]n/i;
+const ASKS_SAME_ADDRESS = /misma direcci[oó]n|¿te lo enviamos a /i;
 
 /**
  * true si `address` es la dirección guardada del perfil y el cliente todavía no la confirmó: ni la escribió él
@@ -128,8 +134,8 @@ export function buildResponderPrompt(
     "- Nunca inventes productos, precios, zonas, horarios ni estados de pedido: usá solo lo que devuelven las herramientas.",
     CONSULTA_RULE,
     ...(openNow(settings) ? [] : [consultaClosedRule(settings.hours.open)]),
-    "- Si preguntan por algo que no vendemos (sushi, hamburguesas, etc.) y get_categoria/get_menu lo confirman, decí con calidez que ese tipo de comida no la trabajamos (ej. \"El sushi no lo trabajamos 🙂\") y sugerí el estilo que sí hacemos: pizzería de barrio con pizzas a la piedra, empanadas, fainá, cafetería y postres; si hay algo parecido a lo que pidió, recomendalo (ej. hamburguesa → una pizza o empanadas de carne). Nunca respondas con una repregunta genérica.",
-    "- Si piden bebidas \"sin alcohol\" o \"con alcohol\"/cervezas, pasá eso tal cual a get_categoria (ej. \"bebidas sin alcohol\") y mostrá solo lo que corresponde.",
+    "- Si preguntan por algo que no vendemos y get_categoria/get_menu lo confirman, decí con calidez que eso no lo trabajamos nombrando EXACTAMENTE lo que pidió el cliente (nunca otro producto) y sugerí el estilo que sí hacemos: pizzería de barrio con pizzas a la piedra, empanadas, fainá, cafetería y postres; si en la carta hay algo parecido a lo que pidió, recomendalo. Nunca respondas con una repregunta genérica.",
+    "- Si piden bebidas \"sin alcohol\" o \"con alcohol\"/cervezas, pasá eso tal cual a get_categoria (ej. \"bebidas sin alcohol\", \"cerveza sin alcohol\") y mostrá solo lo que corresponde: «sin alcohol» incluye las cervezas Zero / 0,0 (si get_categoria las devuelve, ofrecelas; nunca digas que no hay sin buscar).",
     "- Nunca digas que un producto o categoría no existe (\"no tengo pizzas\") sin revisarlo antes con get_categoria o get_menu en este turno. Las pizzas pueden estar en categorías como \"Platos Principales\" o \"Promos\".",
     "- No copies ni imites mensajes anteriores del bot del historial: respondé a lo que pide ahora con datos frescos de las herramientas. Nunca escribas marcadores como [link], [nombre] o [precio].",
     "- Precios: copiá tal cual los textos price_text, delivery_fee_text, min_order_text o total_text (por ejemplo \"$3.500\"). Nunca conviertas ni redondees números.",
@@ -171,4 +177,41 @@ export function isStaleBotMessage(body: string, ordersEnabled: boolean): boolean
   if (/\[(link|url|nombre|precio|direcci[oó]n)\]/i.test(body)) return true;
   if (ordersEnabled && /pod[eé]s hacer tu pedido ac[aá]/i.test(body)) return true;
   return false;
+}
+
+const ASKS_ADDRESS = /direcci[oó]n|domicilio|a d[oó]nde (?:te|lo|se)|d[oó]nde (?:te|lo) (?:lo )?(?:mand|envi|entreg)/i;
+const INCOMPLETE_ADDRESS_CUES = /altura|n[uú]mero|piso|completa|falt|calle|barrio|localidad|zona/i;
+/** Texto con una calle y una altura («Juramento 1500», «Av. Santa Fe 1234»): el cliente ya dio una dirección. */
+const NAMES_STREET = /\b(?:av\.?|avenida|calle|pasaje|diagonal|ruta)\b|\p{L}{3,}\s+\d{2,5}\b/iu;
+
+/** El cliente ya nombró una calle con altura en alguno de estos textos. */
+export const namesAddress = (texts: readonly string[]): boolean => texts.some((t) => NAMES_STREET.test(t));
+
+/**
+ * El modelo le pregunta al cliente registrado «¿a qué dirección?» cuando el sistema ya conoce la suya: la pregunta se
+ * reemplaza por la fija «¿Te lo enviamos a <dirección>?» (siempre la última dirección registrada, nunca otra).
+ * Devuelve null (no tocar el borrador) si el cliente ya dio una dirección en esta charla, si la dirección que falta es
+ * una parte de la que dio (altura, piso), o si la oferta ya se hizo y el cliente no la aceptó (no se repite en bucle).
+ */
+export function offerSavedAddress(draft: string, savedAddress: string | null | undefined, clientTexts: readonly string[], lastBotText: string | null, turnText: string): string | null {
+  if (!savedAddress?.trim()) return null;
+  if (lastBotText && ASKS_SAME_ADDRESS.test(lastBotText)) return null;
+  if (namesAddress([...clientTexts, turnText])) return null;
+  const parts = draft.split(/(?<=[?!.])\s+|\n+/);
+  const at = parts.findIndex((x) => x.includes("?") && ASKS_ADDRESS.test(x));
+  if (at < 0 || INCOMPLETE_ADDRESS_CUES.test(parts[at].replace(ASKS_ADDRESS, ""))) return null;
+  const question = savedAddressQuestion(savedAddress);
+  return parts.map((x, idx) => (idx === at ? question : x)).join("\n").trim();
+}
+
+/** El borrador del modelo pregunta por la dirección registrada del cliente (la nombra y es una pregunta). */
+export function asksSavedAddress(draft: string, savedAddress: string): boolean {
+  const saved = normAddr(savedAddress);
+  return saved.length > 0 && draft.includes("?") && normAddr(draft).includes(saved);
+}
+
+/** El cliente aceptó «¿Te lo enviamos a X?»: pista para que cotice YA con esa dirección y los productos que ya pidió (sin pedirlos de nuevo). */
+export function savedAddressAcceptedHint(turnText: string, lastBotText: string | null, savedAddress: string | null | undefined): string | null {
+  if (!savedAddress || !lastBotText || !ASKS_SAME_ADDRESS.test(lastBotText) || !AFFIRM.test(turnText)) return null;
+  return `El cliente confirmó que la entrega es en «${flatClip(savedAddress, 120)}». Llamá quote_order YA con esa dirección y los productos y cantidades que pidió antes en la charla (tomalos del historial; no le preguntes bebidas ni nada que no haya pedido).`;
 }

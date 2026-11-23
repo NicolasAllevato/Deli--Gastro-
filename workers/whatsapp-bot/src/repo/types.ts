@@ -53,6 +53,8 @@ export interface BotConversation {
 export interface HistoryItem {
   direction: "in" | "out";
   body: string;
+  /** Hora del mensaje (la traen los repos reales; los tests viejos pueden omitirla). */
+  at?: Date;
 }
 
 export interface MenuItem {
@@ -155,8 +157,12 @@ export interface ComplaintTicket {
 /** Acceso a la base del bot (respondedores). SQL en producción, memoria en los tests. */
 export interface BotRepo {
   getConversation(phone: string): Promise<BotConversation | null>;
-  /** Últimos mensajes con texto, del más viejo al más nuevo. */
-  history(conversationId: string, limit: number): Promise<HistoryItem[]>;
+  /** Últimos mensajes con texto, del más viejo al más nuevo. Con `since`, solo los de esa hora en adelante (la sesión actual). */
+  history(conversationId: string, limit: number, since?: Date): Promise<HistoryItem[]>;
+  /** Últimos mensajes con texto y hora (del más viejo al más nuevo): con ellos se decide dónde empieza la sesión. Opcional. */
+  recentMessages?(conversationId: string, limit: number): Promise<(HistoryItem & { at: Date })[]>;
+  /** Hora en que se cerró (entregado o cancelado) el último pedido de ese teléfono; null si no hay. Opcional. */
+  lastClosedOrderAt?(phone: string): Promise<Date | null>;
   inboundCounts(conversationId: string): Promise<{ lastMinute: number; lastDay: number }>;
   config(): Promise<Record<string, unknown>>;
   menu(): Promise<MenuItem[]>;

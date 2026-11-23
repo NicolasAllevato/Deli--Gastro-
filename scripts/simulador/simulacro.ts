@@ -52,12 +52,31 @@ const allowedPrices: number[] = await (async () => {
   return [...m.map((p) => p.price), ...z.flatMap((x) => [x.fee, x.minOrder]), 1500];
 })();
 
+/** Charla vieja ya guardada y ficha de cliente registrado con sus pedidos entregados (guiones 60 a 64). */
+function sembrarPasado(database: typeof db, conversationId: string, phone: string, guion: Guion): void {
+  const iso = (msAtras: number): string => new Date(Date.now() - msAtras).toISOString();
+  guion.previo?.forEach((m, i) => {
+    database.raw.prepare("INSERT INTO wa_messages (id, conversation_id, wamid, direction, type, body, created_at) VALUES (?, ?, ?, ?, 'text', ?, ?)")
+      .run(`sim-prev-${guion.numero}-${i}`, conversationId, `sim-prev-${guion.numero}-${i}`, m.de === "cliente" ? "in" : "out", m.texto, iso(m.haceMin * 60_000));
+  });
+  if (!guion.registrado) return;
+  const { nombre, direccionFicha, pedidos } = guion.registrado;
+  const clientId = `sim-cli-${guion.numero}`;
+  database.raw.prepare("INSERT INTO clients (id, name, phone, phone_digits, address) VALUES (?, ?, ?, ?, ?)").run(clientId, nombre, phone, phone.slice(-10), direccionFicha ?? null);
+  database.raw.prepare("UPDATE wa_conversations SET client_id = ? WHERE id = ?").run(clientId, conversationId);
+  pedidos.forEach((o, i) => {
+    database.raw.prepare("INSERT INTO orders (id, client_id, status, items_desc, delivery_address, created_at, updated_at) VALUES (?, ?, 'Finalizados', '1 Muzza', ?, ?, ?)")
+      .run(`sim-ord-${guion.numero}-${i}`, clientId, o.direccion, iso(o.haceDias * 86_400_000), iso(o.haceDias * 86_400_000));
+  });
+}
+
 interface ResultadoGuion { guion: Guion; fallas: string[]; transcript: TranscriptLine[]; logs: string[] }
 
 async function correrGuion(guion: Guion): Promise<ResultadoGuion> {
   const phone = `549118${String(guion.numero).padStart(7, "0")}`;
   const conversation = await inbound.upsertConversation(phone, "Cliente simulacro");
   if (guion.pagadoHaceMin !== undefined) orders.seedPaid(conversation.id, guion.pagadoHaceMin);
+  sembrarPasado(db, conversation.id, phone, guion);
   if (guion.conCarta) seedCartaPizzas(db);
   const transcript: TranscriptLine[] = [];
   const fallas: string[] = [];
@@ -107,6 +126,7 @@ for (const guion of elegidos) {
   console.log(`${r.fallas.length === 0 ? "OK   " : "FALLA"} #${guion.numero} ${guion.titulo}${r.fallas.length ? `\n       ${r.fallas.join("\n       ")}` : ""}`);
 }
 
+if (process.env.SIM_LOGS) for (const r of resultados.filter((x) => x.fallas.length > 0)) for (const l of r.logs) console.log(`log #${r.guion.numero}: ${l}`);
 const ok = resultados.filter((r) => r.fallas.length === 0).length;
 const duras = resultados.flatMap((r) => r.fallas.filter((f) => f.includes("REGLA DURA")));
 const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");

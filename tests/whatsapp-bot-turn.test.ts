@@ -18,7 +18,7 @@ function fakeRepo(opts: { takeover?: boolean; active?: boolean; counts?: { lastM
     getConversation: async (phone) => (phone === PHONE ? { id: "c1", phone, clientId: "cl1", displayName: "Ana", humanTakeover: state.takeover } : null),
     history: async () => [...history],
     inboundCounts: async () => opts.counts ?? { lastMinute: 1, lastDay: 1 },
-    config: async () => ({ agente_activo: opts.active ?? true, horario_apertura: "00:00", horario_cierre: "23:59", negocio_nombre: "Deli" }),
+    config: async () => ({ agente_activo: opts.active ?? true, horario_apertura: "00:00", horario_cierre: "23:59", negocio_nombre: "Deli", bot_portal_recordatorio_horas: 0 }),
     menu: async () => [{ id: "p1", name: "Muzza", description: null, price: 9000, category: "Pizzas" }],
     zones: async () => [],
     latestOrder: async () => ({ id: "abcdef1234", status: "En Camino", itemsDesc: "1 Muzza", total: 9000, courierName: "Leo", createdAt: new Date() }),

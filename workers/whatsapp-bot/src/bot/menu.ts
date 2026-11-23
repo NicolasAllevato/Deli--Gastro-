@@ -77,6 +77,8 @@ export interface OptionGroupForModel {
   nombre: string;
   min: number | null;
   max: number | null;
+  /** Cuántas opciones debe elegir el cliente, en palabras para el modelo (vacío si el grupo no fija cantidad). */
+  elegir?: string;
   opciones: { id: number; nombre: string }[];
 }
 
@@ -84,11 +86,19 @@ export interface OptionGroupForModel {
  * Diccionario compacto `grupos_de_opciones` para get_menu: solo los grupos que algún producto del menú usa y que tienen opciones.
  * Vacío = no se agrega nada al resultado.
  */
+/** «Elegí exactamente 2» / «Elegí entre 1 y 3» a partir del min/max del grupo (la descripción del producto puede decir otra cosa). */
+export function chooseText(g: Pick<OptionGroup, "min" | "max">): { elegir: string } | Record<string, never> {
+  const { min, max } = g;
+  if (min !== null && max !== null && min === max && min > 0) return { elegir: `Elegí exactamente ${min} (pedile al cliente ${min}, no menos)` };
+  if (min !== null && min > 0) return { elegir: `Elegí al menos ${min}${max !== null ? ` y como mucho ${max}` : ""}` };
+  return {};
+}
+
 export function optionGroupsForModel(menu: readonly MenuItem[], groups: Readonly<Record<string, OptionGroup>>): Record<string, OptionGroupForModel> {
   const used = new Set(menu.flatMap((p) => p.groups ?? []).map(String));
   const out: Record<string, OptionGroupForModel> = {};
   for (const [id, g] of Object.entries(groups)) {
-    if (used.has(id) && g.options.length > 0) out[id] = { nombre: g.name, min: g.min, max: g.max, opciones: g.options.map((o) => ({ id: o.id, nombre: cleanOptionName(o.name) })) };
+    if (used.has(id) && g.options.length > 0) out[id] = { nombre: g.name, min: g.min, max: g.max, ...chooseText(g), opciones: g.options.map((o) => ({ id: o.id, nombre: cleanOptionName(o.name) })) };
   }
   return out;
 }
@@ -138,7 +148,32 @@ export function productsForCategory(menu: readonly MenuItem[], query: string): M
     const hits = menu.filter((p) => synonym.test(fold(p.name)) || synonym.test(fold(p.category ?? "")));
     if (hits.length > 0) return hits;
   }
-  return menu.filter((p) => fold(p.name).includes(singular) || fold(p.category ?? "").includes(singular));
+  const direct = menu.filter((p) => fold(p.name).includes(singular) || fold(p.category ?? "").includes(singular));
+  if (direct.length > 0) return direct;
+  const zero = zeroAlcoholHits(menu, q);
+  if (zero.length > 0) return zero;
+  // «empanadas de humita» vs «Empanada Humita»: todas las palabras del pedido (sin el plural) tienen que aparecer; si no, solo las específicas.
+  const tokens = queryTokens(q);
+  const haystack = (p: MenuItem): string => fold(`${p.name} ${p.category ?? ""}`);
+  const all = menu.filter((p) => tokens.every((t) => haystack(p).includes(t)));
+  if (all.length > 0) return all;
+  const specific = tokens.filter((t) => !FAMILY_WORD.test(t));
+  return specific.length > 0 && specific.length < tokens.length ? menu.filter((p) => specific.every((t) => haystack(p).includes(t))) : [];
+}
+
+const FAMILY_WORD = /^(empanad|pizz|bebid|gaseos|postre|cafe|promo)/;
+
+/** Palabras de la consulta sin el plural (≥ 3 letras): «empanadas humita» → [empanad, humita]. */
+function queryTokens(q: string): string[] {
+  return q.split(" ").map((w) => (w.length > 3 ? w.replace(/(es|s)$/, "") : w)).filter((w) => w.length >= 3);
+}
+
+/** Sin alcohol: «cerveza sin alcohol» → las cervezas Zero / 0,0; «bebidas sin alcohol» → toda bebida que no tenga alcohol. */
+function zeroAlcoholHits(menu: readonly MenuItem[], q: string): MenuItem[] {
+  const mode = alcoholFilter(q);
+  if (mode !== "cerveza_sin" && mode !== "sin") return [];
+  const drinks = menu.filter((p) => /bebida/.test(fold(p.category ?? "")) || BEER.test(fold(p.name)) || isZeroAlcohol(p.name));
+  return mode === "cerveza_sin" ? drinks.filter((p) => BEER.test(fold(p.name)) && isZeroAlcohol(p.name)) : drinks.filter((p) => !isAlcoholic(p.name));
 }
 
 /** Resultado de get_categoria: TODOS los productos que coinciden, con precio; con descripción corta. */
@@ -255,7 +290,14 @@ export function cartaSectionsFor(carta: readonly CartaSeccion[], query: string):
     if (hits.length > 0) return hits;
   }
   const singular = q.replace(/(es|s)$/, "");
-  return carta.filter((s) => fold(s.titulo).includes(singular));
+  const byTitle = carta.filter((s) => fold(s.titulo).includes(singular));
+  if (byTitle.length > 0) return byTitle;
+  // «empanadas de humita»: la sección que tiene ese gusto, con solo esa línea (palabras específicas del pedido en el nombre de la línea).
+  const specific = queryTokens(q).filter((t) => !FAMILY_WORD.test(t));
+  if (specific.length === 0) return [];
+  return carta
+    .map((s) => ({ ...s, items: s.items.filter((i) => specific.every((t) => fold(i.nombre).includes(t))) }))
+    .filter((s) => s.items.length > 0);
 }
 
 /** get_categoria con carta; null si la consulta no corresponde a ninguna sección (se usa la búsqueda de siempre). */
@@ -274,17 +316,26 @@ export function cartaCategoryForModel(carta: readonly CartaSeccion[], query: str
 
 /** Bebidas con alcohol (por nombre): cervezas, vinos, aperitivos. */
 const ALCOHOL = /cerveza|andes|stella|budweiser|quilmes|corona|michelob|patagonia|heineken|brahma|imperial|fernet|vino|malbec|cabernet|nicasia|lobo|gin\b|vodka|whisky|aperol|campari|sidra|champ|trago|ipa\b|lager|rubia|negra|roja/;
-export const isAlcoholic = (name: string): boolean => ALCOHOL.test(fold(name));
+/** «Zero», «0,0» o «sin alcohol» en el nombre: la cerveza no tiene alcohol aunque la marca sea de cerveza. */
+const ZERO = /\bzero\b|\b0[,. ]?0\b|sin alcohol/;
+export const isZeroAlcohol = (name: string): boolean => ZERO.test(fold(name));
+const BEER = /cerveza|andes|stella|budweiser|quilmes|corona|michelob|patagonia|heineken|brahma|imperial|ipa\b|lager|rubia|negra|roja/;
+export const isAlcoholic = (name: string): boolean => ALCOHOL.test(fold(name)) && !isZeroAlcohol(name);
 
-/** "sin alcohol"/"gaseosas" → solo sin alcohol; "cervezas"/"con alcohol"/"vinos" → solo con alcohol; si no, null. */
-export function alcoholFilter(query: string): "sin" | "con" | null {
+/**
+ * "cerveza sin alcohol" → solo cervezas Zero/0,0; "sin alcohol"/"gaseosas" → solo sin alcohol; "cervezas"/"con alcohol"/"vinos" → solo
+ * con alcohol; si no, null.
+ */
+export function alcoholFilter(query: string): "sin" | "con" | "cerveza_sin" | null {
   const q = fold(query);
+  if (/cerveza|birra/.test(q) && /sin alcohol|no alcoh|zero|\b0[,. ]?0\b|cero/.test(q)) return "cerveza_sin";
   if (/sin alcohol|no alcoh|gaseosa|refresco|soda|para (los )?chicos/.test(q)) return "sin";
   if (/con alcohol|cerveza|birra|vino|trago|aperitivo|fernet/.test(q)) return "con";
   return null;
 }
 
-function filterAlcohol(s: CartaSeccion, filtro: "sin" | "con"): CartaSeccion {
+function filterAlcohol(s: CartaSeccion, filtro: "sin" | "con" | "cerveza_sin"): CartaSeccion {
+  if (filtro === "cerveza_sin") return { ...s, items: s.items.filter((i) => BEER.test(fold(i.nombre)) && isZeroAlcohol(i.nombre)) };
   return { ...s, items: s.items.filter((i) => isAlcoholic(i.nombre) === (filtro === "con")) };
 }
 

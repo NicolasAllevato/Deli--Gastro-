@@ -50,7 +50,7 @@ Ejemplos:
 - "cuánto sale la fugazzeta?" → consulta_menu
 - "qué tenés?" / "pasame la carta" / "qué pizzas hay?" → consulta_menu
 - "tienen empanadas?" → consulta_menu
-- "tenés sushi?" / "hacen hamburguesas?" / "tienen milanesas?" (aunque no lo vendamos) → consulta_menu
+- "hacen hamburguesas?" / "tienen milanesas?" / "tienen pastas?" (aunque no lo vendamos) → consulta_menu
 - "qué bebidas sin alcohol hay?" / "tenés cerveza?" → consulta_menu
 - "hacen envío a Palermo?" / "hasta qué hora están?" → consulta_local
 - "hola" / "buenas" / "buen día" → saludo`;

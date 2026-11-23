@@ -25,10 +25,10 @@ export function sqlBotRepo(sql: postgres.Sql, log: (message: string, detail?: un
       return { id: primary.id, phone: primary.client_phone, clientId: primary.client_id, displayName: primary.name, humanTakeover: found.silenced };
     },
 
-    async history(conversationId, limit) {
+    async history(conversationId, limit, since) {
       const rows = await sql<HistoryItem[]>`
         select direction, body from public.wa_messages
-        where conversation_id = ${conversationId} and body is not null
+        where conversation_id = ${conversationId} and body is not null and (${since ?? null}::timestamptz is null or created_at >= ${since ?? null}::timestamptz)
         order by created_at desc limit ${limit}`;
       return rows.reverse();
     },
