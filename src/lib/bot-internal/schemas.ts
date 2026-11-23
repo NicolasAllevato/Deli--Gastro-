@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** Topes del borde. Los precios, totales y el cliente NUNCA vienen del Worker: se derivan en el servidor. */
 export const MAX_LINES = 30;
-export const MAX_QTY = 20;
+export const MAX_QTY = 100;
 
 const base = {
   conversationId: z.string().trim().min(1).max(64),
