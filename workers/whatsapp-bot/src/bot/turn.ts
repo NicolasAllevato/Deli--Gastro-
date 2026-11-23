@@ -282,8 +282,8 @@ async function answer(
   };
   const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile);
   const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard, deps.log);
-  const ask = (extra?: string) =>
-    respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history, settings.ordersEnabled), userText: wrapUntrusted(turnText), tools });
+  const ask = (extra?: string, forceToolFirst = false) =>
+    respond(deps.run, { system: extra ? `${system}\n\nCORRECCIÓN: ${extra}` : system, history: historyMessages(history, settings.ordersEnabled), userText: wrapUntrusted(turnText), tools, forceToolFirst });
 
   let draft = await ask();
   let issue: DraftIssue | null = null;
@@ -310,7 +310,9 @@ async function answer(
     const hint = issue === "promise" && order && knownAddress
       ? `${RETRY_HINT.promise} Si quiere pedir, llamá quote_order YA con los product_id de get_menu y la dirección "${knownAddress}".`
       : RETRY_HINT[issue];
-    if (attempt === 0) draft = await ask(hint);
+    // Pedido que el modelo contestó con texto (resumen propio o promesa): el reintento lo obliga a usar las herramientas.
+    const retryNeedsTool = (issue === "template" || issue === "promise") && (intent === "pedido_nuevo" || intent === "pedido_datos") && tools.some((x) => x.name === "quote_order");
+    if (attempt === 0) draft = await ask(hint, retryNeedsTool);
   }
 
   if (handedOffNow) {

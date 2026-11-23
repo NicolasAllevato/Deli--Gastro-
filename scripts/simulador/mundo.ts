@@ -78,6 +78,12 @@ const MENU: Array<[string, string, number]> = [
   ["Empanadas", "Empanada de verdura", 1700],
   ["Empanadas", "Empanada de cebolla y queso", 1700],
   ["Empanadas", "Empanada de roquefort y jamón", 1800],
+  ["Bebidas", "Pepsi 1,5 L", 3500],
+  ["Cafetería", "Café doble", 4300],
+  ["Cafetería", "Medialuna de manteca", 1800],
+  ["Cafetería", "Tostado de jamón y queso", 6000],
+  ["Postres", "Budín de pan", 9600],
+  ["Pizzas", "Calabresa grande", 33000],
 ];
 
 /** id Fudo de la docena (oculta del menú) y de las 7 empanadas sueltas, igual que en producción. */

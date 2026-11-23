@@ -124,6 +124,45 @@ export const GUIONES: readonly Guion[] = [
     }],
   },
   {
+    numero: 24, titulo: "Combinado: pizza + empanadas sueltas + bebida + postre",
+    pasos: [{
+      dice: `quiero una muzzarella grande, 2 empanadas de pollo, una Pepsi 1,5 L y un flan para delivery a ${DIRECCION}`,
+      esperaAlguna: [/Muzzarella grande/i, /2 x Empanada de pollo/i, /Pepsi/i, /Flan/i, /efectivo o Mercado Pago/i],
+      noDebe: [/no (se )?puedo|no se puede|Decime qu[eé] quer[eé]s pedir/i],
+    }],
+  },
+  {
+    numero: 25, titulo: "Combinado: docena de un gusto + pizza + 2 bebidas",
+    pasos: [{
+      dice: `quiero una docena de empanadas de pollo, una calabresa grande y 2 aguas sin gas para delivery a ${DIRECCION}`,
+      esperaAlguna: [/1 x Docena de empanadas/i, /Calabresa/i, /2 x Agua sin gas/i, /efectivo o Mercado Pago/i],
+      noDebe: [/mezclar|Decime qu[eé] quer[eé]s pedir|chica/i],
+    }],
+  },
+  {
+    numero: 26, titulo: "Cafetería: café, medialunas y tostado",
+    pasos: [{
+      dice: `quiero un café doble, 2 medialunas de manteca y un tostado de jamón y queso para delivery a ${DIRECCION}`,
+      esperaAlguna: [/Café doble/i, /2 x Medialuna de manteca/i, /Tostado/i, /efectivo o Mercado Pago/i],
+      noDebe: [/Decime qu[eé] quer[eé]s pedir/i],
+    }],
+  },
+  {
+    numero: 27, titulo: "Gran pedido: 18 empanadas de dos gustos + pizzas + bebidas + postre",
+    pasos: [{
+      dice: `quiero 18 empanadas, 9 de carne y 9 de verdura, una fugazzeta rellena, una napolitana grande, 3 Pepsi 1,5 L y un budín de pan para delivery a ${DIRECCION}`,
+      esperaAlguna: [/1 x Docena de empanadas/i, /Fugazzeta/i, /Napolitana/i, /3 x Pepsi/i, /Bud[ií]n/i, /efectivo o Mercado Pago/i],
+      noDebe: [/no (se )?puedo|no se puede|Decime qu[eé] quer[eé]s pedir/i],
+    }],
+  },
+  {
+    numero: 28, titulo: "Combinado con cambio: agrega una bebida y saca el postre",
+    pasos: [
+      { dice: `quiero 2 napolitanas grandes y un flan para delivery a ${DIRECCION}`, esperaAlguna: [/2 x Napolitana/i, /Flan/i] },
+      { dice: "sacá el flan y agregá 2 Pepsi 1,5 L", esperaAlguna: [/2 x Napolitana/i, /2 x Pepsi/i], noDebe: [/Flan/i] },
+    ],
+  },
+  {
     numero: 14, titulo: "Cancelar sin pedido",
     pasos: [{
       dice: "quiero cancelar mi pedido",

@@ -15,6 +15,8 @@ export interface ResponderInput {
   history: ChatMessage[];
   userText: string;
   tools: BotTool[];
+  /** Reintento de un pedido: en la primera vuelta el modelo TIENE que llamar una herramienta (no puede escribir él el resumen). */
+  forceToolFirst?: boolean;
 }
 
 /** Vueltas máximas modelo → herramienta → modelo: corta bucles y acota el costo. */
@@ -54,7 +56,8 @@ export async function respond(
   for (let step = 0; step < MAX_STEPS; step++) {
     // La última vuelta va sin herramientas: el modelo tiene que contestar con texto (nunca queda vacío por agotar pasos).
     const last = step === MAX_STEPS - 1;
-    const toolOpts = tools.length > 0 ? { tools, ...(last ? { tool_choice: "none" } : {}) } : {};
+    const toolChoice = last ? { tool_choice: "none" } : step === 0 && input.forceToolFirst ? { tool_choice: "required" } : {};
+    const toolOpts = tools.length > 0 ? { tools, ...toolChoice } : {};
     const raw = await runWithFallback(run, model, fallback, { messages, ...toolOpts, max_tokens: 600, temperature: 0.2 });
     const calls = responseToolCalls(raw);
     if (calls.length === 0) return cleanReply(responseText(raw));
