@@ -59,6 +59,8 @@ export interface PricedOrder {
   fee: number;
   minOrder: number;
   zone: string | null;
+  /** La dirección paga envío y existe una zona activa de envío gratis (para avisar el recargo). */
+  freeZoneAvailable: boolean;
 }
 
 /**
@@ -146,7 +148,7 @@ export async function priceOrder(
   if (subtotal < quote.minOrder) {
     return fail(400, `El pedido mínimo para tu zona es ${formatMoney(quote.minOrder)}.`, "min_order");
   }
-  return { ok: true, value: { lines, subtotal, fee: quote.fee, minOrder: quote.minOrder, zone: quote.zone } };
+  return { ok: true, value: { lines, subtotal, fee: quote.fee, minOrder: quote.minOrder, zone: quote.zone, freeZoneAvailable: quote.freeZoneAvailable } };
 }
 
 export interface NewDeliveryOrder {

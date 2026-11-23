@@ -103,7 +103,7 @@ describe("quoteDelivery", () => {
 
   it("con zonas, cobra la tarifa de la zona y devuelve el pedido mínimo", () => {
     const quote = quoteDelivery({ lat: -34.54, lng: -58.39 }, [near, far, north], opts);
-    assert.deepEqual(quote, { covered: true, fee: 900, minOrder: 5000, zone: "norte" });
+    assert.deepEqual(quote, { covered: true, fee: 900, minOrder: 5000, zone: "norte", freeZoneAvailable: false });
   });
 
   it("con zonas, rechaza lo que ninguna cubre aunque entre en el radio", () => {
@@ -113,7 +113,7 @@ describe("quoteDelivery", () => {
 
   it("sin zonas activas usa el radio y la tarifa por km", () => {
     const quote = quoteDelivery({ lat: -34.6, lng: -58.39 }, [], opts);
-    assert.deepEqual(quote, { covered: true, fee: 500, minOrder: 0, zone: null });
+    assert.deepEqual(quote, { covered: true, fee: 500, minOrder: 0, zone: null, freeZoneAvailable: false });
   });
 
   it("sin zonas, rechaza lo que supera el radio", () => {

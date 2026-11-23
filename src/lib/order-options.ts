@@ -60,8 +60,11 @@ export const EMPTY_CATALOG: ModifierCatalog = { groupsByProduct: new Map(), grou
 
 const isActive = (v: boolean | number | null | undefined): boolean => v !== false && v !== 0;
 const MAX_LISTED = 8;
-const list = (names: readonly string[]): string =>
-  names.length > MAX_LISTED ? `${names.slice(0, MAX_LISTED).join(", ")}…` : names.join(", ");
+const list = (all: readonly string[]): string => {
+  // Sin el sufijo técnico de Fudo «($0)»: el mensaje puede llegar al cliente.
+  const names = all.map((n) => n.replace(/\s*\(\$\s*\d+\)/g, "").trim());
+  return names.length > MAX_LISTED ? `${names.slice(0, MAX_LISTED).join(", ")}…` : names.join(", ");
+};
 
 export function buildModifierCatalog(input: {
   groups: readonly ModifierGroupRow[];

@@ -337,6 +337,7 @@ export default function CheckoutClient({ clientAddress, paused, showSamples, poi
             {!quoting && quote?.covered === false && quote.reason}
             {!quoting && belowMin && `El pedido mínimo para tu zona es ${formatMoney(minOrder)}.`}
             {!quoting && covered && !belowMin && `Entregamos en tu zona${covered.zone ? ` (${covered.zone})` : ""}.`}
+            {!quoting && covered?.freeZoneAvailable && covered.fee > 0 && ` Tu dirección está fuera de la zona de envío gratis: tiene un recargo de envío de ${formatMoney(covered.fee)}.`}
             {!quoting && quote === null && "No pudimos calcular el envío. Probá de nuevo."}
           </p>
         )}

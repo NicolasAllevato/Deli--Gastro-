@@ -124,14 +124,14 @@ export const GUIONES_ADVERSARIALES: readonly Guion[] = [
       noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Muzzarella grande/i] },
     { dice: "la lata de 473", esperaAlguna: [/Cuatro quesos/i, /Flan/i, /Quilmes Lata 473/i], noDebe: [SIN_PEDIR] },
   ] },
-  { numero: 54, titulo: "Promo con 2 gaseosas a elegir: pregunta cuáles y cotiza con la respuesta", pasos: [
+  { numero: 54, titulo: "Promo con 2 gaseosas a elegir: pregunta cuáles y cotiza con la respuesta", conCarta: true, pasos: [
     { dice: "quiero la promo Baila Ahora para Juramento 1500",
-      esperaAlguna: [/gaseosa|bebida/i, /Pepsi|Coca|Seven/i], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i] },
+      esperaAlguna: [/gaseosa|bebida/i, /Pepsi|Coca|Seven/i], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /\(\$0\)|Una opci[oó]n elegida|Opciones v[aá]lidas|no corresponde/i] },
     { dice: "con Pepsi y Seven Up", esperaAlguna: [/Baila Ahora/i, /efectivo o Mercado Pago/i], noDebe: [SIN_PEDIR] },
   ] },
-  { numero: 55, titulo: "Café con leche inexistente y medialunas: pregunta lo ambiguo y después modifica el pedido en curso", pasos: [
+  { numero: 55, titulo: "Café con leche inexistente y medialunas: pregunta lo ambiguo y después modifica el pedido en curso", conCarta: true, pasos: [
     { dice: "2 cafés con leche y 4 medialunas para Juramento 1500",
-      esperaAlguna: [/medialuna/i, /caf[eé]|jarrito/i, /\?/], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Tostado/i] },
+      esperaAlguna: [/medialuna/i, /caf[eé]|jarrito/i, /\?/], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Tostado/i, /Decime qu[eé] quer[eé]s pedir y la direcci[oó]n/i] },
     { dice: "2 jarritos y 4 medialunas de manteca", esperaAlguna: [/Jarrito/i, /Medialuna de manteca/i], noDebe: [SIN_PEDIR, /Baila Ahora/i] },
     { dice: "sacá las medialunas y agregá un tostado de jamón y queso", esperaAlguna: [/Jarrito/i, /Tostado/i], noDebe: [/Medialuna/i, /Baila Ahora/i, SIN_PEDIR] },
   ] },
@@ -139,4 +139,18 @@ export const GUIONES_ADVERSARIALES: readonly Guion[] = [
     dice: "qué pizzas tienen?",
     esperaAlguna: [/(?=[^]*Muzzarella)(?=[^]*Cuatro Quesos)/i],
     noDebe: [SIN_PEDIR] }] },
+  { numero: 57, titulo: "Fuera de todas las zonas: respuesta fija, nunca «dirección incorrecta»", pasos: [{
+    dice: "2 porciones de muzza para Av. Rivadavia 11000, Liniers",
+    esperaAlguna: [/Por ahora no llegamos a esa direcci[oó]n: entregamos hasta 10 km del local\./],
+    noDebe: [SIN_PEDIR, /incorrecta|no encontr[eé]/i] }] },
+  { numero: 58, titulo: "Dirección con recargo: el resumen avisa que está fuera de la zona gratis", pasos: [{
+    dice: "2 porciones de muzza para Av. Gaona 1500, Moreno",
+    esperaAlguna: [/Tu direcci[oó]n est[aá] fuera de la zona de env[ií]o gratis: tiene un recargo de env[ií]o de \$3\.000\./, /efectivo o Mercado Pago/i],
+    noDebe: [SIN_PEDIR] }] },
+  { numero: 59, titulo: "Saldo a favor que cubre todo: no pregunta forma de pago y el SÍ confirma", pasos: [
+    { dice: "2 porciones de muzza para Av. Cabildo 3000",
+      esperaAlguna: [/Tu saldo a favor cubre todo el pedido\. ¿Lo confirmo\? Respondé SÍ\./],
+      noDebe: [SIN_PEDIR, /efectivo o Mercado Pago/i] },
+    { dice: "sí", confirma: true, esperaAlguna: [/pagado con tu saldo a favor/i, /#SIM00057/], noDebe: [/efectivo o Mercado Pago/i, /link/i] },
+  ] },
 ];

@@ -16,7 +16,7 @@ import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply,
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
 import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
 import { isPureGreeting, promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
-import { asksFullMenu, completePizzaReply } from "./menu.ts";
+import { asksFullMenu, completePizzaReply, namesProducts } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, looksLikeNewOrder, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
@@ -25,7 +25,7 @@ import { withPrivacy } from "../privacy.ts";
 import {
   cancelAfterPrompt, claimsOrderState, confirmAfterSummary, disabledReply, imitatesTemplate, isAffirmation, isOutsidePilot, newOrderState, ORDER_REPLIES,
   asksCancelConfirmation, CANCEL_PROMPT, PRICE_SAFE_REPLY, unknownPrices, promisesLater, trailingQuestion,
-  QUOTE_MARKER, CASH_MARKER, PAYMENT_QUESTION, paymentChoice, renderFinalSummary, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
+  QUOTE_MARKER, CASH_MARKER, PAYMENT_QUESTION, coversAll, paymentChoice, renderFinalSummary, pendingOperation, runCancel, saysPaid, isClosingMessage, type OrderTurn,
   pendingThread, pendingReminder, switchPayment, chosenPayment, THREAD_WINDOW,
 } from "../orders/flow.ts";
 
@@ -255,6 +255,10 @@ const STATUS_HANDOFF_REPLY = "Perdón por la espera 🙏 Te paso con una persona
 /** Cuando el modelo insiste en afirmar un dato del local que no coincide con la configuración: no se afirma nada y se consulta. */
 const CONSULT_LOCAL_REPLY = "Dejame consultarlo con el local y te confirmo.";
 
+/** Pedido con productos nombrados que el modelo no pudo resolver: se pide cuál de cada uno y la dirección (nunca «Decime qué querés pedir»). */
+const NAMED_PRODUCTS_FALLBACK =
+  "Quiero armarte bien el pedido: ¿me confirmás de cada producto cuál querés (sabor, tamaño o presentación) y la dirección de entrega? Lo que ya me dijiste lo tengo anotado.";
+
 export const SAFE_FALLBACK: Record<DraftIssue, string> = {
   empty: REPLIES.failure,
   template: ORDER_REPLIES.startOver,
@@ -399,7 +403,9 @@ ${h}`).join("");
   if (issue) {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });
     const orderIntent = intent === "pedido_nuevo" || intent === "pedido_datos" || intent === "pedido_confirmar";
-    await reply(deps, conversation, issue === "promise" && orderIntent ? ORDER_REPLIES.startOver : SAFE_FALLBACK[issue]);
+    // Con productos nombrados nunca sale «Decime qué querés pedir»: se pide cuál de cada uno (lo ya dicho está anotado).
+    const named = orderIntent && (issue === "template" || issue === "promise" || issue === "limits") && namesProducts(turnText, await deps.repo.menu().catch(() => []));
+    await reply(deps, conversation, named ? NAMED_PRODUCTS_FALLBACK : issue === "promise" && orderIntent ? ORDER_REPLIES.startOver : SAFE_FALLBACK[issue]);
     // Cerrado no hay quien tome la charla: no se silencia al bot.
     if ((issue === "empty" || issue === "blocked") && openNow(settings)) await deps.repo.setTakeover(conversation.id);
     return "output_blocked";
@@ -441,7 +447,7 @@ export const NOTHING_PENDING_REPLY = "¡Dale! 😊 ¿Qué te gustaría pedir? De
 export function threadStep(text: string, thread: { decisive: string | null; sideReplies: number }, pending: ReturnType<typeof pendingOperation>, outNewestFirst: readonly string[] = []): string | null {
   const decisive = thread.decisive;
   if (!decisive) return null;
-  if (pending === "confirm" && decisive.startsWith(QUOTE_MARKER)) {
+  if (pending === "confirm" && decisive.startsWith(QUOTE_MARKER) && !coversAll(decisive)) {
     const method = paymentChoice(text);
     if (method && method !== chosenPayment(decisive)) return switchPayment(decisive, method);
   }

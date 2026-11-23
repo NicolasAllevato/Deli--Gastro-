@@ -60,7 +60,7 @@ describe("priceOrder", () => {
     const result = await priceOrder(demo.db, [{ productId: productId(demo, "Hamburguesa Clásica"), qty: 1 }], LEJOS);
     assert.ok(!result.ok);
     assert.equal(result.status, 400);
-    assert.match(result.message, /fuera de las zonas/);
+    assert.match(result.message, /no llegamos a esa dirección/);
   });
 
   it("rechaza productos inactivos o inexistentes", async () => {
