@@ -11,7 +11,7 @@ import { processTurn, type TurnDeps } from "../../workers/whatsapp-bot/src/bot/t
 import { d1BotRepo, d1InboundRepo } from "../../workers/whatsapp-bot/src/repo/d1.ts";
 import { GUIONES, type Guion } from "./guiones.ts";
 import { inventedPrices, type TranscriptLine } from "./juez.ts";
-import { fakeOrders, openSimDb, seedWorld, type FakeOrders } from "./mundo.ts";
+import { clearCarta, fakeOrders, openSimDb, seedCartaPizzas, seedWorld, type FakeOrders } from "./mundo.ts";
 import { openAiRunner, readOpenAiKey } from "./openai.ts";
 import { Budget } from "./presupuesto.ts";
 import { evaluarPaso, reglasDuras } from "./simulacro-reglas.ts";
@@ -58,6 +58,7 @@ async function correrGuion(guion: Guion): Promise<ResultadoGuion> {
   const phone = `549118${String(guion.numero).padStart(7, "0")}`;
   const conversation = await inbound.upsertConversation(phone, "Cliente simulacro");
   if (guion.pagadoHaceMin !== undefined) orders.seedPaid(conversation.id, guion.pagadoHaceMin);
+  if (guion.conCarta) seedCartaPizzas(db);
   const transcript: TranscriptLine[] = [];
   const fallas: string[] = [];
   const logs: string[] = [];
@@ -92,6 +93,7 @@ async function correrGuion(guion: Guion): Promise<ResultadoGuion> {
     if (confirmaciones > 0 && !/^\s*s[ií](?![a-záéíóúñ])/i.test(paso.dice)) fallas.push(`${etiqueta}: REGLA DURA confirmó un pedido sin un SÍ del cliente`);
     if (paso.confirma && confirmaciones === 0) fallas.push(`${etiqueta}: esperaba confirmar el pedido y no lo confirmó`);
   }
+  if (guion.conCarta) clearCarta(db);
   if (inventedPrices(transcript, allowedPrices)) fallas.push("REGLA DURA el bot nombró un precio que no está en la carta ni en las zonas");
   return { guion, fallas, transcript, logs };
 }

@@ -136,7 +136,7 @@ function setup(config: Record<string, unknown> = {}, zones: { name: string; fee:
     zones: async () => (zoneReads++, zones),
   } as unknown as BotRepo;
   const deps = { repo, appUrl: "https://opsyndely.la-gambeta.com" } as unknown as TurnDeps;
-  const issue = (draft: string, intent: Intent = "consulta_local", order?: OrderTurn) => draftIssue(draft, intent, CONVERSATION, deps, settings, order);
+  const issue = (draft: string, intent: Intent = "consulta_local", order?: OrderTurn, turnText = "") => draftIssue(draft, intent, CONVERSATION, deps, settings, order, turnText);
   return { issue, reads: () => zoneReads };
 }
 
@@ -282,5 +282,30 @@ describe("draftIssue: pistas de reintento y respuesta segura", () => {
     for (const issue of ["empty", "template", "state", "price", "hours", "zone", "promise", "blocked"] as const) {
       assert.ok(SAFE_FALLBACK[issue].length > 0, issue);
     }
+  });
+});
+
+describe("draftIssue: carta entera en un pedido (menu_dump)", () => {
+  const CARTA = ["Desayunos y meriendas:", "• Café doble — $4.300", "• Jarrito — $3.900", "• Medialuna de manteca — $1.800", "• Medialuna de grasa — $1.800", "• Tostado de jamón y queso — $6.000", "• Café chico — $3.000", "¿Te gustaría pedir algo de esto?"].join("\n");
+
+  it("descarta volcar la carta cuando el cliente nombró productos para pedir", async () => {
+    const { issue } = setup();
+    assert.equal(await issue(CARTA, "pedido_nuevo", undefined, "2 cafés con leche y 4 medialunas para Juramento 1500"), "menu_dump");
+  });
+
+  it("la carta es válida si el cliente la pidió o no es un pedido", async () => {
+    const { issue } = setup();
+    assert.notEqual(await issue(CARTA, "pedido_nuevo", undefined, "pasame la carta"), "menu_dump");
+    assert.notEqual(await issue(CARTA, "consulta_menu", undefined, "qué tienen de desayuno?"), "menu_dump");
+  });
+
+  it("una pregunta corta por el producto ambiguo pasa", async () => {
+    const { issue } = setup();
+    assert.equal(await issue("¿La Quilmes la querés lata 473, lata zero o de 1 L? El resto ya lo tengo anotado.", "pedido_nuevo", undefined, "una Quilmes"), null);
+  });
+
+  it("tiene respuesta segura que no es la plantilla genérica", () => {
+    assert.ok(SAFE_FALLBACK.menu_dump.length > 0);
+    assert.doesNotMatch(SAFE_FALLBACK.menu_dump, /Decime qué querés pedir/);
   });
 });

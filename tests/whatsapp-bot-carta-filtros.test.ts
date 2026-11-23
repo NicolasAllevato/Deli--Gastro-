@@ -7,7 +7,7 @@ const p = (id: string, price: number) => ({ id, price });
 
 const bebidas = {
   titulo: "Bebidas", estilo: "lista", columnas: [], items: [
-    { nombre: "Agua con/sin gas", nota: null, productos: [p("a", 4000)] },
+    { nombre: "Agua sin gas", nota: null, productos: [p("a", 4000)] },
     { nombre: "Pepsi Chica", nota: null, productos: [p("b", 4000)] },
     { nombre: "Andes - lata", nota: null, productos: [p("c", 6000)] },
     { nombre: "Fernet", nota: null, productos: [p("d", 9000)] },
@@ -43,7 +43,7 @@ test("isAlcoholic detecta cervezas, fernet y vino", () => {
   assert.ok(isAlcoholic("Fernet"));
   assert.ok(isAlcoholic("Nicasia"));
   assert.ok(!isAlcoholic("Pepsi Chica"));
-  assert.ok(!isAlcoholic("Agua con/sin gas"));
+  assert.ok(!isAlcoholic("Agua sin gas"));
 });
 
 test("bebidas sin alcohol no incluye cervezas ni fernet", () => {

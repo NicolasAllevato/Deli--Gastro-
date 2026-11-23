@@ -11,6 +11,8 @@ export interface Guion {
   titulo: string;
   /** Siembra un pedido ya pagado hace N minutos (escenarios de cancelación y estado). */
   pagadoHaceMin?: number;
+  /** Corre con la carta estructurada de pizzas (Pizzas + Pizzas especiales) cargada. */
+  conCarta?: boolean;
   pasos: Paso[];
 }
 

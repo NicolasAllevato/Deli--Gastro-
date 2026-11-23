@@ -89,6 +89,8 @@ describe("textos: descripción de quote_order y prompt", () => {
 describe("menu() y get_menu con grupos de opciones", () => {
   function withPromo() {
     const db = world();
+    // Sin carta estructurada: se prueba el get_menu por categorías.
+    db.raw.exec("DELETE FROM carta_items; DELETE FROM carta_secciones");
     const cat = (db.raw.prepare("SELECT id FROM categories LIMIT 1").get() as { id: string }).id;
     db.raw.prepare("INSERT INTO products (id, category_id, name, price_cents, is_active, show_in_portal, fudo_id) VALUES ('promo-1', ?, 'Promo 2 pizzas + bebidas', 3000000, 1, 1, 50)").run(cat);
     db.raw.prepare("INSERT INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (3, 'bebidas promo', 2, 2, 1)").run();
@@ -114,7 +116,8 @@ describe("menu() y get_menu con grupos de opciones", () => {
     const repo = d1BotRepo(withPromo());
     const get = toolsFor("consulta_menu", repo, conversation, settingsFromConfig({}), Date.now, {} as never).find((t) => t.name === "get_menu")!;
     const out = (await get.run({})) as { grupos_de_opciones?: Record<string, { nombre: string; opciones: { id: number; nombre: string }[] }>; otras_categorias?: unknown; categorias?: { productos: { id?: string; grupos?: number[] }[] }[] };
-    assert.deepEqual(Object.keys(out.grupos_de_opciones ?? {}), ["3"]);
+    // El mundo del simulador trae además la promo «Baila Ahora» (grupo 2), visible: solo faltan los grupos de productos ocultos.
+    assert.deepEqual(Object.keys(out.grupos_de_opciones ?? {}), ["2", "3"]);
     assert.deepEqual(out.grupos_de_opciones?.["3"]?.opciones, [{ id: 31, nombre: "Sprite" }, { id: 30, nombre: "Coca-Cola" }]);
     const promo = out.categorias?.flatMap((c) => c.productos).find((p) => p.id === "promo-1");
     assert.deepEqual(promo?.grupos, [3]);
