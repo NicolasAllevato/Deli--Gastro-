@@ -265,6 +265,7 @@ const API_RULES: readonly ApiRule[] = [
   { prefix: "/api/admin/catalog", sections: ["catalogo"] },
   { prefix: "/api/admin/clients", sections: ["dashboard"] },
   { prefix: "/api/admin/conocimiento", sections: ["comunicacion"] },
+  { prefix: "/api/admin/conversaciones", sections: ["comunicacion"] },
   { prefix: "/api/admin/courier-shifts", sections: ["pedidos"] },
   { prefix: "/api/admin/couriers", sections: ["pedidos"] },
   { prefix: "/api/admin/daily-summary", sections: ["configuracion"] },
