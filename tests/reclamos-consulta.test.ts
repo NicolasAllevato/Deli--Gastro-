@@ -238,7 +238,7 @@ describe("agente de reclamos: una consulta no llama a OpenAI", () => {
     pedidosCliente: 3,
     ultimosPedidos: [],
     reclamosPrevios: [],
-    config: { maxPuntos: 300, maxDescuentoPct: 15 },
+    config: { maxPuntos: 300, maxSaldo: 1500 },
   });
 
   it("consulta: sin fetch, sin clave pedida y sin guardar nada (ni siquiera un error)", async () => {

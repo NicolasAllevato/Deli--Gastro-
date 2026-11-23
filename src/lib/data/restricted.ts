@@ -9,6 +9,7 @@ import type { SqlDatabase } from "./sql.ts";
  */
 export const STAFF_ONLY_TABLES = [
   "payment_intents",
+  "credit_ledger",
   "legal_acceptances",
   "couriers",
   "courier_locations",

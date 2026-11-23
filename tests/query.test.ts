@@ -11,7 +11,7 @@ function emptyStore(): Tables {
     courier_locations: [], couriers: [], fudo_product_map: [], fudo_payment_map: [], fudo_modifier_groups: [], fudo_modifier_options: [], fudo_product_groups: [],
     clients: [],
     orders: [],
-    points_ledger: [],
+    points_ledger: [], credit_ledger: [],
     global_config: [],
     categories: [],
     products: [],

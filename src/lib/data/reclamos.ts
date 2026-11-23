@@ -1,11 +1,14 @@
 /**
  * Reclamos de clientes (tablas `reclamos` y `reclamos_eventos`, migraciones 0014 y 0016).
  * El Worker del bot crea y actualiza los tickets; acá el panel los lista, los toma, agrega notas,
- * registra los mensajes al cliente y los resuelve con una compensación (puntos o descuento).
+ * registra los mensajes al cliente y los resuelve con una compensación (puntos o saldo a favor en pesos).
  */
 import { z } from "zod";
 import { esConsulta } from "../reclamos/categoria.ts";
 import { requireStaff, type Actor } from "./actor.ts";
+import { descuentoASaldoPesos, DEFAULT_MAX_SALDO, MAX_SALDO_PANEL, SIN_PEDIDO_PARA_DESCUENTO } from "../reclamos/saldo.ts";
+import { addCreditStatement } from "./credit.ts";
+import { toCents } from "./money.ts";
 import { addPointsStatement } from "./points.ts";
 import { nowIso, type SqlDatabase, type SqlStatement } from "./sql.ts";
 
@@ -13,7 +16,8 @@ export const RECLAMO_CATEGORIAS = ["demora", "llego_frio", "faltante", "pedido_e
 export const RECLAMO_ESTADOS = ["abierto", "en_curso", "resuelto"] as const;
 export type ReclamoCategoria = (typeof RECLAMO_CATEGORIAS)[number];
 export type ReclamoEstadoValor = (typeof RECLAMO_ESTADOS)[number];
-export type CompensacionTipo = "puntos" | "descuento";
+/** `descuento` (%) es el tipo viejo: al resolver se convierte en saldo en pesos; solo queda en reclamos anteriores. */
+export type CompensacionTipo = "puntos" | "descuento" | "saldo";
 
 export interface Reclamo {
   id: string;
@@ -123,7 +127,9 @@ export const reclamoAccionSchema = z.discriminatedUnion("accion", [
         .discriminatedUnion("tipo", [
           // Hasta 10.000 puntos por reclamo: un tope que evita un cero de más por error.
           z.object({ tipo: z.literal("puntos"), valor: z.number().int().min(1).max(10_000) }).strict(),
-          // Descuento en porcentaje sobre el próximo pedido.
+          // Saldo a favor en pesos enteros, para descontar en la próxima compra (envío incluido).
+          z.object({ tipo: z.literal("saldo"), valor: z.number().int().min(1).max(MAX_SALDO_PANEL) }).strict(),
+          // Descuento en %: se convierte en saldo en pesos sobre el total del pedido asociado.
           z.object({ tipo: z.literal("descuento"), valor: z.number().int().min(1).max(100) }).strict(),
         ])
         .nullable()
@@ -323,12 +329,15 @@ export interface ResolucionResultado {
   reclamo: Reclamo;
   /** Puntos acreditados ahora (0 si no hubo o ya se habían acreditado). */
   puntosAcreditados: number;
+  /** Saldo a favor acreditado ahora, en pesos (0 si no hubo o ya se había acreditado). */
+  saldoAcreditado: number;
 }
 
 /**
- * Resuelve el reclamo. Con compensación en PUNTOS se acredita en el ledger del cliente (idempotente por
- * `reclamo:<id>`, en el mismo batch: o queda todo o nada). El DESCUENTO solo se registra en el reclamo
- * (no hay sistema de cupones todavía): el local lo aplica a mano en el próximo pedido.
+ * Resuelve el reclamo. Con compensación en PUNTOS se acredita en el ledger de puntos (idempotente por
+ * `reclamo:<id>`) y con SALDO A FAVOR en el de saldo (idempotente por `reclamo:<id>:saldo`), siempre en el mismo
+ * batch que la resolución: o queda todo o nada. El «descuento %» viejo se convierte en saldo: pesos = total del
+ * pedido asociado × % (sin pedido asociado se rechaza y se pide un monto en pesos).
  */
 export async function resolverReclamo(
   db: SqlDatabase,
@@ -340,9 +349,15 @@ export async function resolverReclamo(
   const actual = await db.prepare(`SELECT ${COLS} WHERE r.id = ?`).bind(id).first<Row>();
   if (!actual) throw new ReclamoNoEncontradoError();
   if (actual.estado === "resuelto") throw new ReclamoConflictoError("El reclamo ya está resuelto.");
-  const comp = input.compensacion ?? null;
+  const pedido = input.compensacion?.tipo === "descuento" && actual.order_id
+    ? await db.prepare("SELECT total_cents FROM orders WHERE id = ?").bind(actual.order_id).first<{ total_cents: number }>()
+    : null;
+  const { comp, convertidoDe } = normalizarCompensacion(input.compensacion ?? null, pedido?.total_cents ?? null);
   if (comp?.tipo === "puntos" && !actual.client_id) {
     throw new ReclamoConflictoError("El reclamo no tiene un cliente registrado: no se pueden sumar puntos.");
+  }
+  if (comp?.tipo === "saldo" && !actual.client_id) {
+    throw new ReclamoConflictoError("El reclamo no tiene un cliente registrado: no se puede acreditar saldo a favor.");
   }
 
   const now = nowIso();
@@ -357,8 +372,27 @@ export async function resolverReclamo(
     eventoStmt(db, id, "estado", `Resuelto: ${input.resolucion}`, "admin"),
   ];
   if (comp) {
-    const detalle = comp.tipo === "puntos" ? `${comp.valor} puntos acreditados` : `${comp.valor}% de descuento en el próximo pedido (aplicarlo a mano)`;
+    const detalle =
+      comp.tipo === "puntos"
+        ? `${comp.valor} puntos acreditados`
+        : convertidoDe !== null
+          ? `${convertidoDe}% de descuento convertido en $${comp.valor} de saldo a favor para la próxima compra`
+          : `$${comp.valor} de saldo a favor para la próxima compra`;
     stmts.push(eventoStmt(db, id, "compensacion", detalle, "admin"));
+  }
+  if (comp?.tipo === "saldo" && actual.client_id) {
+    stmts.push(
+      addCreditStatement(db, actor, {
+        id: crypto.randomUUID(),
+        clientId: actual.client_id,
+        deltaCents: toCents(comp.valor),
+        motivo: "reclamo",
+        idempotencyKey: `reclamo:${id}:saldo`,
+        reclamoId: id,
+        orderId: actual.order_id,
+        description: `Compensación por reclamo #${actual.numero}`,
+      }),
+    );
   }
   if (comp?.tipo === "puntos" && actual.client_id) {
     stmts.push(
@@ -374,7 +408,10 @@ export async function resolverReclamo(
   }
   const results = await db.batch(stmts);
   if (results[0].meta.changes === 0) throw new ReclamoConflictoError("El reclamo ya está resuelto.");
-  const puntosAcreditados = comp?.tipo === "puntos" ? (results.at(-1)?.meta.changes === 1 ? comp.valor : 0) : 0;
+  // El asiento de puntos o de saldo es la última sentencia del batch: changes = 0 si la clave ya existía.
+  const asentado = results.at(-1)?.meta.changes === 1;
+  const puntosAcreditados = comp?.tipo === "puntos" && asentado ? comp.valor : 0;
+  const saldoAcreditado = comp?.tipo === "saldo" && asentado ? comp.valor : 0;
   const reclamo = fromRow({
     ...actual,
     estado: "resuelto",
@@ -385,7 +422,19 @@ export async function resolverReclamo(
     updated_at: now,
     mensaje_resolucion: input.mensaje ?? null,
   });
-  return { reclamo, puntosAcreditados };
+  return { reclamo, puntosAcreditados, saldoAcreditado };
+}
+
+/** El descuento % viejo pasa a saldo en pesos; el resto queda igual. `convertidoDe` es el % original, si hubo conversión. */
+function normalizarCompensacion(
+  comp: { tipo: CompensacionTipo; valor: number } | null,
+  pedidoTotalCents: number | null,
+): { comp: { tipo: CompensacionTipo; valor: number } | null; convertidoDe: number | null } {
+  if (comp?.tipo !== "descuento") return { comp, convertidoDe: null };
+  if (pedidoTotalCents === null) throw new ReclamoConflictoError(SIN_PEDIDO_PARA_DESCUENTO);
+  const valor = descuentoASaldoPesos(pedidoTotalCents, comp.valor);
+  if (valor < 1) throw new ReclamoConflictoError("El descuento da menos de $1 sobre ese pedido: usá «Saldo a favor» con un monto en pesos.");
+  return { comp: { tipo: "saldo", valor }, convertidoDe: comp.valor };
 }
 
 /* ---------------------------------------------------------------- aviso al local */
@@ -465,13 +514,12 @@ export interface ConfigReclamos {
   paused: boolean;
   /** `bot_modo_entrenamiento`: los reclamos no se derivan a una persona. */
   entrenamiento: boolean;
-  /** Topes del agente de reclamos (`reclamo_max_puntos`, `reclamo_max_descuento_pct`). */
+  /** Topes del agente de reclamos (`reclamo_max_puntos`, `reclamo_max_saldo` en pesos). */
   maxPuntos: number;
-  maxDescuentoPct: number;
+  maxSaldo: number;
 }
 
 const DEFAULT_MAX_PUNTOS = 500;
-const DEFAULT_MAX_DESCUENTO_PCT = 20;
 
 /** Horario (mismas claves que el bot) para el SLA, modo entrenamiento y topes de compensación del agente. */
 export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<ConfigReclamos> {
@@ -479,7 +527,7 @@ export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<Con
   const { results } = await db
     .prepare(
       `SELECT key, value FROM global_config
-       WHERE key IN ('horario_apertura', 'horario_cierre', 'modo_pausa', 'bot_modo_entrenamiento', 'reclamo_max_puntos', 'reclamo_max_descuento_pct')`,
+       WHERE key IN ('horario_apertura', 'horario_cierre', 'modo_pausa', 'bot_modo_entrenamiento', 'reclamo_max_puntos', 'reclamo_max_saldo')`,
     )
     .all<{ key: string; value: string }>();
   const cfg = new Map(results.map((r) => [r.key, safeJson(r.value)]));
@@ -495,7 +543,7 @@ export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<Con
     paused: cfg.get("modo_pausa") === true,
     entrenamiento: training === true || training === "true",
     maxPuntos: entero("reclamo_max_puntos", DEFAULT_MAX_PUNTOS, 10_000),
-    maxDescuentoPct: entero("reclamo_max_descuento_pct", DEFAULT_MAX_DESCUENTO_PCT, 100),
+    maxSaldo: entero("reclamo_max_saldo", DEFAULT_MAX_SALDO, MAX_SALDO_PANEL),
   };
 }
 

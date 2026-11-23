@@ -13,6 +13,8 @@ import { createTestDb } from "./helpers/sqlite-d1.ts";
 const D1_ONLY = new Set([
   "courier_user_id",
   "payment_intent_id",
+  // Saldo a favor (migración D1 0024).
+  "credit_applied",
   // Venta en Fudo (migración D1 0007): el admin la ve en /admin/fudo (ventas pendientes).
   "fudo_sale_id",
   "fudo_sale_sync",

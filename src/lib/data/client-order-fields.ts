@@ -63,6 +63,8 @@ export const CLIENT_ORDER_EXCLUDED = [
   "fudo_sale_paid_at",
   "fudo_sale_closed_at",
   "fudo_sale_canceled_at",
+  // Saldo a favor usado (migración D1 0024, solo D1): el cliente ya ve el total con el saldo descontado.
+  "credit_applied",
 ] as const;
 
 /** Columnas de Supabase (montos en pesos): mismos nombres que la API. */

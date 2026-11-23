@@ -3,12 +3,15 @@ export const dynamic = "force-dynamic";
 import { requireClientPage } from "@/lib/auth/clientPage";
 import { isDemoMode } from "@/lib/demo/mode";
 import { readConfig } from "@/lib/orders-server";
+import { availableCredit } from "@/lib/credit-server";
 import { isOnlinePaymentEnabled } from "@/lib/payments/gateway";
 import CheckoutClient from "./CheckoutClient";
 
 export default async function CarritoPage() {
   const { client, db } = await requireClientPage();
   const config = await readConfig(db);
+  // Saldo a favor que se puede usar ahora (sin lo reservado en pagos pendientes): el mismo que descuenta el servidor.
+  const credit = client ? await availableCredit(db, client.id) : 0;
 
   // Categoría de cada producto: el carrito muestra el canje con la misma regla que valida el servidor.
   const [{ data: products }, { data: categories }] = await Promise.all([
@@ -28,6 +31,7 @@ export default async function CarritoPage() {
       paused={config.modo_pausa === true || config.tienda_activa === false}
       showSamples={isDemoMode()}
       points={client?.total_points ?? 0}
+      credit={credit}
       productCategories={productCategories}
       onlinePayments={isOnlinePaymentEnabled()}
     />

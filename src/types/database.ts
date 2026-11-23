@@ -19,6 +19,8 @@ export interface Database {
           address: string | null
           tier: ClientTier
           total_points: number
+          /** Saldo a favor en pesos (migración 0024). Lo mueve el trigger de credit_ledger; no se escribe a mano. */
+          credit?: number
           wa_marketing_opt_in: boolean
           /** Baja de comunicaciones (migración 0021): con fecha, no recibe promociones ni encuestas. Solo la escribe el servidor. */
           unsubscribed_at?: string | null
@@ -81,6 +83,8 @@ export interface Database {
           survey_sent_at: string | null
           channel: OrderChannel
           points_earned: number | null
+          /** Saldo a favor usado en el pedido, en pesos (migración 0024); ya está descontado de `total`. */
+          credit_applied?: number
           fudo_order_id: number | null
           fudo_sync_status: FudoSyncStatus | null
           fudo_sale_type: 'DELIVERY' | 'TAKEAWAY' | 'EAT-IN' | null
@@ -111,6 +115,7 @@ export interface Database {
           courier_name?: string | null
           channel?: OrderChannel
           points_earned?: number | null
+          credit_applied?: number
           fudo_sync_status?: FudoSyncStatus | null
           fudo_sale_type?: 'DELIVERY' | 'TAKEAWAY' | 'EAT-IN' | null
           fudo_sale_state?: string | null
@@ -455,6 +460,32 @@ export interface Database {
           order_id?: string | null
           delta: number
           description: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      credit_ledger: {
+        Row: {
+          id: string
+          client_id: string
+          order_id: string | null
+          reclamo_id: string | null
+          /** Pesos: positivo acredita, negativo debita. */
+          delta: number
+          motivo: 'reclamo' | 'compra' | 'devolucion' | 'ajuste'
+          description: string | null
+          idempotency_key: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          order_id?: string | null
+          reclamo_id?: string | null
+          delta: number
+          motivo: 'reclamo' | 'compra' | 'devolucion' | 'ajuste'
+          description?: string | null
+          idempotency_key: string
         }
         Update: Record<string, never>
         Relationships: []

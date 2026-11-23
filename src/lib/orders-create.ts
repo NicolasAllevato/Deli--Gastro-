@@ -4,6 +4,7 @@ import type { Database, OrderChannel, PaymentMethod } from "@/types/database";
 import { buildItemsDesc, formatMoney, minutesSince, pointsForLines, REWARDS, type Reward } from "@/lib/orders";
 import { getClientById, numberConfig, readConfig, refundRedeemedPoints, applyPointsDelta } from "@/lib/orders-server";
 import { applyReward, REDEEM_PREFIX, rewardNote } from "@/lib/rewards";
+import { availableCredit, linkCreditToOrder, orderCreditKey, refundCreditForOrder, writeCredit } from "@/lib/credit-server";
 import { getGateway } from "@/lib/payments/gateway";
 import { refundPaymentForOrder } from "@/lib/payments/refunds";
 import { loadDeliverySettings } from "@/lib/zones-server";
@@ -230,12 +231,16 @@ export interface OrderSnapshot {
   itemsDesc: string;
   /** Líneas del pedido, para `order_items` y el envío a Fudo. Las intenciones de pago viejas no las traen. */
   lines?: OrderLine[];
+  /** Lo que se cobra: ya con el saldo a favor descontado. */
   total: number;
   fee: number;
+  /** Saldo a favor (pesos) que paga parte del pedido; ya está restado de `total`. Se debita al crear el pedido. */
+  creditApplied?: number;
   /** Puntos que suma el pedido al entregarse, según los puntos de cada plato y categoría. */
   pointsEarned?: number;
   address: DeliveryPoint;
-  paymentMethod: PaymentMethod;
+  /** `null` cuando el saldo a favor cubre todo el pedido: no hay nada que cobrar. */
+  paymentMethod: PaymentMethod | null;
   notes: string | null;
   channel: OrderChannel;
   actor: string;
@@ -255,11 +260,16 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
     if (!resolved.ok) return resolved;
     applied = resolved.value;
   }
-  const total = subtotal - (applied?.discount ?? 0) + fee;
+  // El saldo a favor puede cubrir todo, envío incluido. Lo comprometido en pagos online pendientes no cuenta.
+  const payable = subtotal - (applied?.discount ?? 0) + fee;
+  const creditApplied = Math.min(await availableCredit(db, input.clientId), payable);
+  const total = payable - creditApplied;
   if (input.expectedTotal !== undefined && total !== input.expectedTotal) {
     return fail(409, "El precio cambió desde la cotización. Hay que volver a cotizar.", "total_changed");
   }
-  const notes = [input.notes?.trim(), applied && rewardNote(applied.reward, applied.discount)].filter(Boolean).join(" · ");
+  const notes = [input.notes?.trim(), applied && rewardNote(applied.reward, applied.discount), total === 0 && creditApplied > 0 ? "Pagado con saldo a favor" : null]
+    .filter(Boolean)
+    .join(" · ");
 
   return {
     ok: true,
@@ -271,9 +281,10 @@ export async function prepareDeliveryOrder(db: Db, input: NewDeliveryOrder): Pro
       })),
       total,
       fee,
+      ...(creditApplied > 0 ? { creditApplied } : {}),
       pointsEarned: pointsForLines(lines),
       address: input.address,
-      paymentMethod: input.paymentMethod,
+      paymentMethod: total === 0 && creditApplied > 0 ? null : input.paymentMethod,
       notes: notes || null,
       channel: input.channel,
       actor: input.actor,
@@ -307,9 +318,27 @@ const orderItemRow = (orderId: string) => (l: OrderLine) => ({
 /** Inserta el pedido de una cotización, cobra los puntos del canje y deja la bitácora. */
 export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recibidos"): Promise<Outcome<OrderRow>> {
   const fudoSync = fudoGatewayConfig() !== null;
+
+  // El saldo a favor se debita ANTES de crear el pedido (un solo INSERT que el CHECK de la base frena si el saldo
+  // ya no alcanza: nadie lo gasta dos veces) y queda atado al pedido por su id. Si el pedido no se crea, se devuelve.
+  const orderId = crypto.randomUUID();
+  const creditApplied = snapshot.creditApplied ?? 0;
+  if (creditApplied > 0) {
+    const debit = await writeCredit(db, {
+      clientId: snapshot.clientId,
+      delta: -creditApplied,
+      motivo: "compra",
+      idempotencyKey: orderCreditKey(orderId),
+      description: "Saldo a favor usado en un pedido",
+    });
+    if (debit === "insufficient") return fail(409, "Tu saldo a favor ya no alcanza para este pedido. Hay que volver a cotizar.", "credit_insufficient");
+    if (debit !== "ok") return fail(500, "No pudimos aplicar tu saldo a favor. Probá de nuevo.");
+  }
+
   const { data: order, error } = await db
     .from("orders")
     .insert({
+      id: orderId,
       client_id: snapshot.clientId,
       status: "Recibidos",
       items_desc: snapshot.itemsDesc,
@@ -323,10 +352,15 @@ export async function placeOrder(db: Db, snapshot: OrderSnapshot, event = "Recib
       channel: snapshot.channel,
       points_earned: snapshot.pointsEarned ?? null,
       fudo_sync_status: fudoSync ? "pending" : null,
+      ...(creditApplied > 0 ? { credit_applied: creditApplied } : {}),
     })
     .select()
     .single();
-  if (error) return fail(500, error.message);
+  if (error) {
+    if (creditApplied > 0) await refundCreditForOrder(db, orderId, { linkOrder: false });
+    return fail(500, error.message);
+  }
+  if (creditApplied > 0) await linkCreditToOrder(db, order.id);
   await mirrorOrder("orders.place", order);
 
   const lines = snapshot.lines ?? [];
@@ -404,9 +438,10 @@ export async function cancelOrderForClient(db: Db, orderId: string, clientId: st
   return { ok: true, value: data };
 }
 
-/** Lo que corresponde devolver cuando un pedido se cancela: los puntos canjeados y, si se pagó online, el pago. */
+/** Lo que corresponde devolver cuando un pedido se cancela: puntos canjeados, saldo a favor usado y, si se pagó online, el pago. */
 export async function settleCancellation(db: Db, orderId: string): Promise<void> {
   await refundRedeemedPoints(db, orderId);
+  await refundCreditForOrder(db, orderId);
   const refund = await refundPaymentForOrder(db, getGateway(), orderId);
   if (refund.error) {
     await db.from("order_events").insert({ order_id: orderId, event: "reembolso_pendiente", actor: "sistema", detail: refund.error.slice(0, 200) });
@@ -425,5 +460,6 @@ export async function cancelOrderBySystem(db: Db, orderId: string, actor: string
   if (!data) return false;
   await db.from("order_events").insert({ order_id: orderId, event: "Cancelado", actor });
   await refundRedeemedPoints(db, orderId);
+  await refundCreditForOrder(db, orderId);
   return true;
 }

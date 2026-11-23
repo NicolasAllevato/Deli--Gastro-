@@ -271,7 +271,7 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFin
 
 /** Plantilla fija del resumen desde los datos del servidor; null si la respuesta no tiene la forma esperada. */
 export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?: string): string | null {
-  const { lines, subtotal, delivery_fee: fee, total, resolved_address: address, points } = data;
+  const { lines, subtotal, delivery_fee: fee, total, resolved_address: address, points, credit_applied: credit } = data;
   if (!Array.isArray(lines) || lines.length === 0 || !isNum(subtotal) || !isNum(fee) || !isNum(total) || typeof address !== "string") return null;
   const rows: string[] = [];
   for (const line of lines as Record<string, unknown>[]) {
@@ -291,6 +291,7 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
     "",
     `Subtotal: ${money(subtotal)}`,
     `Envío: ${money(fee)}`,
+    ...creditLine(credit),
     `*Total: ${money(total)}*`,
     ...pointsLine(points),
     "",
@@ -298,6 +299,11 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
     "",
     PAYMENT_QUESTION,
   ].join("\n");
+}
+
+/** Línea del saldo a favor: solo con el valor del servidor y si descuenta algo (el total ya viene rebajado). */
+export function creditLine(credit: unknown): string[] {
+  return isNum(credit) && credit > 0 ? [`Saldo a favor aplicado: −${money(credit)}`] : [];
 }
 
 /** Línea de puntos del resumen: solo con el valor del servidor (misma cuenta que al acreditar) y si suma algo. */

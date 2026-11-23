@@ -14,7 +14,7 @@ export interface ReclamoItem {
   foto_keys: string[];
   estado: Estado;
   resolucion: string | null;
-  compensacion_tipo: "puntos" | "descuento" | null;
+  compensacion_tipo: "puntos" | "descuento" | "saldo" | null;
   compensacion_valor: number | null;
   notas: string | null;
   created_at: string;
@@ -30,7 +30,7 @@ export interface ReclamoItem {
 
 export interface Sugerencia {
   diagnostico: string;
-  resolucion: { tipo: "disculpa" | "reenvio" | "puntos" | "descuento"; valor?: number | null; motivo: string };
+  resolucion: { tipo: "disculpa" | "reenvio" | "puntos" | "saldo" | "descuento"; valor?: number | null; motivo: string };
   mensaje: string;
 }
 
@@ -38,6 +38,7 @@ export const SUGERENCIA_LABEL: Record<Sugerencia["resolucion"]["tipo"], string> 
   disculpa: "Disculpa",
   reenvio: "Reenvío",
   puntos: "Puntos",
+  saldo: "Saldo a favor",
   descuento: "Descuento",
 };
 

@@ -17,6 +17,8 @@ export interface StartedPayment {
   url: string;
   total: number;
   expiresAt: string;
+  /** Solo si el saldo a favor cubrió todo: no hay nada que pagar, el pedido ya se creó y `url` viene vacía. */
+  order?: OrderRow;
 }
 
 /**
@@ -35,6 +37,13 @@ export async function startOnlinePayment(
   const prepared = await prepareDeliveryOrder(db, { ...input, paymentMethod: "Mercado Pago" });
   if (!prepared.ok) return prepared;
   const snapshot = prepared.value;
+
+  // El saldo a favor cubre todo el pedido: no se abre Mercado Pago, el pedido se crea ya, pagado con saldo.
+  if (snapshot.total === 0) {
+    const placed = await placeOrder(db, snapshot);
+    if (!placed.ok) return placed;
+    return { ok: true, value: { intentId: "", url: "", total: 0, expiresAt: now.toISOString(), order: placed.value } };
+  }
 
   const expiresAt = new Date(now.getTime() + PAYMENT_WINDOW_MINUTES * 60_000);
   const { data: intent, error } = await db

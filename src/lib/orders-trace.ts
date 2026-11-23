@@ -36,6 +36,7 @@ export const ORDER_TRACE_SECTIONS: readonly TraceSection[] = [
       { key: "payment_method", label: "Medio de pago", kind: "text" },
       { key: "notes", label: "Notas", kind: "text" },
       { key: "points_earned", label: "Puntos acreditados", kind: "number" },
+      { key: "credit_applied", label: "Saldo a favor usado", kind: "money" },
     ],
   },
   {
