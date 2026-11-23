@@ -16,7 +16,7 @@ import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply,
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
 import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
 import { isPureGreeting, promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
-import { asksFullMenu } from "./menu.ts";
+import { asksFullMenu, completePizzaReply } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, looksLikeNewOrder, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
@@ -103,6 +103,12 @@ export function empanadaHint(text: string): string | null {
 export function flavorHint(text: string): string | null {
   if (!/\b(?:la|una|las|unas)\s+de\s+\p{L}+/iu.test(text) || /pizza|empanada|docena|bebida|gaseosa|postre|cafe|caf[eé]/i.test(text)) return null;
   return "El cliente nombró un producto solo por su sabor, sin decir la categoría: llamá get_menu y buscalo en TODAS las categorías, puede ser una pizza aunque haya una empanada parecida. Nunca respondas «no tenemos» sin haber revisado también las pizzas y los platos.";
+}
+
+/** El borrador vuelca la carta: una lista larga de productos con precio o el cierre típico «¿Te gustaría pedir algo de esto?». */
+export function dumpsMenu(draft: string): boolean {
+  if (/te gustar[ií]a pedir algo de (esto|esta)/i.test(draft)) return true;
+  return draft.split(/\r?\n/).filter((l) => /^\s*(?:[•\-*]|\p{Extended_Pictographic})/u.test(l) && /\$\s?\d/.test(l)).length >= 5;
 }
 
 /** El borrador cuenta un tope interno de las herramientas («máximo por línea», «en una sola línea») o propone partir el pedido por eso. */
@@ -224,7 +230,7 @@ export function historyMessages(items: { direction: "in" | "out"; body: string }
 }
 
 /** Por qué se descartó un borrador del modelo (y qué se le corrige en el reintento). */
-export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "limits" | "blocked";
+export type DraftIssue = "empty" | "template" | "state" | "price" | "hours" | "zone" | "promise" | "limits" | "menu_dump" | "blocked";
 
 const RETRY_HINT: Record<DraftIssue, string> = {
   empty: "Tu respuesta anterior quedó vacía. Respondé ahora al cliente en 1 a 3 líneas.",
@@ -235,6 +241,7 @@ const RETRY_HINT: Record<DraftIssue, string> = {
   zone: "No prometas envíos a zonas ni distancias que no figuren en get_business_info (zones, delivery_radius_km). Si no está, decí que lo consultás con el local.",
   promise: "No prometas hacerlo después ni digas «un momento»: hacelo ahora con las herramientas o decí qué dato falta.",
   limits: "Nunca menciones límites ni topes internos (máximo por línea, partir o dividir el pedido): no existen para el cliente. Llamá quote_order YA con la cantidad total que pidió.",
+  menu_dump: "El cliente nombró productos concretos para pedir: NO le muestres la carta ni sus categorías. Si algún producto es ambiguo (varias variantes), preguntá solo por ese en UNA línea con las opciones más cercanas y decile que el resto ya lo tenés anotado; si todo está claro, llamá quote_order YA.",
   blocked: "Tu respuesta anterior tenía datos que no se pueden mandar. Respondé de nuevo sin datos personales ni links.",
 };
 
@@ -257,6 +264,7 @@ export const SAFE_FALLBACK: Record<DraftIssue, string> = {
   zone: CONSULT_LOCAL_REPLY,
   promise: "Cualquier cosa que necesites, escribime y te ayudo 😊",
   limits: ORDER_REPLIES.startOver,
+  menu_dump: "Quiero armarte bien el pedido: ¿me confirmás de cada producto cuál querés (sabor, tamaño o presentación)? Lo que ya me dijiste lo tengo anotado.",
   blocked: REPLIES.failure,
 };
 
@@ -266,9 +274,11 @@ export const SAFE_FALLBACK: Record<DraftIssue, string> = {
  * promesa de «un momento» o datos que no se pueden mandar.
  */
 export async function draftIssue(
-  draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, settings: BotSettings, order?: OrderTurn,
+  draft: string, intent: Intent, conversation: BotConversation, deps: TurnDeps, settings: BotSettings, order?: OrderTurn, turnText = "",
 ): Promise<DraftIssue | null> {
   if (!draft.trim()) return "empty";
+  // Pidió productos concretos y no la carta: volcar la carta le descarta el pedido (el modelo debe preguntar solo lo ambiguo).
+  if ((intent === "pedido_nuevo" || intent === "pedido_datos") && turnText && !asksFullMenu(turnText) && dumpsMenu(draft)) return "menu_dump";
   if (order && imitatesTemplate(draft)) return "template";
   if (intent !== "pedido_estado" && claimsOrderState(draft)) return "state";
   if (draft.includes("$")) {
@@ -363,7 +373,7 @@ ${h}`).join("");
       await reply(deps, conversation, order.state.fixedReply ?? CANCEL_PROMPT, !order.state.handedOff);
       return "answered";
     }
-    issue = await draftIssue(draft, intent, conversation, deps, settings, order);
+    issue = await draftIssue(draft, intent, conversation, deps, settings, order, turnText);
     // Sin problemas, o derivó en este turno (sale su mensaje si es válido, si no el aviso de traspaso).
     if (!issue || handedOffNow) break;
     deps.log("[whatsapp-bot] borrador descartado", { conversation: conversation.id, intent, issue, attempt });
@@ -395,7 +405,10 @@ ${h}`).join("");
     return "output_blocked";
   }
   // Otro tema con un resumen sin confirmar: se contesta y se recuerda el pedido (no se pierde el hilo).
-  await reply(deps, conversation, reminder ? `${draft}\n\n${reminder}` : draft);
+  // Pizzas: la carta se arma con todas las secciones (Pizzas y Pizzas especiales) aunque el modelo copie solo una.
+  const carta = await readOptional(deps, "la carta", deps.repo.carta?.bind(deps.repo), []);
+  const body = completePizzaReply(draft, turnText, carta);
+  await reply(deps, conversation, reminder ? `${body}\n\n${reminder}` : body);
   return "answered";
 }
 

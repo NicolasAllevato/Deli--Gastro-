@@ -90,6 +90,17 @@ const MENU: Array<[string, string, number]> = [
   ["Pizzas", "Porción de fugazzeta", 4200],
   ["Pizzas", "Porción de jamón y morrones", 4200],
   ["Pizzas", "Fainá", 1800],
+  // Producto ambiguo (guion 53): como en producción, hay varias Quilmes y «4 quesos» se llama «Grande Cuatro quesos».
+  ["Pizzas", "Grande Cuatro quesos", 17000],
+  ["Bebidas", "Quilmes (Lata Zero 473)", 3200],
+  ["Bebidas", "Quilmes 1L", 4800],
+  ["Bebidas", "Quilmes Lata 473", 3200],
+  // Cafetería con variantes (guion 55): no existe «café con leche» exacto, sí jarrito y doble; medialunas de tres tipos.
+  ["Cafetería", "Medialuna de grasa", 1800],
+  ["Cafetería", "Medialuna de jamón y queso", 2600],
+  ["Cafetería", "Jarrito", 3900],
+  // Promo con grupo de opciones obligatorio (guion 54): dos gaseosas a elegir. Va en «Promos y combos» (no «Promos») para no entrar en el saludo con precio.
+  ["Promos y combos", "Baila Ahora (Gde Muzza + Gde Jamon y Morrones + Gaseosa)", 30000],
 ];
 
 /** id Fudo de la docena (oculta del menú) y de las 7 empanadas sueltas, igual que en producción. */
@@ -139,6 +150,7 @@ export function seedWorld(db: { raw: DatabaseSync }): void {
     }
   }
   seedDocena(db);
+  seedPromoBebidas(db);
   const zones = db.raw.prepare("SELECT count(*) AS n FROM delivery_zones").get() as { n: number };
   if (zones.n === 0) {
     const z = db.raw.prepare("INSERT INTO delivery_zones (id, name, shape, fee_cents, min_order_cents, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)");
@@ -170,6 +182,37 @@ function seedDocena(db: { raw: DatabaseSync }): void {
   cfg.run("docena_fudo_id", JSON.stringify(DOCENA_FUDO_ID));
   cfg.run("docena_unidades", JSON.stringify(12));
   cfg.run("empanada_gustos_map", JSON.stringify(Object.fromEntries(GUSTOS.map((g) => [String(g.fudoId), g.saborFudoId]))));
+}
+
+/** Promo «Baila Ahora» con el grupo «bebidas promo» (2 a elegir entre 3 gaseosas), como en producción. Idempotente. */
+function seedPromoBebidas(db: { raw: DatabaseSync }): void {
+  const { raw } = db;
+  raw.prepare("UPDATE products SET fudo_id = 310 WHERE name LIKE 'Baila Ahora%' AND fudo_id IS NULL").run();
+  raw.prepare("INSERT OR IGNORE INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (2, 'bebidas promo', 2, 2, 1)").run();
+  [["Pepsi", 11], ["Seven Up", 12], ["Coca-Cola", 13]].forEach(([name, id], i) => {
+    raw.prepare("INSERT OR IGNORE INTO fudo_modifier_options (fudo_id, group_fudo_id, product_fudo_id, name, price_cents, position) VALUES (?, 2, ?, ?, 0, ?)").run(id as number, 500 + (id as number), name as string, i);
+  });
+  raw.prepare("INSERT OR IGNORE INTO fudo_product_groups (product_fudo_id, group_fudo_id) VALUES (310, 2)").run();
+}
+
+/** Quita la carta estructurada (el resto de los guiones usa el menú por categorías). */
+export function clearCarta(db: { raw: DatabaseSync }): void {
+  db.raw.exec("DELETE FROM carta_items; DELETE FROM carta_secciones");
+}
+
+/** Carta estructurada con «Pizzas» y «Pizzas especiales» (donde está la Cuatro Quesos), como en producción. Idempotente. */
+export function seedCartaPizzas(db: { raw: DatabaseSync }): void {
+  const { raw } = db;
+  if ((raw.prepare("SELECT count(*) AS n FROM carta_secciones").get() as { n: number }).n > 0) return;
+  const id = (name: string): string | null => (raw.prepare("SELECT id FROM products WHERE name = ?").get(name) as { id: string } | undefined)?.id ?? null;
+  const sec = raw.prepare("INSERT INTO carta_secciones (id, titulo, orden, columnas, estilo, nota) VALUES (?, ?, ?, ?, 'lista', NULL)");
+  const item = raw.prepare("INSERT INTO carta_items (id, seccion_id, nombre, nota, orden, producto_id, producto_id_2) VALUES (?, ?, ?, NULL, ?, ?, ?)");
+  sec.run("sim-carta-1", "Pizzas", 10, JSON.stringify(["8 porciones", "Porción"]));
+  item.run("sim-carta-1-1", "sim-carta-1", "Muzzarella", 10, id("Muzzarella grande"), id("Porción de muzzarella"));
+  item.run("sim-carta-1-2", "sim-carta-1", "Napolitana", 20, id("Napolitana grande"), null);
+  item.run("sim-carta-1-3", "sim-carta-1", "Jamón y morrón", 30, id("Jamón y morrones grande"), id("Porción de jamón y morrones"));
+  sec.run("sim-carta-2", "Pizzas especiales", 20, JSON.stringify(["8 porciones"]));
+  item.run("sim-carta-2-1", "sim-carta-2", "Cuatro Quesos", 10, id("Grande Cuatro quesos"), null);
 }
 
 /** Menú en texto para el juez (precio real, para detectar precios inventados). */

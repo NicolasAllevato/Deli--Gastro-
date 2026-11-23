@@ -40,8 +40,11 @@ describe("checkQuoteAgainstText: variantes", () => {
     assert.equal(checkQuoteAgainstText("una grande de fugazzeta y 2 porciones de fugazzeta", [line(9, 1), line(6, 2)], MENU), null);
   });
 
-  it("no marca productos sin variante en el texto", () => {
-    assert.equal(checkQuoteAgainstText("2 aguas", [line(4, 2)], MENU), null);
+  it("«2 aguas» sin decir con o sin gas es ambiguo: se pregunta (antes se cotizaba una al azar)", () => {
+    const error = checkQuoteAgainstText("2 aguas", [line(4, 2)], MENU);
+    assert.ok(error);
+    assert.match(error, /Agua con gas/);
+    assert.match(error, /Agua sin gas/);
   });
 });
 
@@ -99,5 +102,49 @@ describe("carta: el modelo ve el nombre real del producto", () => {
     const out = cartaMenuForModel(carta, MENU, true) as { carta: { productos: { id: string; producto?: string }[] }[]; nota: string };
     assert.deepEqual(out.carta[0]!.productos.map((p) => p.producto), ["Grande Jamón y morrones", "Porcion Jamón y morrones"]);
     assert.match(out.nota, /producto/);
+  });
+});
+
+describe("checkQuoteAgainstText: producto ambiguo (varias variantes)", () => {
+  const BEBIDAS = [
+    item(21, "Quilmes (Lata Zero 473)"), item(22, "Quilmes 1L"), item(23, "Quilmes Lata 473"),
+    item(24, "Grande Cuatro quesos"), item(25, "Flan casero con dulce de leche"), item(10, "Empanada de jamón y queso"),
+    item(31, "Medialuna de manteca"), item(32, "Medialuna de grasa"), item(33, "Café doble"), item(34, "Jarrito"), item(35, "Café chico"),
+  ];
+
+  it("pide aclarar la Quilmes cuando el modelo eligió una al azar, con las opciones y sin tirar el resto", () => {
+    const error = checkQuoteAgainstText("una grande de 4 quesos, un flan y una Quilmes para Juramento 1500", [line(24, 1), line(25, 1), line(22, 1)], BEBIDAS);
+    assert.ok(error);
+    assert.match(error, /Quilmes/);
+    assert.match(error, /Quilmes Lata 473/);
+    assert.match(error, /Quilmes \(Lata Zero 473\)/);
+    assert.match(error, /pregunt/i);
+    assert.match(error, /no (muestres|mandes) la carta/i);
+  });
+
+  it("«4 quesos» no se confunde con la empanada de jamón y queso", () => {
+    assert.equal(checkQuoteAgainstText("una grande de 4 quesos para Juramento 1500", [line(24, 1)], BEBIDAS), null);
+  });
+
+  it("si el cliente ya precisó la variante no pregunta", () => {
+    assert.equal(checkQuoteAgainstText("una Quilmes lata 473", [line(23, 1)], BEBIDAS), null);
+    assert.equal(checkQuoteAgainstText("una Quilmes de 1 litro", [line(22, 1)], BEBIDAS), null);
+    assert.equal(checkQuoteAgainstText("la lata de 473", [line(23, 1)], BEBIDAS), null);
+  });
+
+  it("café y medialunas sin precisar: pregunta por los dos", () => {
+    const error = checkQuoteAgainstText("2 cafés con leche y 4 medialunas", [line(33, 2), line(32, 4)], BEBIDAS);
+    assert.ok(error);
+    assert.match(error, /Medialuna de manteca/);
+    assert.match(error, /Café chico/);
+  });
+
+  it("«sin gas» ya precisa el agua: no pregunta", () => {
+    assert.equal(checkQuoteAgainstText("2 aguas sin gas", [line(5, 2)], MENU), null);
+  });
+
+  it("producto sin hermanos no pregunta", () => {
+    assert.equal(checkQuoteAgainstText("un flan", [line(25, 1)], BEBIDAS), null);
+    assert.equal(checkQuoteAgainstText("2 jarritos", [line(34, 2)], BEBIDAS), null);
   });
 });

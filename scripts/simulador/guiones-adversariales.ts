@@ -118,4 +118,25 @@ export const GUIONES_ADVERSARIALES: readonly Guion[] = [
     dice: `2 aguas sin gas y una grande de jamón y morrón para delivery a ${DIR}`,
     esperaAlguna: [/(?=[^]*2 x Agua sin gas)(?=[^]*1 x Jam[oó]n y morrones grande)/i],
     noDebe: [/Agua con gas/i, /Porci[oó]n/i, SIN_PEDIR] }] },
+  { numero: 53, titulo: "Producto ambiguo (3 Quilmes): pregunta solo por la cerveza y conserva el resto", pasos: [
+    { dice: "una grande de 4 quesos, un flan y una Quilmes para Juramento 1500",
+      esperaAlguna: [/lata|1 ?L|litro|zero/i, /Quilmes/i],
+      noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Muzzarella grande/i] },
+    { dice: "la lata de 473", esperaAlguna: [/Cuatro quesos/i, /Flan/i, /Quilmes Lata 473/i], noDebe: [SIN_PEDIR] },
+  ] },
+  { numero: 54, titulo: "Promo con 2 gaseosas a elegir: pregunta cuáles y cotiza con la respuesta", pasos: [
+    { dice: "quiero la promo Baila Ahora para Juramento 1500",
+      esperaAlguna: [/gaseosa|bebida/i, /Pepsi|Coca|Seven/i], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i] },
+    { dice: "con Pepsi y Seven Up", esperaAlguna: [/Baila Ahora/i, /efectivo o Mercado Pago/i], noDebe: [SIN_PEDIR] },
+  ] },
+  { numero: 55, titulo: "Café con leche inexistente y medialunas: pregunta lo ambiguo y después modifica el pedido en curso", pasos: [
+    { dice: "2 cafés con leche y 4 medialunas para Juramento 1500",
+      esperaAlguna: [/medialuna/i, /caf[eé]|jarrito/i, /\?/], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Tostado/i] },
+    { dice: "2 jarritos y 4 medialunas de manteca", esperaAlguna: [/Jarrito/i, /Medialuna de manteca/i], noDebe: [SIN_PEDIR, /Baila Ahora/i] },
+    { dice: "sacá las medialunas y agregá un tostado de jamón y queso", esperaAlguna: [/Jarrito/i, /Tostado/i], noDebe: [/Medialuna/i, /Baila Ahora/i, SIN_PEDIR] },
+  ] },
+  { numero: 56, titulo: "Qué pizzas tienen: siempre aparece la Cuatro Quesos (Pizzas especiales)", conCarta: true, pasos: [{
+    dice: "qué pizzas tienen?",
+    esperaAlguna: [/(?=[^]*Muzzarella)(?=[^]*Cuatro Quesos)/i],
+    noDebe: [SIN_PEDIR] }] },
 ];

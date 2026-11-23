@@ -160,7 +160,7 @@ export function asksFullMenu(text: string): boolean {
 export interface CartaVariante {
   id: string;
   name: string;
-  /** Nombre real del producto de ese id (la carta agrupa variantes: «Agua con/sin gas» vale solo para «Agua con gas»). */
+  /** Nombre real del producto de ese id (una línea de la carta puede agrupar variantes: «Muzzarella» tiene columnas grande y porción). */
   producto?: string;
   price_text: string;
 }
@@ -224,7 +224,7 @@ export function cartaMenuForModel(carta: readonly CartaSeccion[], menu: readonly
     carta: carta.map((s) => bloque(s, withIds, namesById(menu))),
     otras_categorias: groupMenu(resto, withIds),
     nota: "Para mostrar una sección copiá su 'texto' tal cual. Para cotizar usá el id de 'productos'; su campo 'producto' es el nombre real de ese id. " +
-      "Si el cliente pide otra variante (sin gas, grande en vez de porción, otro gusto) y 'producto' no es esa, buscá el producto exacto en 'otras_categorias' o con get_categoria: no uses el id de otra variante.",
+      "Si el cliente pide otra variante (grande en vez de porción, otro gusto, otro tamaño) y 'producto' no es esa, buscá el producto exacto en 'otras_categorias' o con get_categoria: no uses el id de otra variante.",
   };
 }
 
@@ -278,4 +278,25 @@ export function alcoholFilter(query: string): "sin" | "con" | null {
 
 function filterAlcohol(s: CartaSeccion, filtro: "sin" | "con"): CartaSeccion {
   return { ...s, items: s.items.filter((i) => isAlcoholic(i.nombre) === (filtro === "con")) };
+}
+
+const ASKS_PIZZAS = /\bpizz?a?s?\b|\bpizzeria\b/;
+const OTHER_FAMILY = /empanad|bebida|gaseosa|postre|promo|cafe|desayuno|merienda|faina/;
+
+/**
+ * Cuando el cliente pregunta por las pizzas, la respuesta tiene que traer TODAS las secciones de pizzas de la carta
+ * («Pizzas» y «Pizzas especiales», donde está la Cuatro Quesos). El modelo a veces copia solo la primera: si el borrador
+ * muestra pizzas de la carta pero le falta alguna línea, se reemplaza por el texto armado en código con todas las secciones.
+ * Si el borrador no lista pizzas (una pregunta, otro tema) se deja como está.
+ */
+export function completePizzaReply(draft: string, turnText: string, carta: readonly CartaSeccion[]): string {
+  const q = fold(turnText);
+  if (!ASKS_PIZZAS.test(q) || OTHER_FAMILY.test(q)) return draft;
+  const secciones = cartaSectionsFor(carta, "pizzas").filter((s) => s.items.length > 0);
+  if (secciones.length < 2) return draft;
+  const d = fold(draft);
+  const nombres = secciones.flatMap((s) => s.items.map((i) => fold(i.nombre)));
+  if (!nombres.some((n) => d.includes(n))) return draft;
+  if (nombres.every((n) => d.includes(n))) return draft;
+  return `${secciones.map(formatCartaSeccion).join("\n\n")}\n\n¿Querés pedir alguna?`;
 }

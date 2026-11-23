@@ -9,7 +9,7 @@ import { CartaError, cartaInputSchema, getCartaAdmin, getCartaPublica, saveCarta
 import { JUGADOR, renderCartaPdf, pesosCarta, winAnsi } from "../src/lib/carta-pdf/render.ts";
 import { seccionesDesdeCarta, seccionesDesdeCategorias } from "../src/lib/carta-pdf/build.ts";
 import { d1BotRepo } from "../workers/whatsapp-bot/src/repo/d1.ts";
-import { cartaCategoryForModel, cartaMenuForModel, cartaSectionsFor, formatCartaSeccion } from "../workers/whatsapp-bot/src/bot/menu.ts";
+import { cartaCategoryForModel, cartaMenuForModel, completePizzaReply, cartaSectionsFor, formatCartaSeccion } from "../workers/whatsapp-bot/src/bot/menu.ts";
 import { toolsFor } from "../workers/whatsapp-bot/src/bot/tools.ts";
 import { settingsFromConfig } from "../workers/whatsapp-bot/src/bot/settings.ts";
 import type { BotRepo, CartaSeccion, MenuItem } from "../workers/whatsapp-bot/src/repo/types.ts";
@@ -204,6 +204,23 @@ describe("carta estructurada: bot", () => {
     assert.deepEqual(cartaSectionsFor(CARTA_BOT, "las pizzas").map((s) => s.titulo), ["Pizzas", "Pizzas especiales"]);
     assert.deepEqual(cartaSectionsFor(CARTA_BOT, "empanada").map((s) => s.titulo), ["Empanadas"]);
     assert.equal(cartaCategoryForModel(CARTA_BOT, "promos", true), null);
+  });
+
+  it("pizzas: si el modelo copia solo «Pizzas», la respuesta se arma con todas las secciones (aparece Cuatro Quesos)", () => {
+    const parcial = formatCartaSeccion(pizzas);
+    const out = completePizzaReply(parcial, "qué pizzas tienen?", CARTA_BOT);
+    assert.match(out, /Cuatro Quesos — \$33\.000/);
+    assert.match(out, /Pizzas especiales/);
+    assert.match(out, /Muzzarella/);
+  });
+
+  it("pizzas: si ya están todas, o el tema es otro, no toca el texto", () => {
+    const completa = `${formatCartaSeccion(pizzas)}
+
+${formatCartaSeccion(especiales)}`;
+    assert.equal(completePizzaReply(completa, "qué pizzas tienen?", CARTA_BOT), completa);
+    assert.equal(completePizzaReply("¿De qué gusto?", "una pizza", CARTA_BOT), "¿De qué gusto?");
+    assert.equal(completePizzaReply(formatCartaSeccion(pizzas), "pizzas y empanadas", CARTA_BOT), formatCartaSeccion(pizzas));
   });
 
   it("con pedidos encendidos expone los product_id de cada columna", () => {
