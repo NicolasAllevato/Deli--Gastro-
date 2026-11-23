@@ -166,5 +166,7 @@ export async function listPublicResource(env: FudoEnv, resource: string, query =
 
 export const listFudoProducts = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "products");
 export const listFudoCategories = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "product-categories");
+export const listFudoModifierGroups = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "product-modifiers-groups");
+export const listFudoModifiers = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "product-modifiers");
 export const listFudoPaymentMethods = (env: FudoEnv): Promise<unknown> => listPublicResource(env, "payment-methods");
 

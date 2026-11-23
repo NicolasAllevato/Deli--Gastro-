@@ -13,6 +13,26 @@ export interface FudoProduct {
   categoryId: number | null;
   /** Fudo: `true` se vende solo; `false` es una opción o modificador de otro plato; null = sin dato. */
   sellAlone?: boolean | null;
+  /** Ids de los grupos de modificadores (sabores, bebidas de promo) asociados al producto. [] si no tiene. */
+  modifierGroupIds?: number[];
+}
+
+export interface FudoModifierGroup {
+  id: number;
+  name: string;
+  minQty: number | null;
+  maxQty: number | null;
+  required: boolean;
+  kind: string | null;
+}
+
+/** Un ProductModifier: el "producto" es el sabor/bebida (suele valer $0); el nombre sale de ese producto. */
+export interface FudoModifier {
+  id: number;
+  groupId: number;
+  productId: number;
+  name: string | null;
+  price: number | null;
 }
 
 export interface FudoCategory {
@@ -60,6 +80,17 @@ function relationId(e: Entry, name: string): unknown {
   return isObject(rel) && isObject(rel.data) ? rel.data.id : undefined;
 }
 
+function relationIds(e: Entry, name: string): number[] {
+  const rel = isObject(e.relationships) ? e.relationships[name] : undefined;
+  if (!isObject(rel) || !Array.isArray(rel.data)) return [];
+  const ids: number[] = [];
+  for (const item of rel.data) {
+    const id = isObject(item) ? positiveInt(item.id) : null;
+    if (id !== null && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 function categoryIdOf(e: Entry): number | null {
   const nested = isObject(e.category) ? e.category.id : isObject(e.productCategory) ? e.productCategory.id : undefined;
   return positiveInt(field(e, "productCategoryId") ?? field(e, "categoryId") ?? nested ?? relationId(e, "productCategory") ?? relationId(e, "category"));
@@ -80,9 +111,89 @@ export function parseFudoProducts(raw: unknown): FudoProduct[] {
       active: field(entry, "active") !== false,
       categoryId: categoryIdOf(entry),
       sellAlone: typeof sellAlone === "boolean" ? sellAlone : null,
+      modifierGroupIds: relationIds(entry, "productModifiersGroups"),
     });
   }
   return out;
+}
+
+function optionalQty(v: unknown): number | null {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+export function parseFudoModifierGroups(raw: unknown): FudoModifierGroup[] {
+  const out: FudoModifierGroup[] = [];
+  for (const entry of listFrom(raw, "productModifiersGroups")) {
+    if (!isObject(entry)) continue;
+    const id = positiveInt(entry.id);
+    const name = cleanName(field(entry, "name"));
+    if (id === null || name === null) continue;
+    const kind = field(entry, "kind");
+    out.push({
+      id,
+      name,
+      minQty: optionalQty(field(entry, "minQuantity")),
+      maxQty: optionalQty(field(entry, "maxQuantity")),
+      required: field(entry, "required") === true,
+      kind: typeof kind === "string" && kind.trim() ? kind.trim() : null,
+    });
+  }
+  return out;
+}
+
+export function parseFudoModifiers(raw: unknown): FudoModifier[] {
+  const out: FudoModifier[] = [];
+  for (const entry of listFrom(raw, "productModifiers")) {
+    if (!isObject(entry)) continue;
+    const id = positiveInt(entry.id);
+    const groupId = positiveInt(relationId(entry, "productModifiersGroup"));
+    const productId = positiveInt(relationId(entry, "product"));
+    if (id === null || groupId === null || productId === null) continue;
+    out.push({ id, groupId, productId, name: cleanName(field(entry, "name")), price: validPrice(field(entry, "price")) });
+  }
+  return out;
+}
+
+export interface ModifierGroupRow { fudo_id: number; name: string; min_qty: number | null; max_qty: number | null; required: number; kind: string | null }
+export interface ModifierOptionRow { fudo_id: number; group_fudo_id: number; product_fudo_id: number; name: string; price_cents: number; position: number; is_active: number }
+export interface ProductGroupRow { product_fudo_id: number; group_fudo_id: number }
+export interface ModifierSyncPlan { groups: ModifierGroupRow[]; options: ModifierOptionRow[]; productGroups: ProductGroupRow[] }
+
+/**
+ * Filas de modificadores listas para D1. El nombre y el precio de cada opción salen del producto sabor
+ * (Fudo guarda el sabor como un producto de $0); sin producto conocido se usa el nombre del modificador, y
+ * sin ninguno de los dos la opción se descarta. Solo se vinculan productos con grupos que existen.
+ */
+export function planModifierSync(input: { groups: FudoModifierGroup[]; modifiers: FudoModifier[]; products: FudoProduct[] }): ModifierSyncPlan {
+  const productById = new Map(input.products.map((p) => [p.id, p]));
+  const groupIds = new Set(input.groups.map((g) => g.id));
+  const groups = input.groups.map((g) => ({
+    fudo_id: g.id, name: g.name, min_qty: g.minQty, max_qty: g.maxQty, required: g.required ? 1 : 0, kind: g.kind,
+  }));
+  const positions = new Map<number, number>();
+  const options: ModifierOptionRow[] = [];
+  for (const m of input.modifiers) {
+    if (!groupIds.has(m.groupId)) continue;
+    const product = productById.get(m.productId);
+    const name = product?.name ?? m.name;
+    if (!name) continue;
+    const position = positions.get(m.groupId) ?? 0;
+    positions.set(m.groupId, position + 1);
+    options.push({
+      fudo_id: m.id,
+      group_fudo_id: m.groupId,
+      product_fudo_id: m.productId,
+      name,
+      price_cents: Math.round((product?.price ?? m.price ?? 0) * 100),
+      position,
+      is_active: product ? (product.active ? 1 : 0) : 1,
+    });
+  }
+  const productGroups = input.products.flatMap((p) =>
+    (p.modifierGroupIds ?? []).filter((g) => groupIds.has(g)).map((g) => ({ product_fudo_id: p.id, group_fudo_id: g })),
+  );
+  return { groups, options, productGroups };
 }
 
 export function parseFudoCategories(raw: unknown): FudoCategory[] {
@@ -153,9 +264,15 @@ export function planCatalogSync(input: PlanInput): CatalogPlan {
   const excludedCategoryIds = new Set(input.fudoCategories.filter((c) => EXCLUDED_CATEGORIES.includes(norm(c.name))).map((c) => c.id));
   const fudoCategories = input.fudoCategories.filter((c) => !excludedCategoryIds.has(c.id));
   // Solo lo que se vende solo y no es una opción/modificador (Fudo marca sellAlone=false en esos).
+  // Excepción: un producto con grupos de modificadores (p. ej. la docena de empanadas) activo y con precio
+  // es vendible aunque esté en una categoría excluida o no marque sellAlone. Los sabores no tienen grupos.
+  const hasGroups = (p: FudoProduct): boolean => (p.modifierGroupIds ?? []).length > 0;
+  const isExcluded = (p: FudoProduct): boolean => p.categoryId !== null && excludedCategoryIds.has(p.categoryId);
   const fudoProducts = input.fudoProducts.filter(
-    (p) => p.sellAlone !== false && (p.categoryId === null || !excludedCategoryIds.has(p.categoryId)),
+    (p) => (p.sellAlone !== false && !isExcluded(p)) || (hasGroups(p) && p.active && p.price !== null && p.price > 0),
   );
+  // Un producto vendible de categoría excluida no se asigna a categoría (esa categoría no se importa).
+  const categoryFudoId = (p: FudoProduct): number | null => (isExcluded(p) ? null : p.categoryId);
   const plan: CatalogPlan = { categoryInserts: [], categoryUpdates: [], productInserts: [], productUpdates: [], deactivate: [], deactivationBlocked: 0 };
   const catByFudo = new Map(input.categories.filter((c) => c.fudo_id !== null).map((c) => [c.fudo_id as number, c]));
 
@@ -188,7 +305,7 @@ export function planCatalogSync(input: PlanInput): CatalogPlan {
     if (!match) {
       // Fudo arrastra muchos productos viejos o auxiliares: solo se crea lo vendible hoy (activo y con precio).
       if (fp.active && fp.price !== null && fp.price > 0) {
-        plan.productInserts.push({ name: fp.name, price: fp.price, is_active: true, fudo_id: fp.id, category_fudo_id: fp.categoryId });
+        plan.productInserts.push({ name: fp.name, price: fp.price, is_active: true, fudo_id: fp.id, category_fudo_id: categoryFudoId(fp) });
       }
       continue;
     }
@@ -199,11 +316,11 @@ export function planCatalogSync(input: PlanInput): CatalogPlan {
       price: fp.price ?? match.price,
       is_active: fp.active,
       fudo_id: fp.id,
-      category_fudo_id: fp.categoryId,
+      category_fudo_id: categoryFudoId(fp),
     };
     // Una categoría que todavía no existe (se crea en esta corrida) cuenta como cambio pendiente.
-    const knownCategory = fp.categoryId === null ? undefined : catByFudo.get(fp.categoryId);
-    const categoryOk = fp.categoryId === null || (knownCategory !== undefined && match.category_id === knownCategory.id);
+    const knownCategory = next.category_fudo_id === null ? undefined : catByFudo.get(next.category_fudo_id);
+    const categoryOk = next.category_fudo_id === null || (knownCategory !== undefined && match.category_id === knownCategory.id);
     const unchanged =
       match.name === next.name && match.price === next.price && match.is_active === next.is_active &&
       match.fudo_id === next.fudo_id && categoryOk;

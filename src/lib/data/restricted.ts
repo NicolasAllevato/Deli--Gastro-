@@ -21,6 +21,9 @@ export const STAFF_ONLY_TABLES = [
   "fudo_product_map",
   "fudo_payment_map",
   "fudo_sync_runs",
+  "fudo_modifier_groups",
+  "fudo_modifier_options",
+  "fudo_product_groups",
   "reports_daily",
 ] as const;
 export type StaffOnlyTable = (typeof STAFF_ONLY_TABLES)[number];

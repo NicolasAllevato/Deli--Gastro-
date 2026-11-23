@@ -1,13 +1,17 @@
 import {
   parseFudoCategories,
+  parseFudoModifierGroups,
+  parseFudoModifiers,
   parseFudoProducts,
   planCatalogSync,
+  planModifierSync,
+  type ModifierSyncPlan,
   type CatalogPlan,
   type ExistingCategory,
   type ExistingProduct,
 } from "./catalog.ts";
 import { rest, type DbEnv } from "./db.ts";
-import { listFudoCategories, listFudoProducts, type FudoEnv } from "./fudo.ts";
+import { listFudoCategories, listFudoModifierGroups, listFudoModifiers, listFudoProducts, type FudoEnv } from "./fudo.ts";
 
 export interface CatalogSyncSummary {
   categoriesCreated: number;
@@ -17,6 +21,9 @@ export interface CatalogSyncSummary {
   productsDeactivated: number;
   /** Desactivaciones frenadas por el guardarraíl (listado de Fudo sospechosamente corto). */
   deactivationBlocked: number;
+  /** Grupos de modificadores (sabores) y opciones leídos de Fudo. */
+  modifierGroups: number;
+  modifierOptions: number;
   /** true = solo se calculó el plan (modo prueba): no se escribió nada en la base. */
   dryRun: boolean;
 }
@@ -89,6 +96,34 @@ export async function applyPlan(env: DbEnv, plan: CatalogPlan, existing: Existin
   }
 }
 
+const NO_MODIFIERS: ModifierSyncPlan = { groups: [], options: [], productGroups: [] };
+
+/**
+ * Refleja los grupos de modificadores en D1: upsert por fudo_id de grupos y opciones, y reemplazo completo de
+ * fudo_product_groups. Una respuesta sin grupos no borra nada (es más probable un listado roto que un local sin sabores).
+ */
+export async function applyModifiers(env: DbEnv, plan: ModifierSyncPlan): Promise<void> {
+  if (plan.groups.length === 0) return;
+  const byFudoId = { prefer: "return=minimal,resolution=merge-duplicates" };
+  const upsert = (table: string, rows: unknown[]) =>
+    rest(env, `${table}${UPSERT_BY_FUDO_ID}`, { method: "POST", headers: byFudoId, body: JSON.stringify(rows) });
+  const stamp = new Date().toISOString();
+  await upsert("fudo_modifier_groups", plan.groups.map((g) => ({ ...g, synced_at: stamp })));
+  if (plan.options.length) await upsert("fudo_modifier_options", plan.options);
+
+  const del = (path: string) => rest(env, path, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const groupIds = plan.groups.map((g) => g.fudo_id).join(",");
+  const optionIds = plan.options.map((o) => o.fudo_id).join(",");
+  // Lo que Fudo ya no lista se borra (opciones primero, por la clave foránea hacia el grupo).
+  await del(optionIds ? `fudo_modifier_options?fudo_id=not.in.(${optionIds})` : "fudo_modifier_options?fudo_id=gt.0");
+  await del(`fudo_modifier_groups?fudo_id=not.in.(${groupIds})`);
+
+  await del("fudo_product_groups?product_fudo_id=gt.0");
+  for (const row of plan.productGroups) {
+    await rest(env, "fudo_product_groups?on_conflict=product_fudo_id,group_fudo_id", { method: "POST", headers: byFudoId, body: JSON.stringify([row]) });
+  }
+}
+
 async function logRun(env: DbEnv, summary: CatalogSyncSummary | null, error: string | null): Promise<void> {
   try {
     await rest(env, "fudo_sync_runs", {
@@ -109,6 +144,26 @@ async function logRun(env: DbEnv, summary: CatalogSyncSummary | null, error: str
   }
 }
 
+/** Los modificadores son un extra: si Fudo falla al listarlos, el catálogo se sincroniza igual. */
+async function loadModifierPlan(env: FudoEnv, products: ReturnType<typeof parseFudoProducts>): Promise<ModifierSyncPlan> {
+  try {
+    const [rawGroups, rawModifiers] = await Promise.all([listFudoModifierGroups(env), listFudoModifiers(env)]);
+    return planModifierSync({ groups: parseFudoModifierGroups(rawGroups), modifiers: parseFudoModifiers(rawModifiers), products });
+  } catch (e) {
+    console.warn("[fudo.catalog] modificadores no disponibles:", e instanceof Error ? e.message : String(e));
+    return NO_MODIFIERS;
+  }
+}
+
+async function applyModifiersSafely(env: DbEnv, plan: ModifierSyncPlan): Promise<void> {
+  try {
+    await applyModifiers(env, plan);
+  } catch (e) {
+    // Modo Supabase heredado: las tablas nuevas solo existen en D1 (migración 0023).
+    console.warn("[fudo.catalog] no se pudieron guardar los modificadores:", e instanceof Error ? e.message : String(e));
+  }
+}
+
 /**
  * Trae el catálogo de Fudo y lo refleja en la app. Idempotente: una segunda corrida sin cambios no escribe nada.
  * Con `dryRun` calcula el plan y devuelve las cuentas sin tocar la base ni la bitácora.
@@ -116,12 +171,13 @@ async function logRun(env: DbEnv, summary: CatalogSyncSummary | null, error: str
 export async function syncCatalog(env: FudoEnv & DbEnv, dryRun = false): Promise<CatalogSyncSummary> {
   try {
     const [rawProducts, rawCategories, state] = await Promise.all([listFudoProducts(env), listFudoCategories(env), loadState(env)]);
-    const plan = planCatalogSync({
-      fudoProducts: parseFudoProducts(rawProducts),
-      fudoCategories: parseFudoCategories(rawCategories),
-      ...state,
-    });
-    if (!dryRun) await applyPlan(env, plan, state.products);
+    const fudoProducts = parseFudoProducts(rawProducts);
+    const plan = planCatalogSync({ fudoProducts, fudoCategories: parseFudoCategories(rawCategories), ...state });
+    const modifiers = await loadModifierPlan(env, fudoProducts);
+    if (!dryRun) {
+      await applyPlan(env, plan, state.products);
+      await applyModifiersSafely(env, modifiers);
+    }
     const summary: CatalogSyncSummary = {
       categoriesCreated: plan.categoryInserts.length,
       categoriesUpdated: plan.categoryUpdates.length,
@@ -129,6 +185,8 @@ export async function syncCatalog(env: FudoEnv & DbEnv, dryRun = false): Promise
       productsUpdated: plan.productUpdates.length,
       productsDeactivated: plan.deactivate.length,
       deactivationBlocked: plan.deactivationBlocked,
+      modifierGroups: modifiers.groups.length,
+      modifierOptions: modifiers.options.length,
       dryRun,
     };
     if (plan.deactivationBlocked > 0) {
