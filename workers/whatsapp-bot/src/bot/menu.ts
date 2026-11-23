@@ -5,11 +5,19 @@
  * Todo puro: lo usan las herramientas y los tests.
  */
 import type { CartaSeccion, MenuItem, OptionGroup } from "../repo/types.ts";
-import { money } from "../orders/flow.ts";
+import { cleanOptionName, money } from "../orders/flow.ts";
 
 /** Tope del resultado de get_menu: entra un menú de ~150 productos con margen. */
 export const MENU_RESULT_CHARS = 20_000;
 const SHORT_DESC = 60;
+
+/** ¿El texto del cliente nombra algún producto del menú (por una palabra significativa)? Distingue «2 cafés y 4 medialunas» de «quiero pedir». */
+export function namesProducts(text: string, menu: readonly MenuItem[]): boolean {
+  const words = fold(text).replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).map((w) => w.replace(/(es|s)$/, "")).filter((w) => w.length >= 4);
+  if (words.length === 0) return false;
+  const names = menu.map((p) => fold(p.name));
+  return words.some((w) => names.some((n) => n.includes(w)));
+}
 
 export const fold = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
@@ -80,7 +88,7 @@ export function optionGroupsForModel(menu: readonly MenuItem[], groups: Readonly
   const used = new Set(menu.flatMap((p) => p.groups ?? []).map(String));
   const out: Record<string, OptionGroupForModel> = {};
   for (const [id, g] of Object.entries(groups)) {
-    if (used.has(id) && g.options.length > 0) out[id] = { nombre: g.name, min: g.min, max: g.max, opciones: g.options.map((o) => ({ id: o.id, nombre: o.name })) };
+    if (used.has(id) && g.options.length > 0) out[id] = { nombre: g.name, min: g.min, max: g.max, opciones: g.options.map((o) => ({ id: o.id, nombre: cleanOptionName(o.name) })) };
   }
   return out;
 }

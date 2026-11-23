@@ -92,6 +92,8 @@ export interface QuoteResult {
   /** Lo que paga el cliente: subtotal + envío − saldo a favor. */
   total: number;
   zone: unknown;
+  /** Hay zona de envío gratis y esta dirección paga recargo: el bot lo avisa en el resumen. */
+  free_zone_available?: boolean;
   resolved_address: string;
   /** Puntos que suma el cliente con este pedido: misma cuenta que al crearlo (`pointsForLines`). */
   points: number;
@@ -228,7 +230,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
   const priced = await priceOrder(db, items, { address: place.label, lat: place.lat, lng: place.lng });
   if (!priced.ok) return failure(priced);
 
-  const { lines, subtotal, fee, minOrder, zone } = priced.value;
+  const { lines, subtotal, fee, minOrder, zone, freeZoneAvailable } = priced.value;
   // Topes de quien llama: se evalúan ANTES de guardar, así un borrador fuera de tope nunca existe.
   const rejected = deps.checkQuote?.({ units: lines.reduce((sum, l) => sum + l.units, 0), total: subtotal + fee });
   if (rejected) return rejected;
@@ -266,6 +268,7 @@ export async function quoteOrder(deps: OrderActionDeps, input: QuoteInput): Prom
     credit_applied: creditApplied,
     total: subtotal + fee - creditApplied,
     zone,
+    ...(freeZoneAvailable && fee > 0 ? { free_zone_available: true } : {}),
     resolved_address: place.label,
     points: pointsForLines(lines),
     note: "Mostrale el resumen y preguntale si confirma. No crees el pedido hasta su respuesta.",

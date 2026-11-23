@@ -93,34 +93,34 @@ describe("menu() y get_menu con grupos de opciones", () => {
     db.raw.exec("DELETE FROM carta_items; DELETE FROM carta_secciones");
     const cat = (db.raw.prepare("SELECT id FROM categories LIMIT 1").get() as { id: string }).id;
     db.raw.prepare("INSERT INTO products (id, category_id, name, price_cents, is_active, show_in_portal, fudo_id) VALUES ('promo-1', ?, 'Promo 2 pizzas + bebidas', 3000000, 1, 1, 50)").run(cat);
-    db.raw.prepare("INSERT INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (3, 'bebidas promo', 2, 2, 1)").run();
-    db.raw.prepare("INSERT INTO fudo_modifier_options (fudo_id, group_fudo_id, product_fudo_id, name, position) VALUES (30, 3, 300, 'Coca-Cola', 2), (31, 3, 301, 'Sprite', 1), (32, 3, 302, 'Fanta', 3)").run();
+    db.raw.prepare("INSERT INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (9, 'bebidas promo', 2, 2, 1)").run();
+    db.raw.prepare("INSERT INTO fudo_modifier_options (fudo_id, group_fudo_id, product_fudo_id, name, position) VALUES (30, 9, 300, 'Coca-Cola', 2), (31, 9, 301, 'Sprite', 1), (32, 9, 302, 'Fanta', 3)").run();
     db.raw.prepare("UPDATE fudo_modifier_options SET is_active = 0 WHERE fudo_id = 32").run();
-    db.raw.prepare("INSERT INTO fudo_product_groups (product_fudo_id, group_fudo_id) VALUES (50, 3)").run();
+    db.raw.prepare("INSERT INTO fudo_product_groups (product_fudo_id, group_fudo_id) VALUES (50, 9)").run();
     return db;
   }
 
   it("el producto con grupos trae sus ids y la docena sigue oculta", async () => {
     const menu = await d1BotRepo(withPromo()).menu();
-    assert.deepEqual(menu.find((p) => p.id === "promo-1")?.groups, [3]);
+    assert.deepEqual(menu.find((p) => p.id === "promo-1")?.groups, [9]);
     assert.equal(menu.some((p) => p.name === "Docena de empanadas"), false);
     assert.equal(menu.find((p) => p.name === "Muzzarella grande")?.groups, undefined);
   });
 
   it("optionGroups: solo opciones activas, ordenadas por posición", async () => {
     const groups = await d1BotRepo(withPromo()).optionGroups!();
-    assert.deepEqual(groups["3"], { name: "bebidas promo", min: 2, max: 2, options: [{ id: 31, name: "Sprite" }, { id: 30, name: "Coca-Cola" }] });
+    assert.deepEqual(groups["9"], { name: "bebidas promo", min: 2, max: 2, options: [{ id: 31, name: "Sprite" }, { id: 30, name: "Coca-Cola" }] });
   });
 
   it("get_menu: grupos_de_opciones solo con grupos usados por el menú visible", async () => {
     const repo = d1BotRepo(withPromo());
     const get = toolsFor("consulta_menu", repo, conversation, settingsFromConfig({}), Date.now, {} as never).find((t) => t.name === "get_menu")!;
     const out = (await get.run({})) as { grupos_de_opciones?: Record<string, { nombre: string; opciones: { id: number; nombre: string }[] }>; otras_categorias?: unknown; categorias?: { productos: { id?: string; grupos?: number[] }[] }[] };
-    // El mundo del simulador trae además la promo «Baila Ahora» (grupo 2), visible: solo faltan los grupos de productos ocultos.
-    assert.deepEqual(Object.keys(out.grupos_de_opciones ?? {}), ["2", "3"]);
-    assert.deepEqual(out.grupos_de_opciones?.["3"]?.opciones, [{ id: 31, nombre: "Sprite" }, { id: 30, nombre: "Coca-Cola" }]);
+    // El mundo del simulador trae además la promo «Baila Ahora» (grupo 3), visible: solo faltan los grupos de productos ocultos.
+    assert.deepEqual(Object.keys(out.grupos_de_opciones ?? {}), ["3", "9"]);
+    assert.deepEqual(out.grupos_de_opciones?.["9"]?.opciones, [{ id: 31, nombre: "Sprite" }, { id: 30, nombre: "Coca-Cola" }]);
     const promo = out.categorias?.flatMap((c) => c.productos).find((p) => p.id === "promo-1");
-    assert.deepEqual(promo?.grupos, [3]);
+    assert.deepEqual(promo?.grupos, [9]);
     // El grupo de la docena (oculta) no se publica.
     assert.equal(out.grupos_de_opciones?.["1"], undefined);
   });

@@ -268,11 +268,33 @@ export function promisesLater(draft: string): boolean {
 
 export const money = (n: number): string => `$${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, " ").trim().slice(0, max);
+/** Nombre de opción para el cliente: sin el sufijo técnico de Fudo «($0)» («Seven Up ($0)» → «Seven Up»). */
+export const cleanOptionName = (name: string): string => name.replace(/\s*\(\$\s*\d+\)/g, "").trim();
+
+/** Rechazo del servidor por las opciones elegidas de una línea (gustos, bebidas de una promo): texto técnico, nunca para el cliente. */
+export function isOptionError(error: string): boolean {
+  return /^Una opción elegida no corresponde|no lleva opciones a elegir|cantidades de las opciones|^Para «[^»]+» (elegí|podés elegir)|^(Faltan|Sobran) gustos/.test(error);
+}
+
+/**
+ * Pregunta en una línea armada en código con las opciones que lista el rechazo («Opciones válidas: A, B.», «elegí 2 de «grupo»: A, B.»).
+ * Sin lista legible, una pregunta genérica sin texto técnico.
+ */
+export function optionQuestion(error: string): string {
+  const product = /«([^»]+)»/.exec(error)?.[1];
+  const listed = /(?:Opciones válidas|Gustos|»): ([^]*?)\.?$/.exec(error.replace(/\s+/g, " ").trim())?.[1];
+  const names = (listed ?? "").split(",").map((n) => cleanOptionName(n.replace(/…$/, ""))).filter(Boolean);
+  const what = product ? ` para «${oneLine(product.split(",")[0] ?? product, 60)}»` : "";
+  const picks = /elegí (\d+)/.exec(error)?.[1] ?? /hasta (\d+)/.exec(error)?.[1];
+  const head = picks ? `¿Cuáles ${picks} querés${what}?` : `¿Qué opciones querés${what}?`;
+  return names.length > 0 ? `${head} ${names.join(", ")}.` : head;
+}
+
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 
 /** Plantilla fija del resumen desde los datos del servidor; null si la respuesta no tiene la forma esperada. */
 export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?: string): string | null {
-  const { lines, subtotal, delivery_fee: fee, total, resolved_address: address, points, credit_applied: credit } = data;
+  const { lines, subtotal, delivery_fee: fee, total, resolved_address: address, points, credit_applied: credit, free_zone_available: freeZone } = data;
   if (!Array.isArray(lines) || lines.length === 0 || !isNum(subtotal) || !isNum(fee) || !isNum(total) || typeof address !== "string") return null;
   const rows: string[] = [];
   for (const line of lines as Record<string, unknown>[]) {
@@ -282,7 +304,7 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
     const opts = Array.isArray(line.options)
       ? (line.options as Record<string, unknown>[]).filter((o) => typeof o?.name === "string" && isNum(o.qty) && o.qty > 0)
       : [];
-    if (opts.length > 0) rows.push(`   ${opts.map((o) => `${o.qty} ${oneLine(String(o.name), 40)}`).join(", ")}`);
+    if (opts.length > 0) rows.push(`   ${opts.map((o) => `${o.qty} ${oneLine(cleanOptionName(String(o.name)), 40)}`).join(", ")}`);
   }
   // Por renglones y con aire: productos, montos, dirección corta y la pregunta de pago.
   return [
@@ -295,16 +317,22 @@ export function renderQuoteSummary(data: Record<string, unknown>, typedAddress?:
     ...creditLine(credit),
     `*Total: ${money(total)}*`,
     ...pointsLine(points),
+    ...surchargeLine(freeZone, fee),
     "",
     `Dirección: ${shortAddress(address, typedAddress)}`,
     "",
-    PAYMENT_QUESTION,
+    total === 0 && isNum(credit) && credit > 0 ? COVERED_PROMPT : PAYMENT_QUESTION,
   ].join("\n");
 }
 
 /** Línea del saldo a favor: solo con el valor del servidor y si descuenta algo (el total ya viene rebajado). */
 export function creditLine(credit: unknown): string[] {
   return isNum(credit) && credit > 0 ? [`Saldo a favor aplicado: −${money(credit)}`] : [];
+}
+
+/** Aviso de recargo: solo si el servidor dice que hay zona gratis y esta dirección paga envío. */
+export function surchargeLine(freeZone: unknown, fee: unknown): string[] {
+  return freeZone === true && isNum(fee) && fee > 0 ? ["", `Tu dirección está fuera de la zona de envío gratis: tiene un recargo de envío de ${money(fee)}.`] : [];
 }
 
 /** Línea de puntos del resumen: solo con el valor del servidor (misma cuenta que al acreditar) y si suma algo. */
@@ -351,6 +379,11 @@ export function shortAddress(resolved: string, typed?: string): string {
  */
 export const PAYMENT_QUESTION = "¿Cómo vas a pagar: efectivo o Mercado Pago?";
 export const FINAL_PROMPT = "Respondé SÍ para confirmar.";
+/** El saldo a favor cubre todo (total $0): no hay forma de pago que elegir, el SÍ confirma directo. */
+export const COVERED_MARKER = "Tu saldo a favor cubre todo el pedido.";
+export const COVERED_PROMPT = `${COVERED_MARKER} ¿Lo confirmo? Respondé SÍ.`;
+/** Resumen cuyo total quedó en $0 por el saldo a favor. */
+export const coversAll = (summary: string | null): boolean => summary !== null && summary.startsWith(QUOTE_MARKER) && summary.includes(COVERED_MARKER);
 
 export type BotPaymentMethod = "Efectivo" | "Mercado Pago";
 
@@ -373,6 +406,8 @@ export function paymentChoice(text: string): BotPaymentMethod | null {
 
 /** Forma de pago del resumen final (línea "Pago: …") o del aviso de reintento; null si no hay una elegida. */
 export function chosenPayment(lastBot: string | null): BotPaymentMethod | null {
+  // Saldo a favor total: no hay medio de pago; el servidor ignora el método (pedido «Pagado con saldo a favor»), se usa Efectivo por ser el que no pasa por Mercado Pago.
+  if (coversAll(lastBot)) return "Efectivo";
   const m = lastBot?.match(/^Pago: (Efectivo|Mercado Pago)$/m) ?? lastBot?.match(/\((Efectivo|Mercado Pago)\)/);
   return (m?.[1] as BotPaymentMethod | undefined) ?? null;
 }
@@ -421,7 +456,7 @@ export function pendingReminder(pending: string): string | null {
 export const CASH_MARKER = "¡Listo! Tu pedido quedó confirmado";
 
 export function renderCashConfirmation(orderCode: string, total: number | null, minutes: number | null): string {
-  const amount = total !== null ? ` Total: ${money(total)}, en efectivo al recibir.` : " Pagás en efectivo al recibir.";
+  const amount = total === 0 ? " Quedó pagado con tu saldo a favor." : total !== null ? ` Total: ${money(total)}, en efectivo al recibir.` : " Pagás en efectivo al recibir.";
   const eta = minutes ? `\nDemora estimada: unos ${minutes} minutos.` : "";
   return `${CASH_MARKER} ✅ Número de pedido: ${oneLine(orderCode, 20)}.${amount}${eta}\nTe avisamos por acá cuando salga 🛵`;
 }
@@ -453,7 +488,7 @@ export const ORDER_REPLIES = {
 export const disabledReply = (appUrl: string): string =>
   `Por ahora los pedidos por WhatsApp no están disponibles, hacelo desde la web: ${appUrl}/cliente`;
 
-const EXPLAIN_CODES = new Set(["out_of_zone", "min_order", "total_changed"]);
+const EXPLAIN_CODES = new Set(["min_order", "total_changed"]);
 const REQUOTE_CODES = new Set(["no_draft", "expired", "not_confirmed", "claim_lost"]);
 /** Códigos con los que el servidor rechaza una operación con un motivo ya redactado en español. */
 const REASON_CODES = new Set(["rejected", "http_409"]);
@@ -484,6 +519,7 @@ export function errorReply(failure: OrderFailure, ctx: ErrorContext | string): s
     return hours ? `Ahora estamos cerrados. Atendemos de ${hours.open} a ${hours.close}.` : "Ahora estamos cerrados.";
   }
   if (code === "product_unavailable") return ORDER_REPLIES.productNotFound;
+  if (code === "out_of_zone") return why || "Por ahora no llegamos a esa dirección.";
   if (EXPLAIN_CODES.has(code)) return `${why} Si querés, armamos el pedido de nuevo.`;
   if (REQUOTE_CODES.has(code)) return ORDER_REPLIES.requote;
   if (REASON_CODES.has(code) && failure.error) {
@@ -500,6 +536,8 @@ export interface OrderTurnState {
   fixedReply: string | null;
   /** El flujo derivó a una persona en este turno: la respuesta fija sale igual (sin el rechequeo de pausa). */
   handedOff?: boolean;
+  /** Rechazos de opciones (gustos, bebidas de promo) devueltos al modelo en este turno; después la pregunta sale armada en código. */
+  optionErrors?: number;
   /** Cotizaciones devueltas al modelo en este turno por no coincidir con el texto del cliente (ver quote-check.ts). */
   quoteChecks?: number;
 }
@@ -541,7 +579,21 @@ async function handOff(t: OrderTurn, message: string): Promise<typeof SENT> {
 
 const HANDOFF_SUFFIX = "Te paso con una persona del local para ver cómo lo resolvemos.";
 
-async function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm" | "cancel" | "status"): Promise<typeof SENT> {
+/** Tantas veces por turno se le devuelve al modelo un rechazo de opciones para que pregunte; después la pregunta sale armada en código. */
+const MAX_OPTION_RETRIES = 2;
+
+async function fail(t: OrderTurn, response: OrderFailure, op: "quote" | "confirm" | "cancel" | "status"): Promise<unknown> {
+  // Rechazo de opciones al cotizar: es un dato que falta, no un error para el cliente. Vuelve al modelo (o sale la pregunta en código).
+  if (op === "quote" && REASON_CODES.has(response.code) && isOptionError(response.error)) {
+    t.state.quoted = false;
+    t.state.optionErrors = (t.state.optionErrors ?? 0) + 1;
+    const question = optionQuestion(response.error);
+    if (t.state.optionErrors > MAX_OPTION_RETRIES) {
+      t.state.fixedReply = question;
+      return SENT;
+    }
+    return { ok: false, error: `Faltan o sobran opciones: ${cleanOptionName(oneLine(response.error, 400))} NO le muestres este texto al cliente: preguntale en UNA línea cuáles elige (solo los nombres, sin códigos ni «$0») y volvé a cotizar con los option_id de grupos_de_opciones.`, ask: question };
+  }
   // Fallo transitorio de confirm/cancel: se ofrece reintentar con un SÍ (la plantilla dice cuál operación).
   if ((op === "confirm" || op === "cancel") && isTransient(response)) {
     // El reintento de confirmar lleva la forma de pago elegida: el SÍ siguiente confirma con la misma.

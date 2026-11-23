@@ -193,7 +193,7 @@ describe("fase 5: plantillas y esquemas", () => {
     assert.match(f("limit_exceeded", "Pasaste el tope de unidades."), /Pasaste el tope de unidades\..*https:\/\/app\.test\/cliente/);
     assert.equal(f("forbidden"), "Reintentá en un momento.");
     assert.match(f("human_takeover"), /persona del local/);
-    for (const code of ["out_of_zone", "min_order", "total_changed"]) assert.match(f(code), /Fuera de zona\. Si querés, armamos el pedido de nuevo/);
+    for (const code of ["min_order", "total_changed"]) assert.match(f(code), /Fuera de zona\. Si querés, armamos el pedido de nuevo/);
     assert.match(f("closed"), /Atendemos de 11:00 a 23:00/);
     assert.doesNotMatch(f("closed"), /armamos/);
     assert.match(f("product_unavailable"), /no lo encontré, ¿me decís cuál querés\?/);
@@ -467,7 +467,7 @@ describe("fase 5: pedidos con el flag encendido", () => {
     const m = model("pedido_nuevo", "x", [{ name: "quote_order", arguments: { ...quoteCall.arguments } }]);
     await processTurn(turn("2 muzzas", "wamid.REAL"), deps(s, m.run));
     assert.deepEqual(seen, { conversationId: "c1", inboundWamid: "wamid.REAL", items: [{ product_id: PID, qty: 2 }], address: "Belgrano 123" });
-    assert.match(s.sent[0], /fuera de la zona\. Si querés, armamos el pedido de nuevo/i);
+    assert.equal(s.sent[0], "Estás fuera de la zona.");
   });
 
   it("argumentos con precios o total no llegan a la app", async () => {

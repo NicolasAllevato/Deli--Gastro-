@@ -79,9 +79,9 @@ const MENU: Array<[string, string, number]> = [
   ["Empanadas", "Empanada de cebolla y queso", 1700],
   ["Empanadas", "Empanada de roquefort y jamón", 1800],
   ["Bebidas", "Pepsi 1,5 L", 3500],
-  ["Cafetería", "Café doble", 4300],
+  ["Cafetería", "Café Doble", 4300],
   ["Cafetería", "Medialuna de manteca", 1800],
-  ["Cafetería", "Tostado de jamón y queso", 6000],
+  ["Cafetería", "Tostado jamón y queso", 6000],
   ["Postres", "Budín de pan", 9600],
   ["Pizzas", "Calabresa grande", 33000],
   // Variantes parecidas (como en producción): con/sin gas, grande/porción, fainá. Sirven para los guiones 50-52.
@@ -95,12 +95,13 @@ const MENU: Array<[string, string, number]> = [
   ["Bebidas", "Quilmes (Lata Zero 473)", 3200],
   ["Bebidas", "Quilmes 1L", 4800],
   ["Bebidas", "Quilmes Lata 473", 3200],
-  // Cafetería con variantes (guion 55): no existe «café con leche» exacto, sí jarrito y doble; medialunas de tres tipos.
-  ["Cafetería", "Medialuna de grasa", 1800],
-  ["Cafetería", "Medialuna de jamón y queso", 2600],
-  ["Cafetería", "Jarrito", 3900],
+  // Cafetería con variantes (guion 55), con los nombres de producción: no existe «café con leche»; la carta ofrece pocillo, jarrito y doble, y «medialuna de grasa» es el producto de manteca.
+  ["Cafetería", "Café Doble cortado", 4300],
+  ["Cafetería", "Medialuna de jamón y queso", 3800],
+  ["Cafetería", "Café Jarrito", 4000],
+  ["Cafetería", "Café Pocillo", 3500],
   // Promo con grupo de opciones obligatorio (guion 54): dos gaseosas a elegir. Va en «Promos y combos» (no «Promos») para no entrar en el saludo con precio.
-  ["Promos y combos", "Baila Ahora (Gde Muzza + Gde Jamon y Morrones + Gaseosa)", 30000],
+  ["Promos y combos", "Baila Ahora, Baila Ahora (Gde Muzza + Gde Jamon y Morrones + Gaseosa)", 51000],
 ];
 
 /** id Fudo de la docena (oculta del menú) y de las 7 empanadas sueltas, igual que en producción. */
@@ -184,15 +185,22 @@ function seedDocena(db: { raw: DatabaseSync }): void {
   cfg.run("empanada_gustos_map", JSON.stringify(Object.fromEntries(GUSTOS.map((g) => [String(g.fudoId), g.saborFudoId]))));
 }
 
-/** Promo «Baila Ahora» con el grupo «bebidas promo» (2 a elegir entre 3 gaseosas), como en producción. Idempotente. */
+/**
+ * Promo «Baila Ahora» con el grupo «bebidas promo» como en producción (D1 real, 2026-11-23): producto Fudo 88, grupo 3
+ * (min 2 / max 2, no obligatorio), 6 opciones con ids 14 a 19 y nombres con sufijos («Seven Up ($0)», «Pepsi (Lata)»). Idempotente.
+ */
 function seedPromoBebidas(db: { raw: DatabaseSync }): void {
   const { raw } = db;
-  raw.prepare("UPDATE products SET fudo_id = 310 WHERE name LIKE 'Baila Ahora%' AND fudo_id IS NULL").run();
-  raw.prepare("INSERT OR IGNORE INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (2, 'bebidas promo', 2, 2, 1)").run();
-  [["Pepsi", 11], ["Seven Up", 12], ["Coca-Cola", 13]].forEach(([name, id], i) => {
-    raw.prepare("INSERT OR IGNORE INTO fudo_modifier_options (fudo_id, group_fudo_id, product_fudo_id, name, price_cents, position) VALUES (?, 2, ?, ?, 0, ?)").run(id as number, 500 + (id as number), name as string, i);
+  raw.prepare("UPDATE products SET fudo_id = 88 WHERE name LIKE 'Baila Ahora%' AND fudo_id IS NULL").run();
+  raw.prepare("INSERT OR IGNORE INTO fudo_modifier_groups (fudo_id, name, min_qty, max_qty, required) VALUES (3, 'bebidas promo', 2, 2, 0)").run();
+  const options: ReadonlyArray<readonly [number, number, string]> = [
+    [14, 218, "Pepsi (Lata)"], [15, 219, "Pepsi Black (Lata)"], [16, 230, "Seven Up ($0)"],
+    [17, 231, "Seven Free ($0)"], [18, 129, "Stella Artois (Lata Zero)"], [19, 130, "Quilmes (Lata Zero 473)"],
+  ];
+  options.forEach(([id, productFudoId, name], i) => {
+    raw.prepare("INSERT OR IGNORE INTO fudo_modifier_options (fudo_id, group_fudo_id, product_fudo_id, name, price_cents, position) VALUES (?, 3, ?, ?, 0, ?)").run(id, productFudoId, name, i);
   });
-  raw.prepare("INSERT OR IGNORE INTO fudo_product_groups (product_fudo_id, group_fudo_id) VALUES (310, 2)").run();
+  raw.prepare("INSERT OR IGNORE INTO fudo_product_groups (product_fudo_id, group_fudo_id) VALUES (88, 3)").run();
 }
 
 /** Quita la carta estructurada (el resto de los guiones usa el menú por categorías). */
@@ -213,6 +221,13 @@ export function seedCartaPizzas(db: { raw: DatabaseSync }): void {
   item.run("sim-carta-1-3", "sim-carta-1", "Jamón y morrón", 30, id("Jamón y morrones grande"), id("Porción de jamón y morrones"));
   sec.run("sim-carta-2", "Pizzas especiales", 20, JSON.stringify(["8 porciones"]));
   item.run("sim-carta-2-1", "sim-carta-2", "Cuatro Quesos", 10, id("Grande Cuatro quesos"), null);
+  // «Desayunos y meriendas» como en producción: «Café con leche» no existe y «Medialuna de grasa» apunta al producto de manteca.
+  sec.run("sim-carta-5", "Desayunos y meriendas", 50, "[]");
+  [
+    ["Café pocillo", "Café Pocillo"], ["Café jarrito", "Café Jarrito"], ["Café doble", "Café Doble"], ["Café doble cortado", "Café Doble cortado"],
+    ["Tostado de JyQ", "Tostado jamón y queso"], ["Medialuna de manteca", "Medialuna de manteca"],
+    ["Medialuna de grasa", "Medialuna de manteca"], ["Medialuna de JyQ", "Medialuna de jamón y queso"],
+  ].forEach(([nombre, producto], i) => item.run(`sim-carta-5-${i + 1}`, "sim-carta-5", nombre, (i + 1) * 10, id(producto), null));
 }
 
 /** Menú en texto para el juez (precio real, para detectar precios inventados). */
@@ -253,6 +268,8 @@ function packContextFor(db: { raw: DatabaseSync }) {
  */
 export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
   const state = new Map<string, { s: FakeState; at: number }>();
+  // Direcciones de prueba (guiones 57 a 59): fuera de todas las zonas, con recargo y con saldo a favor que cubre todo.
+  const covered = new Set<string>();
   const ok = (data: Record<string, unknown>): OrderResponse => ({ ok: true, status: 200, data: { ok: true, ...data } });
   const fail = (status: number, code: string, error: string): OrderResponse => ({ ok: false, kind: "api", status, code, error });
   const set = (id: string, s: FakeState) => state.set(id, { s, at: Date.now() });
@@ -267,6 +284,7 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
     },
     async quote(body) {
       if (!body.address?.trim()) return fail(400, "invalid", "Falta la dirección.");
+      if (/liniers/i.test(body.address)) return fail(422, "out_of_zone", "Por ahora no llegamos a esa dirección: entregamos hasta 10 km del local.");
       // Igual que el servidor real: las empanadas sueltas se empaquetan en docenas antes de cotizar.
       const items = packEmpanadas(body.items ?? [], packContextFor(db));
       const lines = [];
@@ -285,10 +303,22 @@ export function fakeOrders(db: { raw: DatabaseSync }): FakeOrders {
       const subtotal = lines.reduce((s, l) => s + l.qty * l.price, 0);
       // Una cotización nueva no pisa un pedido ya pagado (en el real, el pagado sigue y esto es un borrador aparte).
       if (state.get(body.conversationId)?.s !== "pagado") set(body.conversationId, "cotizado");
-      return ok({ lines, subtotal, delivery_fee: 1500, total: subtotal + 1500, resolved_address: body.address.trim() });
+      const coversAll = /cabildo 3000/i.test(body.address);
+      if (coversAll) covered.add(body.conversationId);
+      else covered.delete(body.conversationId);
+      const recargo = /moreno/i.test(body.address);
+      return ok({
+        lines, subtotal, delivery_fee: coversAll ? 0 : recargo ? 3000 : 1500,
+        total: coversAll ? 0 : subtotal + (recargo ? 3000 : 1500), ...(coversAll ? { credit_applied: subtotal } : {}),
+        ...(recargo ? { free_zone_available: true } : {}), resolved_address: body.address.trim(),
+      });
     },
     async confirm(body) {
       if (state.get(body.conversationId)?.s !== "cotizado") return fail(409, "no_draft", "No hay un resumen vigente.");
+      if (covered.has(body.conversationId)) {
+        set(body.conversationId, "pagado");
+        return ok({ order_code: "#SIM00057", total: 0, payment_method: body.payment_method });
+      }
       set(body.conversationId, "esperando_pago");
       return ok({ awaiting_payment: true, payment_url: "https://mpago.la/simulacion", total: null });
     },
