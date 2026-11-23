@@ -5,6 +5,7 @@
  */
 import type { Paso } from "./simulacro-reglas.ts";
 import { GUIONES_ADVERSARIALES } from "./guiones-adversariales.ts";
+import { GUIONES_SESION } from "./guiones-sesion.ts";
 
 export interface Guion {
   numero: number;
@@ -13,6 +14,10 @@ export interface Guion {
   pagadoHaceMin?: number;
   /** Corre con la carta estructurada de pizzas (Pizzas + Pizzas especiales) cargada. */
   conCarta?: boolean;
+  /** Charla vieja ya guardada (hace N minutos), para probar que una sesión nueva no la arrastra. */
+  previo?: { de: "cliente" | "bot"; texto: string; haceMin: number }[];
+  /** Cliente registrado: ficha con nombre y pedidos ya entregados con su dirección (hace N días). */
+  registrado?: { nombre: string; direccionFicha?: string; pedidos: { direccion: string; haceDias: number }[] };
   pasos: Paso[];
 }
 
@@ -206,4 +211,4 @@ const GUIONES_BASE: readonly Guion[] = [
   },
 ];
 
-export const GUIONES: readonly Guion[] = [...GUIONES_BASE, ...GUIONES_ADVERSARIALES];
+export const GUIONES: readonly Guion[] = [...GUIONES_BASE, ...GUIONES_ADVERSARIALES, ...GUIONES_SESION];

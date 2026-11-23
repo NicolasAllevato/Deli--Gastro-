@@ -1,4 +1,6 @@
 import { isOpenNow } from "../../../../src/lib/agent/hours.ts";
+import { sessionIdleMs } from "./session.ts";
+import { portalIdleHours } from "./portal.ts";
 
 /** Configuración del bot leída de `global_config` (la edita el dueño en /admin/agente). Nada secreto. */
 export interface BotSettings {
@@ -21,6 +23,10 @@ export interface BotSettings {
   deliveryRadiusKm: number | null;
   /** Costo del envío por km (`costo_por_km`); null si no está cargado. */
   deliveryCostPerKm: number | null;
+  /** Inactividad (ms) que abandona un pedido en armado: la sesión del bot arranca de nuevo (`bot_sesion_inactividad_min`, 150 min). */
+  sessionIdleMs: number;
+  /** Horas entre recordatorios del portal en consultas de precios o envío (`bot_portal_recordatorio_horas`, 24; 0 = apagado). */
+  portalHours: number;
 }
 
 const positive = (value: unknown): number | null => {
@@ -50,6 +56,8 @@ export function settingsFromConfig(config: Record<string, unknown>): BotSettings
     trainingMode: config.bot_modo_entrenamiento === true || config.bot_modo_entrenamiento === "true",
     deliveryRadiusKm: positive(config.radio_delivery_km),
     deliveryCostPerKm: positive(config.costo_por_km),
+    sessionIdleMs: sessionIdleMs(config),
+    portalHours: portalIdleHours(config),
   };
 }
 

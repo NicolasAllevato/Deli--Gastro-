@@ -12,12 +12,14 @@ import { inspectInbound, inspectOutbound, wrapUntrusted } from "../guardrails.ts
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import { detectKeyword } from "../../../../src/lib/whatsapp/keywords.ts";
 import { decideInboundLimit } from "../../../../src/lib/agent/limits.ts";
-import { buildResponderPrompt, closedTicketReply, isStaleBotMessage, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
+import { asksSavedAddress, savedAddressAcceptedHint, buildResponderPrompt, closedTicketReply, isStaleBotMessage, namesAddress, offerSavedAddress, orderReply, profileAddressUnconfirmed, REPLIES } from "./prompts.ts";
 import { openNow, settingsFromConfig, type BotSettings } from "./settings.ts";
 import { hoursMismatch, zoneMismatch } from "./draft-checks.ts";
 import { isPureGreeting, promosForToday, renderGreeting, shouldGreetNow } from "./greeting.ts";
 import { asksFullMenu, completePizzaReply, namesProducts } from "./menu.ts";
 import { toolsFor } from "./tools.ts";
+import { sessionStart } from "./session.ts";
+import { PORTAL_LINE, portalReminderDue } from "./portal.ts";
 import type { OrdersClient } from "../orders/client.ts";
 import { attachPhotos, complaintUpdateReply, consultaReply, isComplaintReply, looksLikeNewOrder, pingApp, registerComplaint, withoutPhotoMarks, type ComplaintMode, type TurnImage } from "./complaints.ts";
 import { esQueja } from "../../../../src/lib/reclamos/categoria.ts";
@@ -352,7 +354,7 @@ async function answer(
       : {}),
   };
   const numberHint = bareNumberHint(turnText, lastBot);
-  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile) + [numberHint, empanadaHint(turnText), flavorHint(turnText)].filter(Boolean).map((h) => `
+  const system = buildResponderPrompt(settings, intent, conversation.displayName ?? profile?.name ?? null, suspicious, vocabulary, lessons, profile) + [numberHint, savedAddressAcceptedHint(turnText, lastBot, profile?.lastAddress), empanadaHint(turnText), flavorHint(turnText)].filter(Boolean).map((h) => `
 
 ${h}`).join("");
   const tools = suspicious ? [] : toolsFor(intent, toolRepo, conversation, settings, Date.now, order, guard, deps.log);
@@ -376,6 +378,11 @@ ${h}`).join("");
       await runCancel(order, { confirmed: false });
       await reply(deps, conversation, order.state.fixedReply ?? CANCEL_PROMPT, !order.state.handedOff);
       return "answered";
+    }
+    // Cliente registrado que YA dio una dirección: no se le ofrece la guardada, se cotiza con la suya (un solo reintento con la herramienta).
+    if (attempt === 0 && order && profile?.lastAddress && (intent === "pedido_nuevo" || intent === "pedido_datos") && namesAddress([turnText]) && asksSavedAddress(draft, profile.lastAddress)) {
+      draft = await ask("El cliente ya te dio la dirección de entrega en su mensaje: no le ofrezcas ninguna dirección guardada. Llamá quote_order YA con los product_id de get_menu y la dirección que él escribió.", true);
+      continue;
     }
     issue = await draftIssue(draft, intent, conversation, deps, settings, order, turnText);
     // Sin problemas, o derivó en este turno (sale su mensaje si es válido, si no el aviso de traspaso).
@@ -413,8 +420,12 @@ ${h}`).join("");
   // Otro tema con un resumen sin confirmar: se contesta y se recuerda el pedido (no se pierde el hilo).
   // Pizzas: la carta se arma con todas las secciones (Pizzas y Pizzas especiales) aunque el modelo copie solo una.
   const carta = await readOptional(deps, "la carta", deps.repo.carta?.bind(deps.repo), []);
-  const body = completePizzaReply(draft, turnText, carta);
-  await reply(deps, conversation, reminder ? `${body}\n\n${reminder}` : body);
+  // Cliente registrado: la pregunta por la dirección sale fija con SU última dirección (la arma el código, no el modelo).
+  const offered = order && (intent === "pedido_nuevo" || intent === "pedido_datos") ? offerSavedAddress(draft, profile?.lastAddress, clientTexts, lastBot, turnText) : null;
+  const body = completePizzaReply(offered ?? draft, turnText, carta);
+  // Consulta de precios, productos o envío (sin pedido en curso): cada tanto se suma la línea del portal; la frecuencia la fija el código.
+  const portal = PORTAL_INTENTS.includes(intent) && !reminder && !suspicious && (await portalDue(deps, conversation, settings.portalHours)) ? PORTAL_LINE(deps.appUrl) : null;
+  await reply(deps, conversation, [body, reminder, portal].filter(Boolean).join("\n\n"));
   return "answered";
 }
 
@@ -521,6 +532,12 @@ async function runTurn(turn: InboundTurn, deps: TurnDeps): Promise<TurnOutcome> 
   const followUp = await complaintFollowUp(deps, conversation, settings, text, extras);
   if (followUp) return followUp;
 
+  // Contexto por pedido: desde acá el bot solo lee la sesión actual (el panel sigue viendo toda la charla).
+  const since = await currentSessionStart(deps, conversation, settings.sessionIdleMs);
+  if (since) {
+    const full = deps.repo;
+    deps = { ...deps, repo: { ...full, history: (id, limit) => full.history(id, limit, since) } };
+  }
   const outNewestFirst = (await deps.repo.history(conversation.id, THREAD_WINDOW * 2)).filter((m) => m.direction === "out").map((m) => m.body).reverse();
   // Hilo del pedido: el resumen pendiente aunque después haya habido respuestas de otro tema (carta, horario...).
   const thread = pendingThread(outNewestFirst);
@@ -664,6 +681,45 @@ async function complaintFollowUp(deps: TurnDeps, conversation: BotConversation, 
   await reply(deps, conversation, done.ticket.created ? done.text : complaintUpdateReply(done.ticket.numero, mode, settings.hours.open, onlyPhotos));
   return "ticket";
 }
+
+/**
+ * Dónde empieza la sesión actual de la charla (null = toda es una sola): después de un pedido cerrado por el bot, de un rato
+ * largo sin actividad o de un pedido entregado/cancelado desde la app (este último solo si no hay un resumen pendiente de confirmar).
+ * Sin las lecturas opcionales del repo (backend viejo, tests) no hay corte. Un error de lectura tampoco corta: se sigue con todo.
+ */
+export async function currentSessionStart(deps: TurnDeps, conversation: BotConversation, idleMs: number): Promise<Date | null> {
+  if (!deps.repo.recentMessages) return null;
+  try {
+    const recent = await deps.repo.recentMessages(conversation.id, SESSION_SCAN);
+    const byMessages = sessionStart(recent, idleMs);
+    const closedAt = deps.repo.lastClosedOrderAt ? await deps.repo.lastClosedOrderAt(conversation.phone) : null;
+    if (!closedAt || (byMessages && closedAt <= byMessages)) return byMessages;
+    const inSession = recent.filter((m) => !byMessages || m.at >= byMessages);
+    const pending = pendingThread(inSession.filter((m) => m.direction === "out").map((m) => m.body).reverse()).decisive !== null;
+    if (pending) return byMessages;
+    // Los mensajes del cliente posteriores al cierre ya son del pedido nuevo: la sesión arranca en el primero.
+    return recent.find((m) => m.direction === "in" && m.at > closedAt)?.at ?? byMessages;
+  } catch (error: unknown) {
+    deps.log("[whatsapp-bot] no se pudo leer la sesión; el turno sigue con todo el historial", { error: error instanceof Error ? error.message : "error" });
+    return null;
+  }
+}
+
+const PORTAL_INTENTS: readonly Intent[] = ["consulta_menu", "consulta_local"];
+
+/** ¿Toca el recordatorio del portal? Mira los mensajes recientes (con hora si el repo la da); un error de lectura no lo agrega. */
+async function portalDue(deps: TurnDeps, conversation: BotConversation, hours: number): Promise<boolean> {
+  if (hours <= 0) return false;
+  try {
+    const recent = deps.repo.recentMessages ? await deps.repo.recentMessages(conversation.id, SESSION_SCAN) : await deps.repo.history(conversation.id, 30);
+    return portalReminderDue(recent, Date.now(), hours);
+  } catch {
+    return false;
+  }
+}
+
+/** Cuántos mensajes recientes se miran para ubicar el inicio de la sesión. */
+const SESSION_SCAN = 80;
 
 /** Sin `lastOutboundAt` en el repo (backend viejo) no hay saludo aparte; si la lectura falla, tampoco (no se repite). */
 async function shouldGreet(deps: TurnDeps, conversationId: string, text: string, recentOutbound: readonly string[]): Promise<boolean> {

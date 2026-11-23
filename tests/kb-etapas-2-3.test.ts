@@ -63,9 +63,9 @@ describe("etapa 2: perfil del cliente habitual", () => {
 
   it("con perfil: saluda por nombre, ofrece lo de siempre y pregunta por la misma dirección", () => {
     const lines = customerProfileLines({ name: "Martina", orderCount: 3, topProducts: ["Muzza"], lastAddress: "Belgrano 456" }).join("\n");
-    assert.match(lines, /Cliente habitual/);
+    assert.match(lines, /Cliente registrado/);
     assert.match(lines, /lo de siempre/);
-    assert.match(lines, /misma dirección \(Belgrano 456\)/);
+    assert.match(lines, /¿Te lo enviamos a Belgrano 456\?/);
     assert.match(lines, /esperá que confirme/);
   });
 

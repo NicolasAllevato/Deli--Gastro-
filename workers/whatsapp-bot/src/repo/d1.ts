@@ -243,12 +243,36 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       return { id: primary.id, phone: primary.client_phone, clientId: primary.client_id, displayName: primary.name, humanTakeover: found.silenced };
     },
 
-    async history(conversationId, limit) {
+    async history(conversationId, limit, since) {
+      // `since` = inicio de la sesión actual: los mensajes anteriores quedan guardados (el panel los muestra) pero el bot no los lee.
       const { results } = await db
-        .prepare("SELECT direction, body FROM wa_messages WHERE conversation_id = ? AND body IS NOT NULL ORDER BY created_at DESC LIMIT ?")
-        .bind(conversationId, limit)
+        .prepare(
+          `SELECT direction, body FROM wa_messages WHERE conversation_id = ? AND body IS NOT NULL${since ? " AND created_at >= ?" : ""} ORDER BY created_at DESC LIMIT ?`,
+        )
+        .bind(...(since ? [conversationId, since.toISOString(), limit] : [conversationId, limit]))
         .all<HistoryItem>();
       return results.reverse();
+    },
+
+    async recentMessages(conversationId, limit) {
+      const { results } = await db
+        .prepare("SELECT direction, body, created_at FROM wa_messages WHERE conversation_id = ? AND body IS NOT NULL ORDER BY created_at DESC LIMIT ?")
+        .bind(conversationId, limit)
+        .all<{ direction: "in" | "out"; body: string; created_at: string }>();
+      return results.reverse().map((r) => ({ direction: r.direction, body: r.body, at: new Date(r.created_at) }));
+    },
+
+    async lastClosedOrderAt(phone) {
+      const tail = phoneTail(phone);
+      if (tail.length !== 10) return null;
+      const row = await db
+        .prepare(
+          `SELECT max(coalesce(delivered_at, updated_at)) AS at FROM orders
+           WHERE status IN ('Finalizados', 'Cancelado') AND client_id IN (SELECT id FROM clients WHERE phone_digits = ? AND is_anonymous = 0)`,
+        )
+        .bind(tail)
+        .first<{ at: string | null }>();
+      return row?.at ? new Date(row.at) : null;
     },
 
     async inboundCounts(conversationId) {
@@ -337,15 +361,20 @@ export function d1BotRepo(db: SqlDatabase, log: Log = () => {}): BotRepo {
       const owned = "SELECT id FROM clients WHERE phone_digits = ? AND is_anonymous = 0";
       const head = await db
         .prepare(
+          // Dirección: la del pedido más reciente (no cancelado); sin pedidos, la que el cliente cargó en su ficha. Siempre UNA.
           `SELECT (SELECT name FROM clients WHERE phone_digits = ? AND is_anonymous = 0 ORDER BY created_at LIMIT 1) AS name,
              (SELECT count(*) FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado') AS order_count,
-             (SELECT delivery_address FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado'
-                AND delivery_address IS NOT NULL AND trim(delivery_address) <> '' ORDER BY created_at DESC LIMIT 1) AS last_address`,
+             coalesce(
+               (SELECT delivery_address FROM orders WHERE client_id IN (${owned}) AND status <> 'Cancelado'
+                  AND delivery_address IS NOT NULL AND trim(delivery_address) <> '' ORDER BY created_at DESC LIMIT 1),
+               (SELECT trim(address) FROM clients WHERE phone_digits = ? AND is_anonymous = 0
+                  AND address IS NOT NULL AND trim(address) <> '' ORDER BY updated_at DESC LIMIT 1)
+             ) AS last_address`,
         )
-        .bind(tail, tail, tail)
+        .bind(tail, tail, tail, tail)
         .first<{ name: string | null; order_count: number; last_address: string | null }>();
       const orderCount = Number(head?.order_count ?? 0);
-      if (!head || (!head.name && orderCount === 0)) return null;
+      if (!head || (!head.name && orderCount === 0 && !head.last_address)) return null;
       const { results } = await db
         .prepare(
           `SELECT oi.name AS name, sum(oi.qty) AS qty FROM order_items oi

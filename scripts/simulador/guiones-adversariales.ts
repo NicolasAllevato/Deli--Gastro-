@@ -126,12 +126,12 @@ export const GUIONES_ADVERSARIALES: readonly Guion[] = [
   ] },
   { numero: 54, titulo: "Promo con 2 gaseosas a elegir: pregunta cuáles y cotiza con la respuesta", conCarta: true, pasos: [
     { dice: "quiero la promo Baila Ahora para Juramento 1500",
-      esperaAlguna: [/gaseosa|bebida/i, /Pepsi|Coca|Seven/i], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /\(\$0\)|Una opci[oó]n elegida|Opciones v[aá]lidas|no corresponde/i] },
+      esperaAlguna: [/(?=[^]*(?:gaseosa|bebida))(?=[^]*\b(?:2|dos)\b)/i], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /\(\$0\)|Una opci[oó]n elegida|Opciones v[aá]lidas|no corresponde/i] },
     { dice: "con Pepsi y Seven Up", esperaAlguna: [/Baila Ahora/i, /efectivo o Mercado Pago/i], noDebe: [SIN_PEDIR] },
   ] },
   { numero: 55, titulo: "Café con leche inexistente y medialunas: pregunta lo ambiguo y después modifica el pedido en curso", conCarta: true, pasos: [
     { dice: "2 cafés con leche y 4 medialunas para Juramento 1500",
-      esperaAlguna: [/medialuna/i, /caf[eé]|jarrito/i, /\?/], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Tostado/i, /Decime qu[eé] quer[eé]s pedir y la direcci[oó]n/i] },
+      esperaAlguna: [/(?=[^]*medialuna)(?=[^]*(?:pocillo|jarrito|doble))/i], noDebe: [SIN_PEDIR, /Te gustar[ií]a pedir algo de esto/i, /Tostado/i, /Decime qu[eé] quer[eé]s pedir y la direcci[oó]n/i] },
     { dice: "2 jarritos y 4 medialunas de manteca", esperaAlguna: [/Jarrito/i, /Medialuna de manteca/i], noDebe: [SIN_PEDIR, /Baila Ahora/i] },
     { dice: "sacá las medialunas y agregá un tostado de jamón y queso", esperaAlguna: [/Jarrito/i, /Tostado/i], noDebe: [/Medialuna/i, /Baila Ahora/i, SIN_PEDIR] },
   ] },

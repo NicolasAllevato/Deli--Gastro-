@@ -108,7 +108,7 @@ function world(opts: { intent: string; lastOut: Date | null; config?: Record<str
     getConversation: async (phone) => ({ id: "c1", phone, clientId: "cl1", displayName: "Tata Pérez", humanTakeover: state.takeover }),
     history: async () => [{ direction: "in", body: "hola" }],
     inboundCounts: async () => ({ lastMinute: 1, lastDay: 1 }),
-    config: async () => ({ ...OPEN, negocio_nombre: "La Gambeta", agente_nombre: "Gambe", ...opts.config }),
+    config: async () => ({ ...OPEN, negocio_nombre: "La Gambeta", agente_nombre: "Gambe", bot_portal_recordatorio_horas: 0, ...opts.config }),
     menu: async () => [item("PROMO CLÁSICA", 15000)],
     zones: async () => [],
     latestOrder: async () => null,
