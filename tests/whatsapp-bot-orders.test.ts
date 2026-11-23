@@ -466,7 +466,7 @@ describe("fase 5: pedidos con el flag encendido", () => {
         : setup({ enabled: true, orders: { quote: fail } });
       await processTurn(turn(op === "confirm" ? "si" : "2 muzzas"), deps(s, op === "confirm" ? model("x", "x").run : model("pedido_nuevo", "x", [quoteCall]).run));
       assert.equal(s.state.takeover, true, op);
-      assert.match(s.sent[0], /persona.*web/s, op);
+      assert.match(s.sent[0], /persona[\s\S]*web/, op);
     }
   });
 
