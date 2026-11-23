@@ -6,6 +6,7 @@
 import { trustedPaymentUrl } from "../guardrails.ts";
 import type { BotConversation, BotRepo } from "../repo/types.ts";
 import type { OrderFailure, OrderResponse, OrdersClient } from "./client.ts";
+import { checkQuoteAgainstText } from "./quote-check.ts";
 
 export const QUOTE_MARKER = "Resumen de tu pedido";
 export const CANCEL_MARKER = "¿Confirmás que querés cancelar tu pedido?";
@@ -499,6 +500,8 @@ export interface OrderTurnState {
   fixedReply: string | null;
   /** El flujo derivó a una persona en este turno: la respuesta fija sale igual (sin el rechequeo de pausa). */
   handedOff?: boolean;
+  /** Cotizaciones devueltas al modelo en este turno por no coincidir con el texto del cliente (ver quote-check.ts). */
+  quoteChecks?: number;
 }
 
 export interface OrderTurn {
@@ -610,6 +613,18 @@ export function hasStreetNumber(address: string): boolean {
   return /\d/.test(address.replace(EXTRA_RE, " ")) || /\bs\/n\b|sin\s+n[uú]mero/i.test(address);
 }
 
+/** Tantas veces por turno se le devuelve al modelo una cotización que contradice lo que escribió el cliente; después se cotiza igual. */
+const MAX_QUOTE_CHECKS = 2;
+
+/** Compara las líneas con el texto del cliente (variante «con/sin gas», «grande/porción», cantidades). Sin menú legible no controla. */
+async function quoteMismatch(t: OrderTurn, items: QuoteArgs["items"]): Promise<string | null> {
+  if ((t.state.quoteChecks ?? 0) >= MAX_QUOTE_CHECKS) return null;
+  const menu = await t.repo.menu().catch(() => []);
+  const error = checkQuoteAgainstText(t.inboundText, items, menu);
+  if (error) t.state.quoteChecks = (t.state.quoteChecks ?? 0) + 1;
+  return error;
+}
+
 export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
   const parsed = parseQuoteArgs(args);
   if (!parsed) return { ok: false, error: "Argumentos inválidos: usá product_id (de get_menu), qty (entero entre 1 y 500 por línea; es un detalle interno: NUNCA se lo menciones al cliente), options opcional (hasta 30 de {option_id entero de grupos_de_opciones, qty entero 1 a 100}), address y como mucho 30 líneas. No envíes precios ni totales. Corregí y volvé a llamar; no inventes un motivo para el cliente." };
@@ -618,6 +633,8 @@ export async function runQuote(t: OrderTurn, args: unknown): Promise<unknown> {
     t.state.fixedReply = ORDER_REPLIES.askStreetNumber;
     return SENT;
   }
+  const mismatch = await quoteMismatch(t, parsed.items);
+  if (mismatch) return { ok: false, error: mismatch };
   t.state.quoted = true;
   const response = await t.client.quote({ ...common(t), ...parsed });
   if (!response.ok) return fail(t, response, "quote");

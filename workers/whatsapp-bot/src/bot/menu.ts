@@ -160,6 +160,8 @@ export function asksFullMenu(text: string): boolean {
 export interface CartaVariante {
   id: string;
   name: string;
+  /** Nombre real del producto de ese id (la carta agrupa variantes: «Agua con/sin gas» vale solo para «Agua con gas»). */
+  producto?: string;
   price_text: string;
 }
 
@@ -193,19 +195,22 @@ export function formatCartaSeccion(s: CartaSeccion): string {
   return [head, ...lines].join("\n");
 }
 
-function variantes(s: CartaSeccion): CartaVariante[] {
+function variantes(s: CartaSeccion, names?: ReadonlyMap<string, string>): CartaVariante[] {
   return s.items.flatMap((i) =>
     i.productos.flatMap((p, c) => {
       if (!p) return [];
       const label = s.estilo === "gustos" ? `${s.titulo.replace(/s$/i, "")} de ${i.nombre}` : s.columnas.length > 1 ? `${i.nombre} (${s.columnas[c]})` : i.nombre;
-      return [{ id: p.id, name: label, price_text: money(p.price) }];
+      const producto = names?.get(p.id);
+      return [{ id: p.id, name: label, ...(producto ? { producto } : {}), price_text: money(p.price) }];
     }),
   );
 }
 
-function bloque(s: CartaSeccion, withIds: boolean): CartaBloque {
+const namesById = (menu: readonly MenuItem[]): Map<string, string> => new Map(menu.map((p) => [p.id, p.name.trim()] as const));
+
+function bloque(s: CartaSeccion, withIds: boolean, names?: ReadonlyMap<string, string>): CartaBloque {
   const b: CartaBloque = { categoria: s.titulo, emoji: categoryEmoji(s.titulo), texto: formatCartaSeccion(s) };
-  return withIds ? { ...b, productos: variantes(s) } : b;
+  return withIds ? { ...b, productos: variantes(s, names) } : b;
 }
 
 const linkedIds = (carta: readonly CartaSeccion[]): Set<string> =>
@@ -216,9 +221,10 @@ export function cartaMenuForModel(carta: readonly CartaSeccion[], menu: readonly
   const linked = linkedIds(carta);
   const resto = menu.filter((p) => !linked.has(p.id));
   return {
-    carta: carta.map((s) => bloque(s, withIds)),
+    carta: carta.map((s) => bloque(s, withIds, namesById(menu))),
     otras_categorias: groupMenu(resto, withIds),
-    nota: "Para mostrar una sección copiá su 'texto' tal cual. Para cotizar usá el id de 'productos'.",
+    nota: "Para mostrar una sección copiá su 'texto' tal cual. Para cotizar usá el id de 'productos'; su campo 'producto' es el nombre real de ese id. " +
+      "Si el cliente pide otra variante (sin gas, grande en vez de porción, otro gusto) y 'producto' no es esa, buscá el producto exacto en 'otras_categorias' o con get_categoria: no uses el id de otra variante.",
   };
 }
 
@@ -245,7 +251,7 @@ export function cartaSectionsFor(carta: readonly CartaSeccion[], query: string):
 }
 
 /** get_categoria con carta; null si la consulta no corresponde a ninguna sección (se usa la búsqueda de siempre). */
-export function cartaCategoryForModel(carta: readonly CartaSeccion[], query: string, withIds: boolean): Record<string, unknown> | null {
+export function cartaCategoryForModel(carta: readonly CartaSeccion[], query: string, withIds: boolean, menu: readonly MenuItem[] = []): Record<string, unknown> | null {
   const filtro = alcoholFilter(query);
   const base = cartaSectionsFor(carta, filtro ? "bebidas" : query);
   const secciones = filtro ? base.map((s) => filterAlcohol(s, filtro)).filter((s) => s.items.length > 0) : base;
@@ -253,7 +259,7 @@ export function cartaCategoryForModel(carta: readonly CartaSeccion[], query: str
   return {
     encontrado: true,
     consulta: query.slice(0, 60),
-    secciones: secciones.map((s) => bloque(s, withIds)),
+    secciones: secciones.map((s) => bloque(s, withIds, namesById(menu))),
     nota: "Respondé copiando el 'texto' de cada sección tal cual (todas las líneas). No repitas el precio en cada gusto.",
   };
 }

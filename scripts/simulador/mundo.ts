@@ -84,6 +84,12 @@ const MENU: Array<[string, string, number]> = [
   ["Cafetería", "Tostado de jamón y queso", 6000],
   ["Postres", "Budín de pan", 9600],
   ["Pizzas", "Calabresa grande", 33000],
+  // Variantes parecidas (como en producción): con/sin gas, grande/porción, fainá. Sirven para los guiones 50-52.
+  ["Bebidas", "Agua con gas 500 ml", 1500],
+  ["Pizzas", "Porción de muzzarella", 3600],
+  ["Pizzas", "Porción de fugazzeta", 4200],
+  ["Pizzas", "Porción de jamón y morrones", 4200],
+  ["Pizzas", "Fainá", 1800],
 ];
 
 /** id Fudo de la docena (oculta del menú) y de las 7 empanadas sueltas, igual que en producción. */
