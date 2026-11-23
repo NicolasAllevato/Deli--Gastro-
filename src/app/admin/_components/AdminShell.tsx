@@ -14,6 +14,7 @@ import { canAccessPath, levelFor, sectionForPath, type StaffAccess } from "@/lib
 import { findSection, isTabActive, visibleNavSections } from "../_nav";
 import { AdminAccessProvider } from "./AdminAccess";
 import { CourierShiftAlerts } from "./CourierShifts";
+import { DerivacionAlert } from "./DerivacionAlert";
 import { ReclamoNuevoModal, ReclamosAlert, useReclamosResumen } from "./ReclamosAlert";
 
 /**
@@ -30,6 +31,7 @@ export function AdminShell({ access, superOwner = false, children }: { access: S
   const canSeeShifts = canAccessPath(access, "/api/admin/courier-shifts", "POST");
   const canSeeReclamos = canAccessPath(access, "/api/admin/reclamos/resumen");
   const reclamos = useReclamosResumen(canSeeReclamos);
+  const canSeeDerivadas = canAccessPath(access, "/api/admin/conversaciones/derivadas");
   const currentSection = pathname ? sectionForPath(pathname) : null;
   const readOnly = currentSection !== null && levelFor(access, currentSection) === "view";
 
@@ -181,6 +183,7 @@ export function AdminShell({ access, superOwner = false, children }: { access: S
         </header>
 
         {canSeeShifts && <CourierShiftAlerts />}
+        <DerivacionAlert enabled={canSeeDerivadas} />
         <ReclamosAlert resumen={reclamos} />
         <ReclamoNuevoModal resumen={reclamos} />
 
