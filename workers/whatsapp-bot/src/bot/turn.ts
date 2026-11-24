@@ -126,8 +126,19 @@ export function dumpsMenu(draft: string): boolean {
 }
 
 /** El borrador cuenta un tope interno de las herramientas («máximo por línea», «en una sola línea») o propone partir el pedido por eso. */
+/** El último mensaje del bot es un resumen de pedido sobre el que el cliente puede pedir cambios. */
+export function editsLastSummary(lastBot: string | null | undefined): lastBot is string {
+  return typeof lastBot === "string" && /Resumen de tu pedido/i.test(lastBot);
+}
+
+/** El cliente pide una cantidad que pasa el tope de unidades del bot (lo decide el local, no el modelo). */
+export function asksHugeQuantity(text: string, maxUnits = 100): boolean {
+  // Solo números seguidos de un producto («150 empanadas»), no alturas de calle («Juramento 1500», «Santa Fe 1234, Palermo»).
+  return [...text.matchAll(/(?:^|[^\p{L}\d])(\d+)\s+(?:de\s+)?\p{L}{3,}/gu)].some((m) => Number(m[1]) > maxUnits && Number(m[1]) < 100000);
+}
+
 export function exposesInternalLimit(draft: string): boolean {
-  return /(?:m[aá]xim[oa]|l[ií]mite|hasta \d+)[^.\n]{0,30}por l[ií]nea|(?:sola|una|dos|varias|otra|cada) l[ií]neas?\b|(?:dividir|partir|separar|fraccionar) (?:el |tu )?pedido/i.test(draft);
+  return /(?:m[aá]xim[oa]|l[ií]mite|hasta \d+)[^.\n]{0,30}por l[ií]nea|(?:sola|una|dos|varias|otra|cada) l[ií]neas?\b|(?:dividir|partir|separar|fraccionar) (?:el |tu )?pedido|no (?:puedo|podemos) (?:procesar|tomar|aceptar)[^.\n]{0,20}pedido|cantidad (?:menor|m[aá]s chica)/i.test(draft);
 }
 
 const HISTORY_TURNS = 8;
@@ -405,7 +416,7 @@ ${h}`).join("");
     if (!issue || handedOffNow) break;
     deps.log("[whatsapp-bot] borrador descartado", { conversation: conversation.id, intent, issue, attempt });
     const hint = issue === "promise" && order && knownAddress
-      ? `${RETRY_HINT.promise} Si quiere pedir, llamá quote_order YA con los product_id de get_menu y la dirección "${knownAddress}".`
+      ? `${RETRY_HINT.promise} Si quiere pedir, llamá quote_order YA con los product_id de get_menu y la dirección "${knownAddress}".${editsLastSummary(lastBot) ? ` Tu último resumen fue:\n${lastBot}\nAplicá el cambio que pide el cliente sobre ese resumen («otra igual» / «una más» = sumar 1 al mismo producto) y cotizá el pedido COMPLETO.` : ""}`
       : RETRY_HINT[issue];
     // Pedido que el modelo contestó con texto (resumen propio o promesa): el reintento lo obliga a usar las herramientas.
     const retryNeedsTool = issue === "denied_product" || (issue === "template" || issue === "promise" || issue === "limits") && (intent === "pedido_nuevo" || intent === "pedido_datos") && tools.some((x) => x.name === "quote_order");
@@ -426,6 +437,12 @@ ${h}`).join("");
   if (issue) {
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });
     const orderIntent = intent === "pedido_nuevo" || intent === "pedido_datos" || intent === "pedido_confirmar";
+    // Pedido más grande que el tope y el modelo lo rechazó solo: lo toma una persona (no se le pide «una cantidad menor»).
+    if (orderIntent && (issue === "limits" || issue === "template" || issue === "promise") && asksHugeQuantity(turnText)) {
+      await reply(deps, conversation, REPLIES.handoff, false);
+      await deps.repo.setTakeover(conversation.id);
+      return "answered";
+    }
     // Con productos nombrados nunca sale «Decime qué querés pedir»: se pide cuál de cada uno (lo ya dicho está anotado).
     const named = orderIntent && (issue === "template" || issue === "promise" || issue === "limits") && namesProducts(turnText, await deps.repo.menu().catch(() => []));
     await reply(deps, conversation, named ? NAMED_PRODUCTS_FALLBACK : issue === "promise" && orderIntent ? ORDER_REPLIES.startOver : SAFE_FALLBACK[issue]);

@@ -171,9 +171,20 @@ function ambiguityError(text: string, lines: readonly QuoteLine[], menu: readonl
   );
 }
 
+/** «Media docena» (y ninguna docena entera) no es el producto «Docena de empanadas»: son 6 sueltas del gusto. */
+function halfDozenError(text: string, lines: readonly QuoteLine[], byId: ReadonlyMap<string, string>): string | null {
+  const t = fold(text);
+  if (!/\bmedia docena\b/.test(t)) return null;
+  // Hay alguna docena entera («una docena», «2 docenas», «docena y media»): no se controla.
+  if (/\bdocenas\b|docena y media|\b(?:una|1|dos|2|tres|3) docena\b/.test(t.replace(/media docena/g, ""))) return null;
+  const dozen = lines.find((l) => /\bdocena\b/.test(fold(byId.get(l.product_id) ?? "")));
+  if (!dozen) return null;
+  return `El cliente pidió «media docena»: son 6 empanadas sueltas de ese gusto, NO el producto «${byId.get(dozen.product_id)}». Cotizá cada gusto como empanada suelta con su cantidad exacta. No se lo menciones al cliente.`;
+}
+
 /** Mensaje de error para el modelo si la cotización contradice el texto del cliente; null si cuadra o no se puede saber. */
 export function checkQuoteAgainstText(text: string, lines: readonly QuoteLine[], menu: readonly MenuName[]): string | null {
   if (!text.trim() || menu.length === 0) return null;
   const byId = new Map(menu.map((m) => [m.id, m.name] as const));
-  return variantError(text, lines, menu, byId) ?? quantityError(text, lines, menu, byId) ?? ambiguityError(text, lines, menu, byId);
+  return halfDozenError(text, lines, byId) ?? variantError(text, lines, menu, byId) ?? quantityError(text, lines, menu, byId) ?? ambiguityError(text, lines, menu, byId);
 }
