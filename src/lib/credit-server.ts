@@ -12,7 +12,7 @@ import type { createAdminClient } from "@/utils/supabase/admin";
  */
 type Db = ReturnType<typeof createAdminClient>;
 
-export type CreditMotivo = "reclamo" | "compra" | "devolucion" | "ajuste";
+export type CreditMotivo = "reclamo" | "compra" | "devolucion" | "ajuste" | "vencido";
 
 /** Clave del débito de un pedido y de su devolución (mismas que usa la cancelación). */
 export const orderCreditKey = (orderId: string) => `orden:${orderId}:credito`;

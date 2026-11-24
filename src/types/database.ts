@@ -472,7 +472,7 @@ export interface Database {
           reclamo_id: string | null
           /** Pesos: positivo acredita, negativo debita. */
           delta: number
-          motivo: 'reclamo' | 'compra' | 'devolucion' | 'ajuste'
+          motivo: 'reclamo' | 'compra' | 'devolucion' | 'ajuste' | 'vencido'
           description: string | null
           idempotency_key: string
           created_at: string
@@ -483,7 +483,7 @@ export interface Database {
           order_id?: string | null
           reclamo_id?: string | null
           delta: number
-          motivo: 'reclamo' | 'compra' | 'devolucion' | 'ajuste'
+          motivo: 'reclamo' | 'compra' | 'devolucion' | 'ajuste' | 'vencido'
           description?: string | null
           idempotency_key: string
         }

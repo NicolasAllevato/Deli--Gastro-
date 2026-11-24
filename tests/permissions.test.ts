@@ -216,6 +216,21 @@ describe("evaluateAccess", () => {
     for (const [path, method] of ownerOnly) assert.equal(P.evaluateAccess(owner, path, method).allowed, true, `${method} ${path}`);
   });
 
+  it("Saldo a favor (tope, vencimiento, carga manual): solo dueño, aunque editen Configuración; la pestaña no aparece a otros roles", () => {
+    const configEditor = P.staffAccessOf(metaOf("cajero", JSON.stringify({ configuracion: "edit" })));
+    const ownerOnly = [["/admin/saldo", "GET"], ["/api/admin/saldo", "GET"], ["/api/admin/saldo", "PUT"], ["/api/admin/saldo/ajuste", "POST"]] as const;
+    for (const access of [gerente, cajero, configEditor]) {
+      for (const [path, method] of ownerOnly) {
+        const d = P.evaluateAccess(access, path, method);
+        assert.equal(d.allowed === false && d.reason, "owner-only", `${method} ${path}`);
+      }
+      const tabs = visibleNavSections(access).flatMap((s) => s.tabs.map((t) => t.href));
+      assert.equal(tabs.includes("/admin/saldo"), false);
+    }
+    for (const [path, method] of ownerOnly) assert.equal(P.evaluateAccess(owner, path, method).allowed, true, `${method} ${path}`);
+    assert.ok(visibleNavSections(owner).flatMap((s) => s.tabs.map((t) => t.href)).includes("/admin/saldo"));
+  });
+
   it("el resto de Comunicación no cambia: conversaciones, plantillas, campañas, agente, reclamos, conocimiento", () => {
     for (const path of ["/admin/conversaciones", "/admin/plantillas", "/admin/campanas", "/admin/agente", "/admin/reclamos", "/admin/conocimiento"]) {
       assert.equal(P.evaluateAccess(gerente, path, "GET").allowed, true, path);

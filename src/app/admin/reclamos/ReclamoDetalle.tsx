@@ -21,6 +21,7 @@ interface Props {
 /** Detalle de un reclamo: pedido, fotos, historial y acciones (tomar, nota, responder, resolver). */
 export function ReclamoDetalle({ id, onChanged }: Props) {
   const [r, setR] = useState<ReclamoDetalleData | null>(null);
+  const [saldoTope, setSaldoTope] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -35,10 +36,11 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
 
   useEffect(() => {
     let alive = true;
-    call<{ reclamo: ReclamoDetalleData }>(`/api/admin/reclamos/${id}`)
+    call<{ reclamo: ReclamoDetalleData; saldoTope?: number }>(`/api/admin/reclamos/${id}`)
       .then((data) => {
         if (!alive) return;
         setR(data.reclamo);
+        setSaldoTope(data.saldoTope ?? 0);
         setError(null);
       })
       .catch((e: unknown) => {
@@ -70,6 +72,10 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
 
   function resolver(consulta: boolean) {
     const valor = Number(compValor);
+    if (!consulta && compTipo === "saldo" && saldoTope > 0 && valor > saldoTope) {
+      setError(`El saldo a favor no puede superar el tope por reclamo de $${saldoTope}.`);
+      return;
+    }
     // Una consulta se responde, no se compensa.
     const compensacion = !consulta && compTipo && Number.isInteger(valor) && valor > 0 ? { tipo: compTipo, valor } : null;
     if (!consulta && compTipo && !compensacion) {
@@ -231,8 +237,8 @@ export function ReclamoDetalle({ id, onChanged }: Props) {
               </label>
               {compTipo && (
                 <label className="text-xs text-gray-500 flex flex-col gap-1">
-                  {compTipo === "puntos" ? "Puntos" : "Pesos"}
-                  <input type="number" min={1} max={compTipo === "puntos" ? 10000 : 100000} className={inputClass} value={compValor} onChange={(e) => setCompValor(e.target.value)} />
+                  {compTipo === "puntos" ? "Puntos" : saldoTope > 0 ? `Pesos (tope por reclamo: $${saldoTope})` : "Pesos"}
+                  <input type="number" min={1} max={compTipo === "puntos" ? 10000 : saldoTope > 0 ? Math.min(saldoTope, 100000) : 100000} className={inputClass} value={compValor} onChange={(e) => setCompValor(e.target.value)} />
                 </label>
               )}
             </div>

@@ -209,6 +209,10 @@ export type { StaffUser, CourierUser, CreateStaffInput, UpdateStaffInput, UserRe
 export { dataDeletionApp, type DataDeletionApp } from "./data-deletion-app.ts";
 export type { DeletionPreview, DeletionRequestView, DeletionResult, DeletionOutcome, Eligibility, StaffUserView } from "./data-deletion.ts";
 
+export { creditAdminApp, type CreditAdminApp } from "./credit-admin-app.ts";
+export { AdjustmentError, MAX_AJUSTE_CENTS, MAX_TOPE_CENTS, MAX_VENCIMIENTO_DIAS } from "./credit-admin.ts";
+export type { CreditConfig, CreditClient, CreditHistory, CreditHistoryRow, ExpireResult, AdjustmentInput, AdjustmentResult } from "./credit-admin.ts";
+
 export { kbApp } from "./kb-negocio-app.ts";
 export { kbInputSchema, KB_CATEGORIAS, KB_MAX_ROWS, type KbEntry, type KbInput } from "./kb-negocio.ts";
 export { KbCapacityError, type FaqImportResult, type FaqImportRow } from "./kb-importar.ts";

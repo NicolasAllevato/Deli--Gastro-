@@ -11,7 +11,7 @@ import { ownClientId } from "./clients.ts";
 import { assertCents } from "./money.ts";
 import type { SqlDatabase, SqlStatement } from "./sql.ts";
 
-export const CREDIT_MOTIVOS = ["reclamo", "compra", "devolucion", "ajuste"] as const;
+export const CREDIT_MOTIVOS = ["reclamo", "compra", "devolucion", "ajuste", "vencido"] as const;
 export type CreditMotivo = (typeof CREDIT_MOTIVOS)[number];
 
 export class InsufficientCreditError extends Error {
