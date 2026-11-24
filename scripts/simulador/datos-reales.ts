@@ -30,5 +30,9 @@ export function cargarDatosReales(db: { raw: DatabaseSync }, datos: DatosReales)
     }
     counts[tabla] = filas.length;
   }
+  // El simulador corre a cualquier hora: el local queda abierto todo el día (igual que el mundo de prueba), si no los guiones dependen del reloj.
+  const abierto = db.raw.prepare("UPDATE global_config SET value = ? WHERE key = ?");
+  abierto.run(JSON.stringify("00:00"), "horario_apertura");
+  abierto.run(JSON.stringify("23:59"), "horario_cierre");
   return counts;
 }
