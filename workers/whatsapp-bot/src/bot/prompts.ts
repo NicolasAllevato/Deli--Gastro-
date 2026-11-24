@@ -101,6 +101,8 @@ export const savedAddressQuestion = (address: string): string => `¿Te lo enviam
 const normAddr = (s: string): string => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const AFFIRM = /^\s*(s[ií]+|dale|ok|okay|perfecto|de una|claro|exacto|correcto|esa|esa misma|ah[ií]|la misma|a la misma|confirmo)(?![\p{L}])/iu;
 const ASKS_SAME_ADDRESS = /misma direcci[oó]n|¿te lo enviamos a /i;
+/** «a esa dirección», «la misma», «la de siempre», «la registrada»: el cliente se refiere a su dirección guardada. */
+const SAVED_ADDRESS_REF = /\b(?:a\s+)?(?:esa|la misma|la de siempre|la de antes|la de la [uú]ltima|la registrada|la guardada|la que tienen|la que ten[eé]s|mi casa)\b/i;
 
 /**
  * true si `address` es la dirección guardada del perfil y el cliente todavía no la confirmó: ni la escribió él
@@ -114,8 +116,18 @@ export function profileAddressUnconfirmed(
   const given = normAddr(address);
   if (!saved || !given || (!given.includes(saved) && !saved.includes(given))) return false;
   if ([...clientTexts, turnText].some((t) => normAddr(t).includes(saved))) return false;
-  if (lastBotText && ASKS_SAME_ADDRESS.test(lastBotText) && AFFIRM.test(turnText)) return false;
+  if (acceptsSavedAddress(lastBotText, turnText)) return false;
   return true;
+}
+
+/**
+ * El cliente aceptó su dirección guardada: dijo que sí a «¿Te lo enviamos a X?», o ante una pregunta genérica por la
+ * dirección respondió «a esa» / «la misma» / «la de siempre» (sin escribir otra calle).
+ */
+export function acceptsSavedAddress(lastBotText: string | null, turnText: string): boolean {
+  if (!lastBotText) return false;
+  if (ASKS_SAME_ADDRESS.test(lastBotText) && AFFIRM.test(turnText)) return true;
+  return ASKS_ADDRESS.test(lastBotText) && lastBotText.includes("?") && SAVED_ADDRESS_REF.test(turnText) && !namesAddress([turnText]);
 }
 
 /** Prompt del respondedor, acotado a la intención (menos tokens y menos margen de error). */
@@ -212,6 +224,6 @@ export function asksSavedAddress(draft: string, savedAddress: string): boolean {
 
 /** El cliente aceptó «¿Te lo enviamos a X?»: pista para que cotice YA con esa dirección y los productos que ya pidió (sin pedirlos de nuevo). */
 export function savedAddressAcceptedHint(turnText: string, lastBotText: string | null, savedAddress: string | null | undefined): string | null {
-  if (!savedAddress || !lastBotText || !ASKS_SAME_ADDRESS.test(lastBotText) || !AFFIRM.test(turnText)) return null;
+  if (!savedAddress || !acceptsSavedAddress(lastBotText, turnText)) return null;
   return `El cliente confirmó que la entrega es en «${flatClip(savedAddress, 120)}». Llamá quote_order YA con esa dirección y los productos y cantidades que pidió antes en la charla (tomalos del historial; no le preguntes bebidas ni nada que no haya pedido).`;
 }
