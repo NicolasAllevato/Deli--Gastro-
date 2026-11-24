@@ -134,8 +134,18 @@ export function editsLastSummary(lastBot: string | null | undefined): lastBot is
 /** El cliente pide una cantidad que pasa el tope de unidades del bot (lo decide el local, no el modelo). */
 export function asksHugeQuantity(text: string, maxUnits = 100): boolean {
   // Solo números seguidos de un producto («150 empanadas»), no alturas de calle («Juramento 1500», «Santa Fe 1234, Palermo»).
-  return [...text.matchAll(/(?:^|[^\p{L}\d])(\d+)\s+(?:de\s+)?\p{L}{3,}/gu)].some((m) => Number(m[1]) > maxUnits && Number(m[1]) < 100000);
+  return [...text.matchAll(/(?:^|[^\p{L}\d])(\d+)\s+(?:de\s+)?(\p{L}{3,})/gu)].some((m) => {
+    const n = Number(m[1]);
+    if (n <= maxUnits || n >= 100000 || ADDRESS_NEXT_WORD.test(m[2])) return false;
+    const before = text.slice(0, m.index + m[0].indexOf(m[1])).trimEnd();
+    return !ADDRESS_BEFORE.test(before);
+  });
 }
+
+/** Palabras que siguen a una altura de calle («1500 entre Cabildo y Mendoza», «2000 piso 4»). */
+const ADDRESS_NEXT_WORD = /^(?:entre|esquina|esq|piso|dto|depto|departamento|casi|bis|timbre|barrio|torre|lote|casa|local|oficina)$/i;
+/** Lo anterior al número es una calle: marcador de calle o un nombre propio que no abre la frase («Juramento 1500»). */
+const ADDRESS_BEFORE = /(?:\b(?:av|avda|avenida|calle|pasaje|diagonal|ruta|altura|al|n[°º]?|nro)\.?|[^.!?\n]\s+\p{Lu}\p{L}+)$/u;
 
 export function exposesInternalLimit(draft: string): boolean {
   return /(?:m[aá]xim[oa]|l[ií]mite|hasta \d+)[^.\n]{0,30}por l[ií]nea|(?:sola|una|dos|varias|otra|cada) l[ií]neas?\b|(?:dividir|partir|separar|fraccionar) (?:el |tu )?pedido|no (?:puedo|podemos) (?:procesar|tomar|aceptar)[^.\n]{0,20}pedido|cantidad (?:menor|m[aá]s chica)/i.test(draft);
@@ -358,6 +368,12 @@ async function answer(
   const profile = await readOptional(deps, "el perfil del cliente", deps.repo.customerProfile ? () => deps.repo.customerProfile!(conversation.phone) : undefined, null);
   const clientTexts = history.filter((h) => h.direction === "in").map((h) => h.body);
   const lastBot = history.filter((h) => h.direction === "out").at(-1)?.body ?? null;
+  // Pedido por encima del tope de unidades: lo toma una persona ya (el modelo no puede cotizarlo y a veces lo olvida).
+  if (order && intent !== "pedido_cancelar" && intent !== "pedido_estado" && asksHugeQuantity(turnText)) {
+    await reply(deps, conversation, REPLIES.handoff, false);
+    await deps.repo.setTakeover(conversation.id);
+    return "answered";
+  }
   const guard = (address: string) => profileAddressUnconfirmed(address, profile?.lastAddress, clientTexts, lastBot, turnText);
   // Si el modelo deriva con handoff_to_human en ESTE turno, su mensaje al cliente igual sale (sin el rechequeo
   // de pausa, que si no aborta el envío y el cliente se queda sin respuesta).
