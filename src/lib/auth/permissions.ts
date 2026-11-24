@@ -277,6 +277,8 @@ const API_RULES: readonly ApiRule[] = [
   { prefix: "/api/admin/fudo-sync", sections: ["configuracion"] },
   { prefix: "/api/admin/fudo-ventas", sections: ["configuracion"] },
   { prefix: "/api/admin/legal", sections: ["configuracion"] },
+  // La campana del panel: la abre todo el personal; la ruta filtra cada fuente por la sección que corresponde.
+  { prefix: "/api/admin/notificaciones", sections: SECTIONS },
   { prefix: "/api/admin/reclamos", sections: ["comunicacion"] },
   // El POST es la consulta al analista (herramientas de solo lectura): alcanza con ver el Dashboard.
   { prefix: "/api/admin/reports", sections: ["dashboard"], postIsRead: true },

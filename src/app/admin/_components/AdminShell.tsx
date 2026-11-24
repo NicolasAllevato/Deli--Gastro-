@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
-import { Bell, Eye, Menu, UserRound, X } from "lucide-react";
+import { Eye, Menu, UserRound, X } from "lucide-react";
 import { SignOutButton } from "@/components/ui/SignOutButton";
 import { cn } from "@/lib/cn";
 import { SectionTabs } from "@/components/ui/SectionTabs";
@@ -15,6 +15,7 @@ import { findSection, isTabActive, visibleNavSections } from "../_nav";
 import { AdminAccessProvider } from "./AdminAccess";
 import { CourierShiftAlerts } from "./CourierShifts";
 import { DerivacionAlert } from "./DerivacionAlert";
+import { NotificacionesCampana } from "./NotificacionesCampana";
 import { ReclamoNuevoModal, ReclamosAlert, useReclamosResumen } from "./ReclamosAlert";
 
 /**
@@ -157,13 +158,7 @@ export function AdminShell({ access, superOwner = false, children }: { access: S
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              aria-label="Notificaciones"
-              className="relative p-2.5 rounded-xl neumorphic-hover text-gray-500 hover:text-brand-orange transition-colors"
-            >
-              <Bell size={18} />
-              <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full" />
-            </button>
+            <NotificacionesCampana />
             <div className="hidden lg:flex items-center gap-2.5 px-3 py-1.5 rounded-full neumorphic">
               <span className="text-xs font-bold text-gray-600">Gastronomic Excellence</span>
               <div className="w-7 h-7 rounded-full neumorphic-inset flex items-center justify-center text-brand-orange font-black text-xs">
