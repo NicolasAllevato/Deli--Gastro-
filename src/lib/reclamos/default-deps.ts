@@ -19,6 +19,7 @@ export const reclamosDeps: ReclamosApiDeps = {
   marcarNotificacion: (actor, id, ok, error) => reclamosApp.marcarNotificacion(actor, id, ok, error),
   sugerir: sugerirReclamo,
   entrenamiento: async (actor) => (await reclamosApp.config(actor)).entrenamiento,
+  saldoTope: async (actor) => (await reclamosApp.config(actor)).saldoTope,
 };
 
 /** Rate limit por IP + sesión de admin. Devuelve el actor o la respuesta de error. */

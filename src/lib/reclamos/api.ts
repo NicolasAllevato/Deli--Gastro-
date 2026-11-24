@@ -44,6 +44,8 @@ export interface ReclamosApiDeps {
   sugerir(id: string): Promise<{ ok: true; sugerencia: unknown } | { ok: false; error: string }>;
   /** Modo entrenamiento del bot (aviso en la página). */
   entrenamiento(actor: Actor): Promise<boolean>;
+  /** Tope por reclamo del saldo a favor en pesos (0 = sin tope), para mostrarlo en el detalle. */
+  saldoTope?(actor: Actor): Promise<number>;
   now?: () => Date;
 }
 
@@ -91,7 +93,8 @@ export async function detalleReclamo(actor: Actor, id: string, deps: ReclamosApi
   if (!idSchema.safeParse(id).success) return { status: 400, body: { error: "Reclamo inválido." } };
   try {
     const reclamo = await deps.get(actor, id);
-    return reclamo ? { status: 200, body: { reclamo } } : { status: 404, body: { error: "No se encontró el reclamo." } };
+    if (!reclamo) return { status: 404, body: { error: "No se encontró el reclamo." } };
+    return { status: 200, body: { reclamo, saldoTope: (await deps.saldoTope?.(actor)) ?? 0 } };
   } catch (err) {
     return errorResult(err, "get");
   }

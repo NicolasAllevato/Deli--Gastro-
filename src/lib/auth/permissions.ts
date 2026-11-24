@@ -218,6 +218,7 @@ const PAGE_RULES: ReadonlyArray<readonly [string, Section]> = [
   ["/admin/notificaciones", "configuracion"],
   ["/admin/legal", "configuracion"],
   ["/admin/usuarios", "configuracion"],
+  ["/admin/saldo", "configuracion"],
   ["/admin/eliminar-datos", "configuracion"],
 ];
 
@@ -230,6 +231,8 @@ const PAGE_RULES: ReadonlyArray<readonly [string, Section]> = [
 const OWNER_ONLY_PREFIXES: readonly string[] = [
   "/admin/usuarios",
   "/api/admin/usuarios",
+  "/admin/saldo",
+  "/api/admin/saldo",
   "/admin/eliminar-datos",
   "/api/admin/eliminar-datos",
   "/admin/whatsapp",

@@ -69,6 +69,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
       { href: "/admin/promos", label: "Promos del día" },
       { href: "/admin/notificaciones", label: "Notificaciones" },
       { href: "/admin/usuarios", label: "Usuarios" },
+      { href: "/admin/saldo", label: "Saldo a favor" },
       { href: "/admin/legal", label: "Documentos legales" },
       { href: "/admin/eliminar-datos", label: "Eliminar usuarios", superOwnerOnly: true },
     ],

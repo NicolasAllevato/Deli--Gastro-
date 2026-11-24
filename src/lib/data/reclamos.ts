@@ -8,6 +8,7 @@ import { esConsulta } from "../reclamos/categoria.ts";
 import { requireStaff, type Actor } from "./actor.ts";
 import { descuentoASaldoPesos, DEFAULT_MAX_SALDO, MAX_SALDO_PANEL, SIN_PEDIDO_PARA_DESCUENTO } from "../reclamos/saldo.ts";
 import { addCreditStatement } from "./credit.ts";
+import { readCreditConfig } from "./credit-admin.ts";
 import { toCents } from "./money.ts";
 import { addPointsStatement } from "./points.ts";
 import { nowIso, type SqlDatabase, type SqlStatement } from "./sql.ts";
@@ -359,6 +360,14 @@ export async function resolverReclamo(
   if (comp?.tipo === "saldo" && !actual.client_id) {
     throw new ReclamoConflictoError("El reclamo no tiene un cliente registrado: no se puede acreditar saldo a favor.");
   }
+  if (comp?.tipo === "saldo") {
+    const { topeCents } = await readCreditConfig(db, actor);
+    if (topeCents > 0 && toCents(comp.valor) > topeCents) {
+      throw new ReclamoConflictoError(
+        `El saldo a favor de $${comp.valor} supera el tope por reclamo de $${topeCents / 100}. Bajá el monto o pedile al dueño que suba el tope en «Saldo a favor».`,
+      );
+    }
+  }
 
   const now = nowIso();
   const stmts: SqlStatement[] = [
@@ -517,6 +526,8 @@ export interface ConfigReclamos {
   /** Topes del agente de reclamos (`reclamo_max_puntos`, `reclamo_max_saldo` en pesos). */
   maxPuntos: number;
   maxSaldo: number;
+  /** Tope por reclamo del saldo a favor, en pesos (`saldo_tope_reclamo_cents`); 0 = sin tope. Ya aplicado a `maxSaldo`. */
+  saldoTope: number;
 }
 
 const DEFAULT_MAX_PUNTOS = 500;
@@ -527,7 +538,7 @@ export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<Con
   const { results } = await db
     .prepare(
       `SELECT key, value FROM global_config
-       WHERE key IN ('horario_apertura', 'horario_cierre', 'modo_pausa', 'bot_modo_entrenamiento', 'reclamo_max_puntos', 'reclamo_max_saldo')`,
+       WHERE key IN ('horario_apertura', 'horario_cierre', 'modo_pausa', 'bot_modo_entrenamiento', 'reclamo_max_puntos', 'reclamo_max_saldo', 'saldo_tope_reclamo_cents')`,
     )
     .all<{ key: string; value: string }>();
   const cfg = new Map(results.map((r) => [r.key, safeJson(r.value)]));
@@ -536,6 +547,8 @@ export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<Con
     const n = Number(cfg.get(k));
     return Number.isInteger(n) && n >= 0 ? Math.min(n, max) : d;
   };
+  const topePesos = Math.floor(entero("saldo_tope_reclamo_cents", 0, 100_000_000) / 100);
+  const maxSaldo = entero("reclamo_max_saldo", DEFAULT_MAX_SALDO, MAX_SALDO_PANEL);
   const training = cfg.get("bot_modo_entrenamiento");
   return {
     open: hhmm("horario_apertura", "11:00"),
@@ -543,7 +556,9 @@ export async function configReclamos(db: SqlDatabase, actor: Actor): Promise<Con
     paused: cfg.get("modo_pausa") === true,
     entrenamiento: training === true || training === "true",
     maxPuntos: entero("reclamo_max_puntos", DEFAULT_MAX_PUNTOS, 10_000),
-    maxSaldo: entero("reclamo_max_saldo", DEFAULT_MAX_SALDO, MAX_SALDO_PANEL),
+    // El tope por reclamo del dueño recorta también lo que sugiere el agente (si no, sugeriría algo que se rechaza al resolver).
+    maxSaldo: topePesos > 0 ? Math.min(maxSaldo, topePesos) : maxSaldo,
+    saldoTope: topePesos,
   };
 }
 

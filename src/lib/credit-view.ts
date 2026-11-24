@@ -28,6 +28,8 @@ export function creditMovementLabel(motivo: string, orderId: string | null): str
       return "Devolución";
     case "ajuste":
       return "Ajuste";
+    case "vencido":
+      return "Vencido";
     default:
       return "Movimiento";
   }
