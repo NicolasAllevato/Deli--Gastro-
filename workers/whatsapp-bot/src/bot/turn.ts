@@ -438,7 +438,7 @@ ${h}`).join("");
     deps.log("[whatsapp-bot] respuesta bloqueada", { conversation: conversation.id, reasons: [issue], empty: issue === "empty" });
     const orderIntent = intent === "pedido_nuevo" || intent === "pedido_datos" || intent === "pedido_confirmar";
     // Pedido más grande que el tope y el modelo lo rechazó solo: lo toma una persona (no se le pide «una cantidad menor»).
-    if (orderIntent && (issue === "limits" || issue === "template" || issue === "promise") && asksHugeQuantity(turnText)) {
+    if (orderIntent && (issue === "limits" || issue === "template" || issue === "promise") && asksHugeQuantity([...clientTexts.slice(-3), turnText].join("\n"))) {
       await reply(deps, conversation, REPLIES.handoff, false);
       await deps.repo.setTakeover(conversation.id);
       return "answered";
@@ -454,7 +454,7 @@ ${h}`).join("");
   // Pizzas: la carta se arma con todas las secciones (Pizzas y Pizzas especiales) aunque el modelo copie solo una.
   const carta = await readOptional(deps, "la carta", deps.repo.carta?.bind(deps.repo), []);
   // Cliente registrado: la pregunta por la dirección sale fija con SU última dirección (la arma el código, no el modelo).
-  const offered = order && (intent === "pedido_nuevo" || intent === "pedido_datos") ? offerSavedAddress(draft, profile?.lastAddress, clientTexts, lastBot, turnText) : null;
+  const offered = order && intent !== "pedido_cancelar" && intent !== "pedido_estado" ? offerSavedAddress(draft, profile?.lastAddress, clientTexts, lastBot, turnText) : null;
   const body = completePizzaReply(offered ?? draft, turnText, carta);
   // Consulta de precios, productos o envío (sin pedido en curso): cada tanto se suma la línea del portal; la frecuencia la fija el código.
   const portal = PORTAL_INTENTS.includes(intent) && !reminder && !suspicious && (await portalDue(deps, conversation, settings.portalHours)) ? PORTAL_LINE(deps.appUrl) : null;
