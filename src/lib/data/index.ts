@@ -91,6 +91,7 @@ export function bindRepos(db: SqlDatabase, actor: Actor) {
       order: bind(clientViews.getOwnOrder, db, actor),
       reviewedOrderIds: bind(clientViews.listOwnReviewedOrderIds, db, actor),
       ledger: bind(clientViews.listOwnLedger, db, actor),
+      creditLedger: bind(clientViews.listOwnCreditLedger, db, actor),
       earnedByOrder: bind(clientViews.listOwnEarnedByOrder, db, actor),
     },
     catalogAdmin: {

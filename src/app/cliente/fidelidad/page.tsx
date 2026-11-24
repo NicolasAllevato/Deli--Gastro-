@@ -1,11 +1,14 @@
 export const dynamic = "force-dynamic";
 
-import { Star, Gift, TrendingUp, Award } from "lucide-react";
+import { Star, Gift, TrendingUp, Award, Wallet } from "lucide-react";
 import { AnimatedProgressBar } from "@/components/ui/AnimatedProgressBar";
 import { requireClientPage } from "@/lib/auth/clientPage";
 import { REWARDS } from "@/lib/orders";
 import { RedeemButton } from "./RedeemButton";
-import { clientLedger, orFallback } from "@/lib/client-reads";
+import { clientCreditLedger, clientLedger, orFallback } from "@/lib/client-reads";
+import { clientCredit } from "@/lib/credit-server";
+import { toCreditMovements } from "@/lib/credit-view";
+import { formatMoney } from "@/lib/orders";
 import { formatDateAR } from "@/lib/time-ar";
 
 function formatDate(iso: string) {
@@ -20,6 +23,11 @@ export default async function FidelidadPage() {
   const { user, client, db } = await requireClientPage();
 
   const ledger = client ? await orFallback(clientLedger({ db, userId: user.id, clientId: client.id }, 10), []) : [];
+
+  const ctx = client ? { db, userId: user.id, clientId: client.id } : null;
+  const credit = ctx ? await orFallback(clientCredit(db, ctx.clientId), 0) : 0;
+  const creditRows = ctx ? await orFallback(clientCreditLedger(ctx, 10), []) : [];
+  const movimientos = toCreditMovements(creditRows ?? []);
 
   const totalPuntos = client?.total_points ?? 0;
   const nextReward = [...REWARDS]
@@ -55,6 +63,37 @@ export default async function FidelidadPage() {
           <AnimatedProgressBar value={totalPuntos} max={puntosParaSiguiente} label="Progreso hacia la próxima recompensa" />
         </div>
       </div>
+
+
+      {/* Saldo a favor: solo si hay saldo o movimientos */}
+      {(credit > 0 || movimientos.length > 0) && (
+        <section className="neumorphic rounded-[2rem] p-6" aria-labelledby="saldo-titulo">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full neumorphic-inset flex items-center justify-center shrink-0">
+              <Wallet size={22} className="text-brand-orange" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <h3 id="saldo-titulo" className="font-headline font-black text-lg text-gray-800">
+                Saldo a favor: <span data-testid="saldo-a-favor">{formatMoney(credit)}</span>
+              </h3>
+              <p className="text-xs text-gray-500">Se descuenta solo en tu próxima compra</p>
+            </div>
+          </div>
+          {movimientos.length > 0 && (
+            <ul className="mt-4 space-y-2">
+              {movimientos.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-bold text-gray-700 truncate">{m.label}</p>
+                    <p className="text-xs text-gray-500">{formatDate(m.createdAt)}</p>
+                  </div>
+                  <span className={`font-black shrink-0 ${m.negative ? "text-red-500" : "text-green-600"}`}>{m.amountText}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* Recompensas disponibles */}
       <div>

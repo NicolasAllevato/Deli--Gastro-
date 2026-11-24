@@ -1,6 +1,7 @@
 import type { createAdminClient } from "@/utils/supabase/admin";
 import { CLIENT_ORDER_SELECT, comparableClientOrder, dataFor, shadowRead, type Actor, type ClientOrderField } from "@/lib/data";
 import type { Database } from "@/types/database";
+import type { CreditMovementRow } from "@/lib/credit-view";
 
 /** Pedido tal como lo recibe el cliente: solo CLIENT_ORDER_FIELDS (misma lista en Supabase y D1). */
 export type ClientOrderRow = Pick<Database["public"]["Tables"]["orders"]["Row"], ClientOrderField>;
@@ -110,4 +111,22 @@ export async function clientEarnedByOrder(ctx: ClientContext): Promise<Map<strin
     { op: "client.earned", normalize: same, normalizeShadow: same, key: byId },
   );
   return new Map(list.map((r) => [r.id, r.delta]));
+}
+
+/** Últimos movimientos de saldo a favor propios (solo motivo, monto, fecha y pedido; sin descripción interna). */
+export async function clientCreditLedger(ctx: ClientContext, limit = 10) {
+  return shadowRead(
+    async () =>
+      (await rows(
+        ctx.db.from("credit_ledger").select("id, delta, motivo, order_id, created_at").eq("client_id", ctx.clientId)
+          .order("created_at", { ascending: false }).limit(limit),
+      )) as unknown as CreditMovementRow[],
+    async () => (await dataFor(actorOf(ctx))).clientViews.creditLedger(limit),
+    {
+      op: "client.credit-ledger",
+      normalize: ({ id, delta, motivo }) => ({ id, delta: Number(delta), motivo }),
+      normalizeShadow: ({ id, delta, motivo }) => ({ id, delta: Number(delta), motivo }),
+      key: byId,
+    },
+  );
 }

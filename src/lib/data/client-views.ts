@@ -119,3 +119,27 @@ export async function listOwnEarnedByOrder(db: SqlDatabase, actor: Actor): Promi
     .all<{ id: string; delta: number }>();
   return results;
 }
+
+export interface OwnCreditEntry {
+  id: string;
+  /** Pesos: positivo acredita, negativo debita. */
+  delta: number;
+  motivo: string;
+  order_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Últimos movimientos de saldo a favor propios. Solo motivo, monto, fecha y pedido: nunca `description`
+ * (puede traer notas internas) ni el id de reclamo. El cliente sale de la sesión, no del request.
+ */
+export async function listOwnCreditLedger(db: SqlDatabase, actor: Actor, limit = 10): Promise<OwnCreditEntry[]> {
+  const userId = requireCliente(actor);
+  const { results } = await db
+    .prepare(
+      "SELECT l.id, l.delta_cents, l.motivo, l.order_id, l.created_at FROM credit_ledger l JOIN clients c ON c.id = l.client_id WHERE c.user_id = ? ORDER BY l.created_at DESC, l.id DESC LIMIT ?",
+    )
+    .bind(userId, Math.min(Math.max(limit, 1), 100))
+    .all<{ id: string; delta_cents: number; motivo: string; order_id: string | null; created_at: string }>();
+  return results.map((r) => ({ id: r.id, delta: fromCents(r.delta_cents), motivo: r.motivo, order_id: r.order_id, created_at: r.created_at }));
+}
