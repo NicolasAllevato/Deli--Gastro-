@@ -210,10 +210,13 @@ export function offerSavedAddress(draft: string, savedAddress: string | null | u
   if (lastBotText && ASKS_SAME_ADDRESS.test(lastBotText)) return null;
   if (namesAddress([...clientTexts, turnText])) return null;
   const parts = draft.split(/(?<=[?!.])\s+|\n+/);
-  const at = parts.findIndex((x) => x.includes("?") && ASKS_ADDRESS.test(x));
-  if (at < 0 || INCOMPLETE_ADDRESS_CUES.test(parts[at].replace(ASKS_ADDRESS, ""))) return null;
+  // La pregunta puede nombrar la dirección («¿a qué dirección?») o venir justo después («…la dirección de entrega. ¿Cuál es?»).
+  const at = parts.findIndex((x, idx) => x.includes("?") && (ASKS_ADDRESS.test(x) || (idx > 0 && ASKS_ADDRESS.test(parts[idx - 1]) && x.length < 40)));
+  if (at < 0) return null;
+  const from = ASKS_ADDRESS.test(parts[at]) ? at : at - 1;
+  if (INCOMPLETE_ADDRESS_CUES.test(parts.slice(from, at + 1).join(" ").replace(ASKS_ADDRESS, ""))) return null;
   const question = savedAddressQuestion(savedAddress);
-  return parts.map((x, idx) => (idx === at ? question : x)).join("\n").trim();
+  return [...parts.slice(0, from), question, ...parts.slice(at + 1)].join("\n").trim();
 }
 
 /** El borrador del modelo pregunta por la dirección registrada del cliente (la nombra y es una pregunta). */
