@@ -138,6 +138,8 @@ export function asksHugeQuantity(text: string, maxUnits = 100): boolean {
     const n = Number(m[1]);
     if (n <= maxUnits || n >= 100000 || ADDRESS_NEXT_WORD.test(m[2])) return false;
     const before = text.slice(0, m.index + m[0].indexOf(m[1])).trimEnd();
+    // «Paraguay 2200 Palermo»: calle con mayúscula + altura + barrio con mayúscula, aunque la calle abra el mensaje.
+    if (/^\p{Lu}/u.test(m[2]) && /(?:^|\s)\p{Lu}\p{L}+$/u.test(before)) return false;
     return !ADDRESS_BEFORE.test(before);
   });
 }
