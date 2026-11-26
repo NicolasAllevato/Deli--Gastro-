@@ -8,6 +8,7 @@ const INVALID_BODY = "Solicitud inválida: falta o es incorrecto el tipo de alta
 /**
  * Cuerpo que el navegador manda al servidor al terminar el alta con Facebook.
  * - `standard`: número nuevo en la Cloud API; Meta informa phone_number_id y waba_id y se registra con PIN.
+ * - `discover`: Meta no informó los ids (v5 puede cerrar sin avisar); el servidor los descubre con el token y registra con PIN.
  * - `coexistence`: número que sigue en la app WhatsApp Business; ya está registrado, así que no hay PIN y
  *   el evento de Meta solo trae el waba_id (el phone_number_id es opcional: si falta lo resuelve el servidor).
  */
@@ -33,6 +34,15 @@ export const signupBodySchema = z.discriminatedUnion(
         wabaId: idField("El WABA ID no es válido."),
         phoneNumberId: idField("El Phone Number ID no es válido.").optional(),
         /** Perfil de Facebook informado por el navegador. Se acepta sin validar y el servidor lo sanea aparte (`parseConnectedBy`): un perfil malformado nunca debe tumbar el alta. */
+        facebook: z.unknown().optional(),
+      },
+      { error: "Solicitud inválida: hay campos que no corresponden." },
+    ),
+    z.strictObject(
+      {
+        mode: z.literal("discover"),
+        code: codeField,
+        pin: z.string({ error: "Falta el PIN de 6 dígitos." }).regex(/^\d{6}$/, "El PIN tiene que ser de 6 dígitos."),
         facebook: z.unknown().optional(),
       },
       { error: "Solicitud inválida: hay campos que no corresponden." },
@@ -86,20 +96,23 @@ function isFacebookOrigin(origin: string): boolean {
  * el contenido no es el esperado o los ids no son numéricos.
  */
 export function parseSignupMessage(event: { origin: string; data: unknown }): SignupMessage | null {
-  if (!isFacebookOrigin(event.origin) || typeof event.data !== "string") return null;
+  if (!isFacebookOrigin(event.origin)) return null;
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(event.data);
-  } catch {
-    return null;
+  // v5 puede mandar el mensaje como objeto ya parseado; antes llegaba siempre como string JSON.
+  let payload: unknown = event.data;
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      return null;
+    }
   }
-  if (typeof payload !== "object" || payload === null) return null;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
 
   const { type, event: name, data } = payload as { type?: unknown; event?: unknown; data?: unknown };
   if (type !== "WA_EMBEDDED_SIGNUP") return null;
   const info = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
-  const wabaId = typeof info.waba_id === "string" && ID_PATTERN.test(info.waba_id) ? info.waba_id : null;
+  const wabaId = asId(info.waba_id);
 
   if (name === "CANCEL") {
     return { kind: "cancel", step: typeof info.current_step === "string" ? info.current_step : null };
@@ -109,10 +122,14 @@ export function parseSignupMessage(event: { origin: string; data: unknown }): Si
     return wabaId ? { kind: "finish_coexistence", wabaId } : null;
   }
   if (name === "FINISH" || name === "FINISH_ONLY_WABA") {
-    const phoneNumberId = info.phone_number_id;
-    if (wabaId && typeof phoneNumberId === "string" && ID_PATTERN.test(phoneNumberId)) {
-      return { kind: "finish", phoneNumberId, wabaId };
-    }
+    const phoneNumberId = asId(info.phone_number_id);
+    if (wabaId && phoneNumberId) return { kind: "finish", phoneNumberId, wabaId };
   }
   return null;
+}
+
+/** Id de Meta como string de dígitos; acepta también un número entero seguro (se convierte a string). */
+function asId(value: unknown): string | null {
+  const text = typeof value === "number" && Number.isSafeInteger(value) ? String(value) : value;
+  return typeof text === "string" && ID_PATTERN.test(text) ? text : null;
 }

@@ -264,3 +264,69 @@ describe("isCoexistenceValue", () => {
     for (const v of ["1", "true", "TRUE", "si", "sí", " 1 "]) assert.equal(isCoexistenceValue(v), true);
   });
 });
+
+describe("completeSignup: discover", () => {
+  const discover: SignupBody = { mode: "discover", code: "CODE", pin: "123456" };
+  const debugToken = (scopes: unknown): Route => [/debug_token/, { json: { data: { granular_scopes: scopes } } }];
+  const REGISTER: Route = [/\/1110001\/register/, { json: { success: true } }];
+
+  it("1 WABA y 1 numero: descubre, registra con PIN, suscribe y guarda", async () => {
+    const t = setup([
+      TOKEN,
+      debugToken([
+        { scope: "whatsapp_business_management", target_ids: ["2220002"] },
+        { scope: "business_management", target_ids: ["999"] },
+      ]),
+      ONE_NUMBER,
+      REGISTER,
+      SUBSCRIBE,
+    ]);
+    const result = await completeSignup(discover, t.deps);
+
+    assert.equal(result.phoneNumberId, "1110001");
+    assert.deepEqual(t.saved, [{ accessToken: "TOKEN-NEGOCIO", phoneNumberId: "1110001", wabaId: "2220002" }]);
+    const debug = t.calls.find((c) => /debug_token/.test(c.url));
+    assert.match(debug?.url ?? "", /input_token=TOKEN-NEGOCIO/);
+    assert.match(debug?.url ?? "", /access_token=111%7Csecret/);
+    const reg = t.calls.find((c) => /\/register/.test(c.url));
+    assert.match(reg?.body ?? "", /123456/);
+  });
+
+  it("usa whatsapp_business_messaging si no hay management", async () => {
+    const t = setup([TOKEN, debugToken([{ scope: "whatsapp_business_messaging", target_ids: ["2220002"] }]), ONE_NUMBER, REGISTER, SUBSCRIBE]);
+    const result = await completeSignup(discover, t.deps);
+    assert.equal(result.phoneNumberId, "1110001");
+  });
+
+  it("2 WABA: error claro 400 y no guarda", async () => {
+    const t = setup([TOKEN, debugToken([{ scope: "whatsapp_business_management", target_ids: ["2220002", "2220003"] }])]);
+    await assert.rejects(completeSignup(discover, t.deps), (e: unknown) => {
+      assert.ok(e instanceof SignupValidationError);
+      assert.match(e.message, /2 cuentas[\s\S]*carga manual/);
+      assert.equal(signupErrorResponse(e).status, 400);
+      return true;
+    });
+    assert.equal(t.saved.length, 0);
+  });
+
+  it("sin scopes de WhatsApp: error claro y no guarda", async () => {
+    const t = setup([TOKEN, debugToken([{ scope: "business_management", target_ids: ["999"] }])]);
+    await assert.rejects(completeSignup(discover, t.deps), /no informó la cuenta[\s\S]*carga manual/);
+    assert.equal(t.saved.length, 0);
+  });
+
+  it("2 numeros en la WABA: error claro y no guarda", async () => {
+    const t = setup([
+      TOKEN,
+      debugToken([{ scope: "whatsapp_business_management", target_ids: ["2220002"] }]),
+      [/\/2220002\/phone_numbers/, { json: { data: [{ id: "1" }, { id: "2" }] } }],
+    ]);
+    await assert.rejects(completeSignup(discover, t.deps), /2 números[\s\S]*carga manual/);
+    assert.equal(t.saved.length, 0);
+  });
+
+  it("parseSignupRequest acepta discover aunque la coexistencia este apagada", () => {
+    const r = parseSignupRequest({ mode: "discover", code: "CODE", pin: "123456" }, false);
+    assert.equal(r.ok, true);
+  });
+});

@@ -38,7 +38,14 @@ interface Props {
 }
 
 /** Lo que informó Meta: el EVENTO decide el modo (coexistencia sin PIN, o número nuevo con PIN). */
-type SignupIds = { kind: "standard"; phoneNumberId: string; wabaId: string } | { kind: "coexistence"; wabaId: string };
+type SignupIds =
+  | { kind: "standard"; phoneNumberId: string; wabaId: string }
+  | { kind: "coexistence"; wabaId: string }
+  /** Meta no informó ids (v5): el servidor los descubre con el token. */
+  | { kind: "discover" };
+
+const IDS_WAIT_MS = 8000;
+const IDS_POLL_MS = 150;
 
 interface Pending {
   code: string;
@@ -91,7 +98,9 @@ function buildBody(code: string, ids: SignupIds, pin: string, facebook?: Faceboo
   const body: Record<string, unknown> =
     ids.kind === "coexistence"
       ? { mode: "coexistence", code, wabaId: ids.wabaId }
-      : { mode: "standard", code, phoneNumberId: ids.phoneNumberId, wabaId: ids.wabaId, pin };
+      : ids.kind === "discover"
+        ? { mode: "discover", code, pin }
+        : { mode: "standard", code, phoneNumberId: ids.phoneNumberId, wabaId: ids.wabaId, pin };
   return facebook ? { ...body, facebook } : body;
 }
 
@@ -117,7 +126,7 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
   }, []);
 
   const submit = async (code: string, signupIds: SignupIds, pinValue: string) => {
-    if (signupIds.kind === "standard" && !/^\d{6}$/.test(pinValue)) {
+    if (signupIds.kind !== "coexistence" && !/^\d{6}$/.test(pinValue)) {
       setPending({ code, ids: signupIds });
       onError("Meta terminó el alta como número nuevo: ingresá un PIN de 6 dígitos y tocá «Terminar conexión».");
       return;
@@ -136,14 +145,13 @@ export function EmbeddedSignup({ appId, configId, coexistence, dirty, canConnect
 
   const finish = async (code: string, profileRequest: Promise<FacebookProfile | undefined>) => {
     // El mensaje con los ids puede llegar un instante después del callback de FB.login.
-    for (let i = 0; i < 20 && !ids.current; i++) await new Promise((r) => setTimeout(r, 150));
-    profile.current = await profileRequest;
-    if (!ids.current) {
-      throw new Error(
-        "Meta cerró la ventana sin hacer el alta de WhatsApp (no pidió número ni QR). Suele pasar mientras la verificación del negocio está pendiente o si el número no cumple los requisitos de coexistencia. Reintentá cuando Meta apruebe la verificación.",
-      );
+    for (let i = 0; i < IDS_WAIT_MS / IDS_POLL_MS && !ids.current && !cancelled.current; i++) {
+      await new Promise((r) => setTimeout(r, IDS_POLL_MS));
     }
-    await submit(code, ids.current, pin);
+    profile.current = await profileRequest;
+    if (!ids.current && cancelled.current) throw new Error("Meta cerró la ventana sin terminar el alta.");
+    // Sin ids ni cancelación (v5 puede no avisar): el servidor los descubre con el token.
+    await submit(code, ids.current ?? { kind: "discover" }, pin);
   };
 
   const connect = async () => {

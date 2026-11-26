@@ -224,3 +224,24 @@ export async function listWabaPhoneNumbers(
   if (!res.ok) throw new WhatsAppApiError(res.status, json.error?.message ?? `Error ${res.status} de Meta`);
   return (json.data ?? []).filter((n) => typeof n.id === "string");
 }
+
+/**
+ * WABAs a las que el token tiene acceso (granular_scopes de debug_token). Se usa cuando Meta no informó los ids.
+ * Prefiere el scope de administración; si no está, el de mensajería.
+ */
+export async function discoverWabaIds(
+  { appId, appSecret, accessToken }: { appId: string; appSecret: string; accessToken: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<string[]> {
+  const params = new URLSearchParams({ input_token: accessToken, access_token: `${appId}|${appSecret}` });
+  const res = await fetchImpl(`${GRAPH_URL}/debug_token?${params}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  const json = (await res.json().catch(() => ({}))) as {
+    data?: { granular_scopes?: Array<{ scope?: string; target_ids?: unknown }> };
+  } & GraphError;
+  if (!res.ok) throw new WhatsAppApiError(res.status, json.error?.message ?? `Error ${res.status} de Meta`);
+  const scopes = json.data?.granular_scopes ?? [];
+  const pick = (name: string) => scopes.find((s) => s.scope === name && Array.isArray(s.target_ids));
+  const found = pick("whatsapp_business_management") ?? pick("whatsapp_business_messaging");
+  const ids = (found?.target_ids as unknown[] | undefined) ?? [];
+  return [...new Set(ids.map(String).filter((id) => /^\d{5,32}$/.test(id)))];
+}
