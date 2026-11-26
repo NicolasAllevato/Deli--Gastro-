@@ -42,7 +42,7 @@ describe("parseSignupMessage", () => {
   });
 
   it("coexistencia sin waba_id válido se ignora", () => {
-    for (const data of [{}, { waba_id: "abc" }, { waba_id: 123456 }]) {
+    for (const data of [{}, { waba_id: "abc" }, { waba_id: 1.5 }, { waba_id: true }]) {
       assert.equal(
         parseSignupMessage(message({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", data })),
         null,
@@ -85,6 +85,39 @@ describe("parseSignupMessage", () => {
       null,
     );
     assert.equal(parseSignupMessage({ origin: FB, data: { objeto: true } }), null);
+  });
+});
+
+describe("parseSignupMessage: v5", () => {
+  it("acepta data como objeto ya parseado", () => {
+    const result = parseSignupMessage({
+      origin: FB,
+      data: { type: "WA_EMBEDDED_SIGNUP", event: "FINISH", data: { phone_number_id: "1110001", waba_id: "2220002" } },
+    });
+    assert.deepEqual(result, { kind: "finish", phoneNumberId: "1110001", wabaId: "2220002" });
+  });
+
+  it("acepta ids numericos y los convierte a string", () => {
+    const result = parseSignupMessage({
+      origin: FB,
+      data: { type: "WA_EMBEDDED_SIGNUP", event: "FINISH", data: { phone_number_id: 1110001, waba_id: 2220002 } },
+    });
+    assert.deepEqual(result, { kind: "finish", phoneNumberId: "1110001", wabaId: "2220002" });
+  });
+
+  it("rechaza arrays, numeros no seguros y origenes ajenos con data objeto", () => {
+    assert.equal(parseSignupMessage({ origin: FB, data: [1, 2] }), null);
+    assert.equal(
+      parseSignupMessage({
+        origin: FB,
+        data: { type: "WA_EMBEDDED_SIGNUP", event: "FINISH", data: { phone_number_id: 1.5, waba_id: 2220002 } },
+      }),
+      null,
+    );
+    assert.equal(
+      parseSignupMessage({ origin: "https://evil.example.com", data: { type: "WA_EMBEDDED_SIGNUP", event: "CANCEL" } }),
+      null,
+    );
   });
 });
 
@@ -133,6 +166,21 @@ describe("signupBodySchema", () => {
     assert.equal(signupBodySchema.safeParse({ ...coexistence, wabaId: "abc" }).success, false);
     assert.equal(signupBodySchema.safeParse({ ...coexistence, phoneNumberId: "abc" }).success, false);
     assert.equal(signupBodySchema.safeParse({ ...coexistence, code: "   " }).success, false);
+  });
+
+  it("discover: acepta code y PIN, con facebook opcional", () => {
+    const discover = { mode: "discover", code: "AQB123", pin: "123456" };
+    assert.equal(signupBodySchema.safeParse(discover).success, true);
+    assert.equal(signupBodySchema.safeParse({ ...discover, facebook: { id: "1" } }).success, true);
+  });
+
+  it("discover: rechaza PIN invalido, code vacio, ids y campos extra", () => {
+    const discover = { mode: "discover", code: "AQB123", pin: "123456" };
+    assert.equal(signupBodySchema.safeParse({ ...discover, pin: "12345" }).success, false);
+    assert.equal(signupBodySchema.safeParse({ ...discover, code: "" }).success, false);
+    assert.equal(signupBodySchema.safeParse({ ...discover, wabaId: "2220002" }).success, false);
+    const { pin: _pin, ...sinPin } = discover;
+    assert.equal(signupBodySchema.safeParse(sinPin).success, false);
   });
 
   it("rechaza un modo faltante o desconocido", () => {

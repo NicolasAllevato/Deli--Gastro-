@@ -1,5 +1,6 @@
 import {
   createWhatsAppClient,
+  discoverWabaIds,
   exchangeCodeForToken,
   listWabaPhoneNumbers,
   WhatsAppApiError,
@@ -119,7 +120,7 @@ function phoneResolutionMessage(count: number, saved: boolean): string {
 }
 
 async function resolvePhoneNumberId(
-  body: SignupBody,
+  body: Exclude<SignupBody, { mode: "discover" }>,
   accessToken: string,
   deps: SignupDeps,
   fetchImpl: typeof fetch,
@@ -143,16 +144,50 @@ async function resolvePhoneNumberId(
   throw new PhoneResolutionError(phoneResolutionMessage(numbers.length, shouldSave));
 }
 
+const DISCOVER_HINT = "Usá «Avanzado: carga manual» para cargar los ids a mano.";
+
+/** Meta no informó los ids: se descubren con el token y se sigue como alta estándar (con PIN). */
+async function discoverStandardBody(
+  input: Extract<SignupBody, { mode: "discover" }>,
+  accessToken: string,
+  deps: SignupDeps,
+  fetchImpl: typeof fetch,
+): Promise<Extract<SignupBody, { mode: "standard" }>> {
+  if (deps.demo) {
+    return { mode: "standard", code: input.code, pin: input.pin, phoneNumberId: DEMO_PHONE_NUMBER_ID, wabaId: "100000000000002" };
+  }
+  const wabaIds = await discoverWabaIds({ appId: deps.appId, appSecret: deps.appSecret, accessToken }, fetchImpl);
+  if (wabaIds.length !== 1) {
+    throw new SignupValidationError(
+      wabaIds.length === 0
+        ? `Meta no informó la cuenta de WhatsApp autorizada. ${DISCOVER_HINT}`
+        : `El token tiene acceso a ${wabaIds.length} cuentas de WhatsApp y no sabemos cuál usar. ${DISCOVER_HINT}`,
+    );
+  }
+  const wabaId = wabaIds[0];
+  const numbers = await listWabaPhoneNumbers({ accessToken, wabaId }, fetchImpl);
+  const [only] = numbers;
+  if (numbers.length !== 1 || !only) {
+    throw new SignupValidationError(
+      numbers.length === 0
+        ? `La cuenta de WhatsApp todavía no tiene números (Meta puede tardar unos minutos). ${DISCOVER_HINT}`
+        : `La cuenta tiene ${numbers.length} números y no sabemos cuál usar. ${DISCOVER_HINT}`,
+    );
+  }
+  return { mode: "standard", code: input.code, pin: input.pin, phoneNumberId: only.id, wabaId };
+}
+
 /**
  * Cierra el alta: canjea el código por el token del negocio, verifica que el número sea de esa cuenta,
  * registra (solo modo estándar, con PIN) y suscribe la app con un cliente temporal, y recién entonces persiste.
  * Así un alta fallida no pisa una configuración que funciona. El código y el token nunca se loguean.
  */
-export async function completeSignup(body: SignupBody, deps: SignupDeps): Promise<SignupResult> {
+export async function completeSignup(input: SignupBody, deps: SignupDeps): Promise<SignupResult> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const accessToken = deps.demo
     ? "demo-token"
-    : await exchangeCodeForToken({ appId: deps.appId, appSecret: deps.appSecret, code: body.code }, fetchImpl);
+    : await exchangeCodeForToken({ appId: deps.appId, appSecret: deps.appSecret, code: input.code }, fetchImpl);
+  const body = input.mode === "discover" ? await discoverStandardBody(input, accessToken, deps, fetchImpl) : input;
 
   const phoneNumberId = deps.demo
     ? (body.phoneNumberId ?? DEMO_PHONE_NUMBER_ID)
