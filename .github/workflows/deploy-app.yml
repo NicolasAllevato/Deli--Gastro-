@@ -6,15 +6,12 @@ name: Deploy app
 #   - secreto CLOUDFLARE_API_TOKEN: token de la cuenta e7351dd776e005da826ba6f2a5aae4c1 con «Workers Scripts: Edit».
 #   - variables NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_TURNSTILE_SITE_KEY y
 #     R2_PUBLIC_BASE_URL (son públicas: se hornean en el build).
+#   - Deployment branches: solo `main`; opcional, reviewer requerido.
 # Los secretos de runtime (claves de Meta, OpenAI, sitio web, etc.) siguen en el Worker: este workflow no los toca.
 
+# Solo despliega main: no hay input de rama/commit (el secreto de producción nunca corre código de otra rama).
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: "Rama o commit a desplegar"
-        required: false
-        default: main
 
 concurrency:
   group: deploy-app
@@ -28,12 +25,13 @@ jobs:
     name: Build y deploy a Cloudflare
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: github.ref == 'refs/heads/main'
     environment: produccion
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
