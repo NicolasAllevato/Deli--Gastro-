@@ -40,3 +40,10 @@ test("pedido enorme dicho un mensaje antes de confirmar la dirección", () => {
   assert.equal(asksHugeQuantity("Quiero 150 empanadas"), true);
   assert.equal(asksHugeQuantity("Hola, mandame 200 de jamón y queso"), true);
 });
+
+test("altura de calle al inicio del mensaje con barrio no cuenta como cantidad", () => {
+  assert.equal(asksHugeQuantity("Paraguay 2200 Palermo"), false);
+  assert.equal(asksHugeQuantity("Santa Fe 3500 Palermo"), false);
+  assert.equal(asksHugeQuantity("Quiero 150 empanadas"), true);
+  assert.equal(asksHugeQuantity("150 empanadas"), true);
+});
