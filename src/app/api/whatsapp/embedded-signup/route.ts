@@ -85,7 +85,12 @@ export async function POST(req: NextRequest) {
           }
         : undefined,
     });
-    const warnings = overrideWarnings();
+    let warnings: string[] = [];
+    try {
+      warnings = overrideWarnings();
+    } catch {
+      // Solo es un aviso: si no se puede calcular, la conexión ya guardada sigue valiendo.
+    }
     // Registrar quién conectó es secundario: si falla o tarda, la conexión (ya guardada) no se deshace; solo se avisa.
     // El perfil de Facebook lo declara el navegador: se sanea acá y, si no vale, se descarta sin tumbar nada.
     try {
@@ -97,8 +102,16 @@ export async function POST(req: NextRequest) {
       console.error("[whatsapp.embedded-signup] no se registró quién conectó:", error instanceof Error ? error.message : "error desconocido");
       warnings.push("La conexión quedó lista, pero no se pudo registrar quién la hizo.");
     }
-    return NextResponse.json({ ...(await diagnose(client, true)), warnings });
+    // Lo que falle después de guardar no deshace la conexión: se responde conectado con un aviso.
+    try {
+      return NextResponse.json({ ...(await diagnose(client, true)), warnings });
+    } catch (error: unknown) {
+      console.error("[whatsapp.embedded-signup] falló la verificación posterior:", error instanceof Error ? error.message : "error desconocido");
+      warnings.push("La conexión quedó guardada, pero no se pudo verificar ahora. Tocá «Volver a revisar».");
+      return NextResponse.json({ ready: false, warnings });
+    }
   } catch (error: unknown) {
+    console.error("[whatsapp.embedded-signup] alta fallida:", error instanceof Error ? `${error.name}: ${error.message}` : "error desconocido");
     const { status, body } = signupErrorResponse(error);
     return NextResponse.json(body, { status });
   }
