@@ -215,6 +215,8 @@ export type { CreditConfig, CreditClient, CreditHistory, CreditHistoryRow, Expir
 
 export { kbApp } from "./kb-negocio-app.ts";
 export { siteLinksApp } from "./site-links-app.ts";
+export { sitePublishApp } from "./site-publish-app.ts";
+export type { PublishStore, PublishRun, PublishTrigger } from "./site-publish.ts";
 export { SiteLinkError } from "./site-links.ts";
 export type { SiteLink, AppProductRow } from "./site-links.ts";
 export { kbInputSchema, KB_CATEGORIAS, KB_MAX_ROWS, type KbEntry, type KbInput } from "./kb-negocio.ts";

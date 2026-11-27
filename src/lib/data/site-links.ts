@@ -126,7 +126,7 @@ export async function saveSiteLinks(
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(app_product_id) DO UPDATE SET kind = excluded.kind, site_id = excluded.site_id,
            site_variant_id = excluded.site_variant_id, linked_by = excluded.linked_by, linked_at = excluded.linked_at,
-           last_pushed_at = NULL, last_push_error = NULL`,
+           last_pushed_at = NULL, last_push_error = NULL, pushed_image_url = NULL`,
       )
       .bind(appProductId, link.kind, link.siteId, link.siteVariantId, linkedBy, now);
   });
@@ -147,5 +147,12 @@ export async function setProductPhotoIfEmpty(db: SqlDatabase, actor: Actor, prod
     .prepare("UPDATE products SET image_url = ? WHERE id = ? AND TRIM(image_url) = ''")
     .bind(url, productId)
     .run();
+  return r.meta.changes === 1;
+}
+
+/** Guarda cuál es la última foto de la app que el sitio ya tiene (la que se trajo del sitio o la que se mandó). */
+export async function setPushedImage(db: SqlDatabase, actor: Actor, appProductId: string, url: string): Promise<boolean> {
+  requireStaff(actor);
+  const r = await db.prepare("UPDATE site_links SET pushed_image_url = ? WHERE app_product_id = ?").bind(url, appProductId).run();
   return r.meta.changes === 1;
 }

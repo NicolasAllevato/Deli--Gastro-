@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { dailySummaryUrl, surveysUrl, triggerDailySummary, triggerSurveys } from "./index.ts";
+import worker, { dailySummaryUrl, sitePublishUrl, surveysUrl, triggerDailySummary, triggerSitePublish, triggerSurveys } from "./index.ts";
 
 describe("surveysUrl", () => {
   it("normaliza la barra final", () => {
@@ -57,5 +57,55 @@ describe("resumen diario", () => {
 
     assert.deepEqual(await triggerDailySummary(env, fetchImpl), { sent: false });
     assert.deepEqual(seen, { url: "https://app.example.com/api/cron/daily-summary", auth: "Bearer s3cret" });
+  });
+});
+
+describe("publicación al sitio", () => {
+  const env = { BASE_URL: "https://app.example.com/", CRON_SECRET: "s3cret" };
+
+  it("arma la URL del endpoint", () => {
+    assert.equal(sitePublishUrl(env.BASE_URL), "https://app.example.com/api/cron/sitio-publish");
+    assert.throws(() => sitePublishUrl(undefined), /BASE_URL/);
+  });
+
+  it("llama al endpoint con el Bearer", async () => {
+    let seen: { url: string; auth: string | null } | null = null;
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen = { url, auth: new Headers(init.headers).get("authorization") };
+      return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    assert.deepEqual(await triggerSitePublish(env, fetchImpl), { status: "ok" });
+    assert.deepEqual(seen, { url: "https://app.example.com/api/cron/sitio-publish", auth: "Bearer s3cret" });
+  });
+
+  it("lanza si la app responde distinto de 2xx", async () => {
+    const fetchImpl = (async () => new Response("boom", { status: 500 })) as unknown as typeof fetch;
+    await assert.rejects(() => triggerSitePublish(env, fetchImpl), /500/);
+  });
+
+  it("scheduled: un fallo de la publicación no frena las otras tareas, y viceversa", async () => {
+    const calls: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      calls.push(String(url).replace("https://app.example.com", ""));
+      return String(url).includes("sitio-publish") ? new Response("x", { status: 500 }) : new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const errors: unknown[][] = [];
+    const origError = console.error;
+    const origLog = console.log;
+    console.error = (...a: unknown[]) => { errors.push(a); };
+    console.log = () => {};
+    let pending: Promise<unknown> = Promise.resolve();
+    try {
+      await worker.scheduled({} as ScheduledEvent, env, { waitUntil: (p: Promise<unknown>) => { pending = p; } } as unknown as ExecutionContext);
+      await pending;
+    } finally {
+      globalThis.fetch = original;
+      console.error = origError;
+      console.log = origLog;
+    }
+    assert.deepEqual(calls.sort(), ["/api/cron/daily-summary", "/api/cron/sitio-publish", "/api/cron/surveys"]);
+    assert.equal(errors.length, 1);
+    assert.match(String(errors[0][0]), /sitio-publish/);
   });
 });

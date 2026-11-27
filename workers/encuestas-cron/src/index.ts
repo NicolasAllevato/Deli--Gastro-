@@ -7,6 +7,7 @@ export interface Env {
 
 const ENDPOINT = "/api/cron/surveys";
 const DAILY_SUMMARY_ENDPOINT = "/api/cron/daily-summary";
+const SITE_PUBLISH_ENDPOINT = "/api/cron/sitio-publish";
 const TIMEOUT_MS = 50_000;
 
 /** Arma la URL de un endpoint; lanza si la variable falta o no es https (el secreto no viaja en claro). */
@@ -20,6 +21,13 @@ function endpointUrl(baseUrl: string | undefined, path: string): string {
 
 export const surveysUrl = (baseUrl: string | undefined): string => endpointUrl(baseUrl, ENDPOINT);
 export const dailySummaryUrl = (baseUrl: string | undefined): string => endpointUrl(baseUrl, DAILY_SUMMARY_ENDPOINT);
+
+export const sitePublishUrl = (baseUrl: string | undefined): string => endpointUrl(baseUrl, SITE_PUBLISH_ENDPOINT);
+
+/** Publica al sitio web los cambios de la app (precios, ocultos y fotos). */
+export async function triggerSitePublish(env: Env, fetchImpl: typeof fetch = fetch): Promise<unknown> {
+  return callApp(env, sitePublishUrl(env.BASE_URL), fetchImpl);
+}
 
 /** Llama al endpoint de la app. Lanza ante cualquier respuesta que no sea 2xx para que quede en los logs. */
 export async function triggerSurveys(env: Env, fetchImpl: typeof fetch = fetch): Promise<unknown> {
@@ -64,6 +72,6 @@ export default {
         (result) => console.log(`[encuestas-cron] ${name} ok`, JSON.stringify(result)),
         (error: unknown) => console.error(`[encuestas-cron] ${name} falló`, error instanceof Error ? error.message : error),
       );
-    ctx.waitUntil(Promise.all([run("encuestas", triggerSurveys(env)), run("resumen-diario", triggerDailySummary(env))]));
+    ctx.waitUntil(Promise.all([run("encuestas", triggerSurveys(env)), run("resumen-diario", triggerDailySummary(env)), run("sitio-publish", triggerSitePublish(env))]));
   },
 };

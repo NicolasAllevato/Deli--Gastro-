@@ -19,6 +19,9 @@
     "NEXT_PUBLIC_APP_URL": "https://opsyndely.la-gambeta.com",
     // Base de Better Auth: los links de recuperación SIEMPRE salen de este dominio.
     "BETTER_AUTH_URL": "https://opsyndely.la-gambeta.com",
+    // Base pública del bucket de fotos (la misma que PUBLIC_BASE_URL de workers/uploads). No es secreta:
+    // la publicación al sitio web solo manda fotos de este host.
+    "R2_PUBLIC_BASE_URL": "https://pub-1a87d533a23045f6aea2a654db3fa6b6.r2.dev",
     // Migración D1 (docs/migracion-supabase-d1.md). supabase = comportamiento actual.
     // Cambiar a dual/d1 SOLO con OK explícito del usuario.
     "DATA_BACKEND": "d1"
