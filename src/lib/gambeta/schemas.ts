@@ -106,3 +106,6 @@ export function envelopeSchema<T extends z.ZodType>(data: T) {
 
 export const catalogSchema = z.array(siteCategorySchema);
 export const promotionsSchema = z.array(sitePromotionSchema);
+
+/** Respuesta de `POST /media`. */
+export const mediaSchema = z.object({ url: z.string().url(), key: z.string().optional() }).passthrough();

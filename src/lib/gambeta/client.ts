@@ -8,8 +8,8 @@
  */
 import { z } from "zod";
 import {
-  catalogSchema, envelopeSchema, promotionsSchema, siteBusinessSchema,
-  type SiteCategory, type SitePromotion,
+  catalogSchema, envelopeSchema, mediaSchema, promotionsSchema, siteBusinessSchema, siteProductSchema,
+  type SiteCategory, type SiteProduct, type SitePromotion,
 } from "./schemas.ts";
 
 export const GAMBETA_BASE_URL = "https://www.la-gambeta.com/api/v1";
@@ -54,6 +54,12 @@ export interface GambetaClient {
   getCatalog(): Promise<SiteCategory[]>;
   getPromotions(): Promise<SitePromotion[]>;
   getBusiness(): Promise<Record<string, unknown>>;
+  /** `PUT /products/:id`. `prices[]` y `variants[]` REEMPLAZAN la lista completa en el sitio. */
+  putProduct(id: string, body: Record<string, unknown>): Promise<unknown>;
+  putPromotion(id: string, body: Record<string, unknown>): Promise<unknown>;
+  createProduct(body: Record<string, unknown>): Promise<SiteProduct>;
+  /** `POST /media` (multipart): devuelve la URL que va en `image_url`. */
+  uploadMedia(file: { bytes: ArrayBuffer; contentType: string; filename: string }, folder: "products" | "promos"): Promise<{ url: string; key?: string }>;
 }
 
 export function createGambetaClient(opts: GambetaClientOptions): GambetaClient {
@@ -63,6 +69,7 @@ export function createGambetaClient(opts: GambetaClientOptions): GambetaClient {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   async function request<T extends z.ZodType>(method: Method, path: string, schema: T, body?: unknown): Promise<z.infer<T>> {
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
     if (!apiKey) throw new GambetaError("sin_clave", "Falta la clave de la API del sitio web (LA_GAMBETA_API_KEY).");
     if (!path.startsWith("/")) throw new GambetaError("formato", "Ruta inválida para la API del sitio web.");
     let res: Response;
@@ -72,9 +79,10 @@ export function createGambetaClient(opts: GambetaClientOptions): GambetaClient {
         headers: {
           authorization: `Bearer ${apiKey}`,
           accept: "application/json",
-          ...(body !== undefined ? { "content-type": "application/json" } : {}),
+          // En multipart el content-type (con su boundary) lo arma fetch.
+          ...(body !== undefined && !isForm ? { "content-type": "application/json" } : {}),
         },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        ...(body !== undefined ? { body: isForm ? (body as FormData) : JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
         redirect: "error",
       });
@@ -105,5 +113,14 @@ export function createGambetaClient(opts: GambetaClientOptions): GambetaClient {
     getCatalog: () => request("GET", "/catalog?all=1", catalogSchema),
     getPromotions: () => request("GET", "/promotions?all=1", promotionsSchema),
     getBusiness: () => request("GET", "/business", siteBusinessSchema),
+    putProduct: (id, body) => request("PUT", `/products/${encodeURIComponent(id)}`, z.unknown(), body),
+    putPromotion: (id, body) => request("PUT", `/promotions/${encodeURIComponent(id)}`, z.unknown(), body),
+    createProduct: (body) => request("POST", "/products", siteProductSchema, body),
+    uploadMedia: (file, folder) => {
+      const form = new FormData();
+      form.set("file", new Blob([file.bytes], { type: file.contentType }), file.filename);
+      form.set("folder", folder);
+      return request("POST", "/media", mediaSchema, form);
+    },
   };
 }

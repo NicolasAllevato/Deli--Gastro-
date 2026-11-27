@@ -45,8 +45,30 @@ export interface DownloadedPhoto {
   contentType: (typeof ALLOWED_TYPES)[number];
 }
 
+/** Solo https y el host de nuestro bucket público (`R2_PUBLIC_BASE_URL`), sin puerto ni credenciales. */
+export function isAllowedAppPhotoUrl(raw: string, publicBaseUrl: string | null | undefined): boolean {
+  if (!publicBaseUrl) return false;
+  try {
+    const base = new URL(publicBaseUrl);
+    const u = new URL(raw);
+    return base.protocol === "https:" && u.protocol === "https:" && u.hostname === base.hostname && u.port === "" && u.username === "" && u.password === "";
+  } catch {
+    return false;
+  }
+}
+
 export async function downloadSitePhoto(url: string, fetchImpl: typeof fetch = fetch): Promise<DownloadedPhoto> {
   if (!isAllowedSitePhotoUrl(url)) throw new PhotoError("La foto no viene del sitio de la pizzería.");
+  return downloadPhoto(url, fetchImpl);
+}
+
+/** Descarga una foto de nuestro bucket para mandarla al sitio. */
+export async function downloadAppPhoto(url: string, publicBaseUrl: string | null | undefined, fetchImpl: typeof fetch = fetch): Promise<DownloadedPhoto> {
+  if (!isAllowedAppPhotoUrl(url, publicBaseUrl)) throw new PhotoError("La foto no está en el almacenamiento de la app.");
+  return downloadPhoto(url, fetchImpl);
+}
+
+async function downloadPhoto(url: string, fetchImpl: typeof fetch): Promise<DownloadedPhoto> {
   let res: Response;
   try {
     res = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });

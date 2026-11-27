@@ -6,6 +6,7 @@ import { requireRole, isAuthorizationError } from "@/lib/auth/requireRole";
 import { stripFudoManaged } from "@/lib/fudo/catalog-lock";
 import { actorFromSession, comparableCategory, comparableProduct, dataFor, dualWrite, shadowRead } from "@/lib/data";
 import { type Outcome, isSuccess, respond, serverError } from "@/lib/catalog/outcome";
+import { publishProductChange } from "@/lib/gambeta/publish-server";
 
 // Imagen: vacía, URL https (R2) o data URL (modo demo, sin R2).
 const MAX_DATA_URL_LENGTH = 7_000_000;
@@ -163,6 +164,8 @@ export async function PATCH(req: NextRequest) {
       },
       { shouldMirror: isSuccess },
     );
+    // Si el producto está vinculado con el sitio web, el cambio se publica en segundo plano (no demora la respuesta).
+    if (outcome && isSuccess(outcome)) publishProductChange(id);
     return respond(outcome);
   } catch (err) {
     return serverError("products.update", err);

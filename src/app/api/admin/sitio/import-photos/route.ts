@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { siteLinksApp } from "@/lib/data";
+import { siteLinksApp, sitePublishApp } from "@/lib/data";
 import { downloadSitePhoto, PhotoError, sitePhotoFor } from "@/lib/gambeta/photos";
 import { gambetaClient, gambetaMessage, guard, loadSite, serverError } from "@/lib/gambeta/server";
 import { getUploadsWorkerConfig, uploadViaWorker } from "@/lib/storage/uploads-worker";
@@ -56,6 +56,8 @@ export async function POST(req: NextRequest) {
           uploadedBySource.set(source, url);
         }
         const saved = await siteLinksApp.setPhotoIfEmpty(actor, product.id, url);
+        // La foto nueva de la app es la del sitio: así la publicación no la vuelve a subir.
+        if (saved) await sitePublishApp.markPushedImage(actor, product.id, url);
         (saved ? copied : skipped).push(saved ? base : { ...base, reason: "Ya tiene foto." });
       } catch (err) {
         console.error("[admin/sitio] foto", product.id, err instanceof Error ? err.message : err);
