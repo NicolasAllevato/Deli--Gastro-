@@ -214,6 +214,9 @@ export { AdjustmentError, MAX_AJUSTE_CENTS, MAX_TOPE_CENTS, MAX_VENCIMIENTO_DIAS
 export type { CreditConfig, CreditClient, CreditHistory, CreditHistoryRow, ExpireResult, AdjustmentInput, AdjustmentResult } from "./credit-admin.ts";
 
 export { kbApp } from "./kb-negocio-app.ts";
+export { siteLinksApp } from "./site-links-app.ts";
+export { SiteLinkError } from "./site-links.ts";
+export type { SiteLink, AppProductRow } from "./site-links.ts";
 export { kbInputSchema, KB_CATEGORIAS, KB_MAX_ROWS, type KbEntry, type KbInput } from "./kb-negocio.ts";
 export { KbCapacityError, type FaqImportResult, type FaqImportRow } from "./kb-importar.ts";
 export { kbAprendizajeApp } from "./kb-aprendizaje-app.ts";

@@ -214,6 +214,7 @@ const PAGE_RULES: ReadonlyArray<readonly [string, Section]> = [
   ["/admin/configuracion", "configuracion"],
   ["/admin/carta", "configuracion"],
   ["/admin/fudo", "configuracion"],
+  ["/admin/sitio", "configuracion"],
   ["/admin/promos", "configuracion"],
   ["/admin/notificaciones", "configuracion"],
   ["/admin/legal", "configuracion"],
@@ -233,6 +234,8 @@ const OWNER_ONLY_PREFIXES: readonly string[] = [
   "/api/admin/usuarios",
   "/admin/saldo",
   "/api/admin/saldo",
+  "/admin/sitio",
+  "/api/admin/sitio",
   "/admin/eliminar-datos",
   "/api/admin/eliminar-datos",
   "/admin/whatsapp",
@@ -280,6 +283,7 @@ const API_RULES: readonly ApiRule[] = [
   // La campana del panel: la abre todo el personal; la ruta filtra cada fuente por la sección que corresponde.
   { prefix: "/api/admin/notificaciones", sections: SECTIONS },
   { prefix: "/api/admin/reclamos", sections: ["comunicacion"] },
+  { prefix: "/api/admin/sitio", sections: ["configuracion"] },
   // El POST es la consulta al analista (herramientas de solo lectura): alcanza con ver el Dashboard.
   { prefix: "/api/admin/reports", sections: ["dashboard"], postIsRead: true },
   { prefix: "/api/agent", sections: ["comunicacion"] },
