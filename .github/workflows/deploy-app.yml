@@ -1,0 +1,75 @@
+name: Deploy app
+
+# Compila y despliega la app (Worker opsyn-dely) en los runners de GitHub, así la PC local no gasta RAM.
+# Solo se lanza a mano (Actions → Deploy app → Run workflow) o con: gh workflow run deploy-app.yml
+# Requisitos (una sola vez), en Settings → Environments → produccion:
+#   - secreto CLOUDFLARE_API_TOKEN: token de la cuenta e7351dd776e005da826ba6f2a5aae4c1 con «Workers Scripts: Edit».
+#   - variables NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_TURNSTILE_SITE_KEY y
+#     R2_PUBLIC_BASE_URL (son públicas: se hornean en el build).
+# Los secretos de runtime (claves de Meta, OpenAI, sitio web, etc.) siguen en el Worker: este workflow no los toca.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Rama o commit a desplegar"
+        required: false
+        default: main
+
+concurrency:
+  group: deploy-app
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build y deploy a Cloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: produccion
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests unitarios
+        run: npm test
+
+      - name: Archivo env de build (solo valores públicos)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+          R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+        run: |
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=\"$NEXT_PUBLIC_SUPABASE_URL\""
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=\"$NEXT_PUBLIC_SUPABASE_ANON_KEY\""
+            echo "NEXT_PUBLIC_TURNSTILE_SITE_KEY=\"$NEXT_PUBLIC_TURNSTILE_SITE_KEY\""
+            echo "R2_PUBLIC_BASE_URL=\"$R2_PUBLIC_BASE_URL\""
+          } > .env.ci
+
+      - name: Build y deploy
+        env:
+          CI: "true"
+          ENV_FILE: .env.ci
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bash scripts/cf-deploy.sh
+
+      - name: Verificar producción
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 https://opsyndely.la-gambeta.com/)
+          echo "Producción responde: $code"
+          test "$code" = "200"
